@@ -4,9 +4,23 @@ const { authMiddleware } = require('../middleware/auth');
 const router = express.Router();
 router.use(authMiddleware);
 
-// GET costs for a load
+// GET costs — single load or all loads summary
 router.get('/', async (req, res) => {
-  const { load } = req.query;
+  const { load, summary } = req.query;
+
+  // Return all costs as a load_no -> total map for dashboard
+  if (summary === 'true') {
+    const { data, error } = await supabase
+      .from('lp_costs')
+      .select('c_load, c_amount');
+    if (error) return res.status(500).json({ error: error.message });
+    const map = {};
+    (data || []).forEach(c => {
+      map[c.c_load] = (map[c.c_load] || 0) + Number(c.c_amount || 0);
+    });
+    return res.json(map);
+  }
+
   if (!load) return res.json([]);
   const { data, error } = await supabase
     .from('lp_costs')
