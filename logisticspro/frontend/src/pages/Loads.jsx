@@ -487,8 +487,6 @@ export default function Loads() {
             {loading&&<tr><td colSpan={11}><div className="loading">Loading…</div></td></tr>}
             {!loading&&filtered.length===0&&<tr><td colSpan={11}><div className="empty-state">No loads found</div></td></tr>}
             {!loading&&filtered.map(l=>{
-              const extra = loadCosts[l.m_load_no]||0;
-              const total = Number(l.m_rate||0)+extra;
               const extra = Number(l._extra || loadCosts[l.m_load_no] || 0);
               const total = Number(l.m_rate||0) + extra;
               const isOpen = expandedRow===l.m_load_no;
