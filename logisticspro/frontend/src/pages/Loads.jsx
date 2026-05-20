@@ -428,13 +428,13 @@ export default function Loads() {
       setLoads(data);
       // Fetch costs totals for all loads
       const costMap = {};
-      await Promise.all(data.map(async l => {
+      for (const l of data) {
         try {
-          const costs = await req(`/costs?load=${l.m_load_no}`);
+          const costs = await req('/costs?load=' + encodeURIComponent(l.m_load_no));
           costMap[l.m_load_no] = Array.isArray(costs) ? costs.reduce((s,c)=>s+Number(c.c_amount||0),0) : 0;
-        } catch { costMap[l.m_load_no]=0; }
-      }));
-      setLoadCosts(costMap);
+        } catch(e) { costMap[l.m_load_no] = 0; }
+      }
+      setLoadCosts({...costMap});
     } catch(e){console.error(e);}
     finally{ if (!keepExpanded) setLoading(false); }
   };
