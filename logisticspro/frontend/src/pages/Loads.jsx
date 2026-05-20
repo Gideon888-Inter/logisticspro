@@ -268,10 +268,14 @@ function ExpandedRow({ load, onRefresh, onCostUpdate }) {
     try {
       const [c, co] = await Promise.all([
         api.getComments(load.m_load_no),
-        req(`/costs?load=${load.m_load_no}`).catch(()=>[]),
+        req(`/costs?load=${encodeURIComponent(load.m_load_no)}`).catch(()=>[]),
       ]);
       setComments(Array.isArray(c)?c:[]);
-      setCosts(Array.isArray(co)?co:[]);
+      const costsArr = Array.isArray(co) ? co : [];
+      setCosts(costsArr);
+      // Push total up to parent table immediately
+      const extraTotal = costsArr.reduce((s,c) => s + Number(c.c_amount||0), 0);
+      if (onCostUpdate) onCostUpdate(load.m_load_no, extraTotal);
     } catch(e){console.error(e);}
   };
   useEffect(()=>{ loadDetails(); },[load.m_load_no]);
