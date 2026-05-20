@@ -7,6 +7,8 @@ const authRoutes = require('./routes/auth');
 const loadsRoutes = require('./routes/loads');
 const vehiclesRoutes = require('./routes/vehicles');
 const { driversRouter, customersRouter, maintenanceRouter, inventoryRouter, routesRouter } = require('./routes/entities');
+const clientRatesRouter = require('./routes/clientRates');
+const usersRouter = require('./routes/users');
 
 const app = express();
 
@@ -31,6 +33,8 @@ app.use('/api/customers',   customersRouter);
 app.use('/api/maintenance', maintenanceRouter);
 app.use('/api/inventory',   inventoryRouter);
 app.use('/api/routes',      routesRouter);
+app.use('/api/rates',       clientRatesRouter);
+app.use('/api/users',       usersRouter);
 
 // ── Health check ──────────────────────────────────────────────
 app.get('/health', (_, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
@@ -44,5 +48,5 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => console.log(`LogisticsPro API running on port ${PORT}`));
