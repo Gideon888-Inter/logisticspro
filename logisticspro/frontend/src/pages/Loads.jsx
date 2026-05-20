@@ -489,7 +489,7 @@ export default function Loads() {
             {!loading&&filtered.map(l=>{
               const extra = loadCosts[l.m_load_no]||0;
               const total = Number(l.m_rate||0)+extra;
-              const extra = Number(loadCosts[l.m_load_no] || 0);
+              const extra = Number(l._extra || loadCosts[l.m_load_no] || 0);
               const total = Number(l.m_rate||0) + extra;
               const isOpen = expandedRow===l.m_load_no;
               return (
@@ -512,7 +512,10 @@ export default function Loads() {
                     <td><span className={`badge ${STATUS_BADGE[l.m_status]||'badge-gray'}`}>{l.m_status?.replace(/_/g,' ')}</span></td>
                   </tr>
                   {isOpen&&<ExpandedRow key={'exp-'+l.m_load_no} load={l} onRefresh={fetchLoads}
-                    onCostUpdate={(id, total) => setLoadCosts(prev => ({...prev, [id]: total}))}
+                    onCostUpdate={(id, total) => {
+                      setLoadCosts(prev => ({...prev, [id]: total}));
+                      setLoads(prev => prev.map(ld => ld.m_load_no === id ? {...ld, _extra: total} : ld));
+                    }}
                   />}
                 </>
               );
