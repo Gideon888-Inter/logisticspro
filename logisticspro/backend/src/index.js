@@ -13,26 +13,15 @@ const costsRouter = require('./routes/costs');
 const kmRouter = require('./routes/km');
 
 const app = express();
+app.set('trust proxy', 1);
 
 // ── Middleware ────────────────────────────────────────────────
 app.use(cors({
-  origin: function(origin, callback) {
-    // Allow requests with no origin (mobile apps, curl, etc)
-    if (!origin) return callback(null, true);
-    const allowed = [
-      process.env.FRONTEND_URL,
-      'https://logisticspro.pages.dev',
-      'https://amazing-strudel-3b5da3.netlify.app',
-      'http://localhost:5173',
-      'http://localhost:3000',
-    ].filter(Boolean);
-    if (allowed.includes(origin) || origin.endsWith('.pages.dev') || origin.endsWith('.netlify.app')) {
-      return callback(null, true);
-    }
-    return callback(null, true); // Allow all for now
-  },
-  credentials: true,
+  origin: '*',
+  methods: ['GET','POST','PATCH','PUT','DELETE','OPTIONS'],
+  allowedHeaders: ['Content-Type','Authorization'],
 }));
+app.options('*', cors());
 app.use(express.json());
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 300 }));
 
