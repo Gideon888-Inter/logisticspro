@@ -7,11 +7,14 @@ router.use(authMiddleware);
 // GET costs for a load
 router.get('/', async (req, res) => {
   const { load } = req.query;
-  let q = supabase.from('lp_costs').select('*').order('created_at');
-  if (load) q = q.eq('c_load', load);
-  const { data, error } = await q;
+  if (!load) return res.json([]);
+  const { data, error } = await supabase
+    .from('lp_costs')
+    .select('*')
+    .eq('c_load', load)
+    .order('created_at', { ascending: true });
   if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
+  res.json(data || []);
 });
 
 // POST add a cost
