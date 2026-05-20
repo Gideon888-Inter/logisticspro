@@ -427,24 +427,15 @@ export default function Loads() {
       const data = res.data||[];
       setLoads(data);
       setLoading(false);
-      // Fetch costs for each load sequentially and update state after each one
-      const costMap = {};
-      for (const l of data) {
-        try {
-          const response = await fetch(
-            (import.meta.env.VITE_API_URL||'') + '/api/costs?load=' + encodeURIComponent(l.m_load_no),
-            { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('lp_token') } }
-          );
-          const costs = await response.json();
-          costMap[l.m_load_no] = Array.isArray(costs)
-            ? costs.reduce((s,c) => s + Number(c.c_amount||0), 0)
-            : 0;
-        } catch(e) {
-          costMap[l.m_load_no] = 0;
+      // Single API call to get all cost totals at once
+      try {
+        const costMap = await req('/costs?summary=true');
+        if (costMap && typeof costMap === 'object' && !Array.isArray(costMap)) {
+          setLoadCosts(costMap);
         }
+      } catch(e) {
+        console.error('Cost summary fetch failed:', e);
       }
-      // Set all costs at once after fetching all
-      setLoadCosts(prev => ({...prev, ...costMap}));
     } catch(e){ console.error(e); }
     finally{ setLoading(false); }
   };
@@ -455,12 +446,7 @@ export default function Loads() {
 
   useEffect(()=>{ fetchLoads(); fetchStats(); },[filters.status, filters.bus_unit]);
 
-  // Debug: log loadCosts whenever it changes
-  useEffect(()=>{ 
-    if(Object.keys(loadCosts).length > 0) {
-      console.log('loadCosts updated:', loadCosts);
-    }
-  },[loadCosts]);
+
 
   const filtered = loads.filter(l=>{
     if(!filters.search) return true;
