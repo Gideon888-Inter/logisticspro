@@ -65,7 +65,29 @@ router.post('/:id/comments', async (req, res) => {
 
 // POST /api/loads  — create new load
 router.post('/', async (req, res) => {
-  const load = { ...req.body, m_operator: req.user.username, m_status: req.body.m_status || 'PRELOAD' };
+  // Auto-generate load number: A + 6 digits, sequential
+  const { data: last } = await supabase
+    .from('lp_movement')
+    .select('m_load_no')
+    .like('m_load_no', 'A%')
+    .order('m_load_no', { ascending: false })
+    .limit(1);
+
+  let nextNum = 100001;
+  if (last && last.length > 0) {
+    const lastNum = parseInt(last[0].m_load_no.replace('A', ''), 10);
+    if (!isNaN(lastNum)) nextNum = lastNum + 1;
+  }
+  const m_load_no = 'A' + String(nextNum).padStart(6, '0');
+
+  const load = {
+    ...req.body,
+    m_load_no,
+    m_operator: req.user.username,
+    m_status: req.body.m_status || 'PRELOAD',
+    m_app_time: new Date().toISOString(),
+  };
+
   const { data, error } = await supabase
     .from('lp_movement')
     .insert([load])
