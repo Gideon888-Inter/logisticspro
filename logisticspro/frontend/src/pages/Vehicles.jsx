@@ -24,6 +24,7 @@ export default function Vehicles() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
+  const [activeFilter, setActiveFilter] = useState('Y');
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState(EMPTY);
   const [saving, setSaving] = useState(false);
@@ -31,7 +32,7 @@ export default function Vehicles() {
 
   const load = async () => {
     setLoading(true);
-    try { const r = await api.getVehicles({ active: 'all' }); setData(r); } catch(e) { console.error(e); }
+    try { const r = await api.getVehicles({ active: 'all' }); setData(Array.isArray(r)?r:[]); } catch(e) { console.error(e); }
     finally { setLoading(false); }
   };
 
@@ -40,7 +41,8 @@ export default function Vehicles() {
   const filtered = data.filter(v => {
     const s = search.toLowerCase();
     return (!s || v.vh_code?.toLowerCase().includes(s) || v.vh_make?.toLowerCase().includes(s) || v.vh_registration?.toLowerCase().includes(s))
-      && (!typeFilter || v.vh_type === typeFilter);
+      && (!typeFilter || v.vh_type === typeFilter)
+      && (!activeFilter || v.vh_active === activeFilter);
   });
 
   const openAdd = () => { setForm(EMPTY); setEditId(null); setShowModal(true); };
@@ -75,6 +77,11 @@ export default function Vehicles() {
           <option value="Horse">Horse</option>
           <option value="Trailer">Trailer</option>
           <option value="Rigid">Rigid</option>
+        </select>
+        <select value={activeFilter} onChange={e=>setActiveFilter(e.target.value)}>
+          <option value="">All</option>
+          <option value="Y">Active</option>
+          <option value="N">Inactive</option>
         </select>
         <button className="btn btn-primary btn-sm" onClick={openAdd}>+ Add Vehicle</button>
         <button className="btn btn-sm" onClick={() => exportCSV(filtered)}>⬇ Export CSV</button>
