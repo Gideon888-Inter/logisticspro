@@ -18,6 +18,8 @@ export default function Users() {
   const { user: currentUser } = useAuth();
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [activeFilter, setActiveFilter] = useState('Y');
+  const [roleFilter, setRoleFilter] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState(EMPTY);
   const [saving, setSaving] = useState(false);
@@ -62,6 +64,19 @@ export default function Users() {
       </div>
 
       <div className="filter-bar">
+        <select value={roleFilter} onChange={e=>setRoleFilter(e.target.value)}>
+          <option value="">All roles</option>
+          <option value="ADMIN">Admin</option>
+          <option value="MANAGER">Manager</option>
+          <option value="OPERATIONS">Operations</option>
+          <option value="OPERATOR">Operator</option>
+          <option value="READONLY">Read Only</option>
+        </select>
+        <select value={activeFilter} onChange={e=>setActiveFilter(e.target.value)}>
+          <option value="">All</option>
+          <option value="Y">Active</option>
+          <option value="N">Inactive</option>
+        </select>
         <button className="btn btn-primary btn-sm" onClick={openAdd}>+ Add User</button>
         <button className="btn btn-sm" onClick={()=>exportCSV(data)}>⬇ Export CSV</button>
       </div>
@@ -72,7 +87,7 @@ export default function Users() {
           <tbody>
             {loading&&<tr><td colSpan={6}><div className="loading">Loading users…</div></td></tr>}
             {!loading&&data.length===0&&<tr><td colSpan={6}><div className="empty-state">No users found</div></td></tr>}
-            {!loading&&data.map(u=>(
+            {!loading&&data.filter(u=>(!activeFilter||u.u_active===activeFilter)&&(!roleFilter||u.u_role===roleFilter)).map(u=>(
               <tr key={u.u_id} onClick={()=>openEdit(u)}>
                 <td className="mono" style={{fontWeight:600}}>{u.u_username}</td>
                 <td>{u.u_name||'—'}</td>
@@ -107,6 +122,7 @@ export default function Users() {
                   <select value={form.u_role} onChange={e=>set('u_role',e.target.value)}>
                     <option value="ADMIN">Admin</option>
                     <option value="MANAGER">Manager</option>
+                    <option value="OPERATIONS">Operations</option>
                     <option value="OPERATOR">Operator</option>
                     <option value="READONLY">Read Only</option>
                   </select>
