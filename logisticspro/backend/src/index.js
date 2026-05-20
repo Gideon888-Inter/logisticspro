@@ -9,6 +9,7 @@ const vehiclesRoutes = require('./routes/vehicles');
 const { driversRouter, customersRouter, maintenanceRouter, inventoryRouter, routesRouter } = require('./routes/entities');
 const clientRatesRouter = require('./routes/clientRates');
 const usersRouter = require('./routes/users');
+const costsRouter = require('./routes/costs');
 
 const app = express();
 
@@ -35,6 +36,7 @@ app.use('/api/inventory',   inventoryRouter);
 app.use('/api/routes',      routesRouter);
 app.use('/api/rates',       clientRatesRouter);
 app.use('/api/users',       usersRouter);
+app.use('/api/costs',       costsRouter);
 
 // ── Health check ──────────────────────────────────────────────
 app.get('/health', (_, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
