@@ -426,17 +426,27 @@ export default function Loads() {
       const res = await api.getLoads(params);
       const data = res.data||[];
       setLoads(data);
-      // Fetch costs totals for all loads
+      setLoading(false);
+      // Fetch costs for each load sequentially and update state after each one
       const costMap = {};
       for (const l of data) {
         try {
-          const costs = await req('/costs?load=' + encodeURIComponent(l.m_load_no));
-          costMap[l.m_load_no] = Array.isArray(costs) ? costs.reduce((s,c)=>s+Number(c.c_amount||0),0) : 0;
-        } catch(e) { costMap[l.m_load_no] = 0; }
+          const response = await fetch(
+            (import.meta.env.VITE_API_URL||'') + '/api/costs?load=' + encodeURIComponent(l.m_load_no),
+            { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('lp_token') } }
+          );
+          const costs = await response.json();
+          costMap[l.m_load_no] = Array.isArray(costs)
+            ? costs.reduce((s,c) => s + Number(c.c_amount||0), 0)
+            : 0;
+        } catch(e) {
+          costMap[l.m_load_no] = 0;
+        }
       }
-      setLoadCosts({...costMap});
-    } catch(e){console.error(e);}
-    finally{ if (!keepExpanded) setLoading(false); }
+      // Set all costs at once after fetching all
+      setLoadCosts(prev => ({...prev, ...costMap}));
+    } catch(e){ console.error(e); }
+    finally{ setLoading(false); }
   };
 
   const fetchStats = async () => {
@@ -444,6 +454,13 @@ export default function Loads() {
   };
 
   useEffect(()=>{ fetchLoads(); fetchStats(); },[filters.status, filters.bus_unit]);
+
+  // Debug: log loadCosts whenever it changes
+  useEffect(()=>{ 
+    if(Object.keys(loadCosts).length > 0) {
+      console.log('loadCosts updated:', loadCosts);
+    }
+  },[loadCosts]);
 
   const filtered = loads.filter(l=>{
     if(!filters.search) return true;
@@ -491,8 +508,8 @@ export default function Loads() {
             {!loading&&filtered.map(l=>{
               const extra = loadCosts[l.m_load_no]||0;
               const total = Number(l.m_rate||0)+extra;
-              const extra = loadCosts[l.m_load_no]||0;
-              const total = Number(l.m_rate||0)+extra;
+              const extra = Number(loadCosts[l.m_load_no] || 0);
+              const total = Number(l.m_rate||0) + extra;
               const isOpen = expandedRow===l.m_load_no;
               return (
                 <>
