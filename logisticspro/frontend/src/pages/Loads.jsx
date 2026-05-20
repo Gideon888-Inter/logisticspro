@@ -256,7 +256,7 @@ function AddCostModal({ loadId, onClose, onSaved }) {
 }
 
 // ── Expanded Load Row ─────────────────────────────────────────
-function ExpandedRow({ load, onRefresh }) {
+function ExpandedRow({ load, onRefresh, onCostUpdate }) {
   const { user } = useAuth();
   const [comments, setComments] = useState([]);
   const [costs, setCosts] = useState([]);
@@ -427,15 +427,6 @@ export default function Loads() {
       const data = res.data||[];
       setLoads(data);
       setLoading(false);
-      // Single API call to get all cost totals at once
-      try {
-        const costMap = await req('/costs?summary=true');
-        if (costMap && typeof costMap === 'object' && !Array.isArray(costMap)) {
-          setLoadCosts(costMap);
-        }
-      } catch(e) {
-        console.error('Cost summary fetch failed:', e);
-      }
     } catch(e){ console.error(e); }
     finally{ setLoading(false); }
   };
@@ -516,7 +507,9 @@ export default function Loads() {
                     <td className="mono" style={{fontWeight:600,color:'#005A8E'}}>{fmtR(total)}</td>
                     <td><span className={`badge ${STATUS_BADGE[l.m_status]||'badge-gray'}`}>{l.m_status?.replace(/_/g,' ')}</span></td>
                   </tr>
-                  {isOpen&&<ExpandedRow key={'exp-'+l.m_load_no+'-'+extra} load={l} onRefresh={fetchLoads} />}
+                  {isOpen&&<ExpandedRow key={'exp-'+l.m_load_no} load={l} onRefresh={fetchLoads}
+                    onCostUpdate={(id, total) => setLoadCosts(prev => ({...prev, [id]: total}))}
+                  />}
                 </>
               );
             })}
