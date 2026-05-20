@@ -147,11 +147,12 @@ export default function App() {
         position:'relative', zIndex:10,
       }}>
         <button
-          onClick={() => { setSidebarOpen(true); }}
+          onClick={() => setSidebarOpen(true)}
           style={{
             background:'none', border:'none', cursor:'pointer',
-            padding:'8px', display:'flex', alignItems:'center',
-            color:'#00AEEF', flexShrink:0, zIndex:11,
+            padding:'12px 14px', display:'flex', alignItems:'center',
+            justifyContent:'center', color:'#00AEEF', flexShrink:0,
+            marginLeft:'-14px',
           }}
         >
           <MenuIcon />
@@ -187,9 +188,12 @@ export default function App() {
           }}
         >
           {/* Sidebar header */}
-          <div style={{padding:16, background:'linear-gradient(135deg, #005A8E, #0077B6)', display:'flex', alignItems:'center', justifyContent:'space-between'}}>
-            <img src={LOGO} alt="Interland" style={{height:40, filter:'brightness(0) invert(1)'}} />
-            <button onClick={closeSidebar} style={{background:'none', border:'none', color:'white', cursor:'pointer', padding:4}}>
+          <div style={{padding:'14px 16px', background:'linear-gradient(135deg, #005A8E, #0077B6)', display:'flex', alignItems:'center', justifyContent:'space-between'}}>
+            <div>
+              <div style={{color:'white', fontWeight:700, fontSize:15, letterSpacing:'0.02em', fontFamily:'sans-serif'}}>INTERLAND</div>
+              <div style={{color:'rgba(255,255,255,0.8)', fontSize:10, letterSpacing:'0.08em', marginTop:1}}>DISTRIBUTION</div>
+            </div>
+            <button onClick={closeSidebar} style={{background:'none', border:'none', color:'white', cursor:'pointer', padding:4, display:'flex', alignItems:'center'}}>
               <CloseIcon />
             </button>
           </div>
