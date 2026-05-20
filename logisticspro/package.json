@@ -1,0 +1,11 @@
+{
+  "name": "logisticspro-root",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "node logisticspro/backend/src/index.js",
+    "build": "cd logisticspro/backend && npm install"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
