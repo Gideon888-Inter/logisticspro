@@ -1,0 +1,137 @@
+import { useState, useEffect } from 'react';
+import { useAuth } from '../lib/AuthContext';
+
+const API = import.meta.env.VITE_API_URL || '';
+const token = () => localStorage.getItem('lp_token');
+const req = (path,opts={}) => fetch(API+'/api'+path,{...opts,headers:{'Content-Type':'application/json','Authorization':'Bearer '+token(),...(opts.headers||{})}}).then(r=>r.json());
+
+const EMPTY = { u_username:'', u_password:'', u_name:'', u_email:'', u_role:'OPERATOR', u_bus_unit:'IDC', u_active:'Y' };
+
+function exportCSV(data) {
+  const headers=['Username','Name','Email','Role','Business Unit','Active'];
+  const rows=data.map(u=>[u.u_username,u.u_name||'',u.u_email||'',u.u_role,u.u_bus_unit||'',u.u_active==='Y'?'Yes':'No']);
+  const csv=[headers,...rows].map(r=>r.map(x=>`"${x}"`).join(',')).join('\n');
+  const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);a.download='users_export.csv';a.click();
+}
+
+export default function Users() {
+  const { user: currentUser } = useAuth();
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
+  const [form, setForm] = useState(EMPTY);
+  const [saving, setSaving] = useState(false);
+  const [editId, setEditId] = useState(null);
+
+  const load = async () => {
+    setLoading(true);
+    try { const r = await req('/users'); setData(Array.isArray(r)?r:r.data||[]); } catch(e){console.error(e);}
+    finally{setLoading(false);}
+  };
+  useEffect(()=>{ load(); },[]);
+
+  const openAdd = ()=>{setForm(EMPTY);setEditId(null);setShowModal(true);};
+  const openEdit = (u)=>{setForm({...EMPTY,...u,u_password:''});setEditId(u.u_id);setShowModal(true);};
+  const set = (k,v)=>setForm(f=>({...f,[k]:v}));
+
+  const save = async ()=>{
+    if(!form.u_username.trim()) return alert('Username is required');
+    if(!editId && !form.u_password.trim()) return alert('Password is required for new users');
+    setSaving(true);
+    try {
+      if(editId){
+        const payload={...form}; if(!payload.u_password) delete payload.u_password;
+        await req(`/users/${editId}`,{method:'PATCH',body:JSON.stringify(payload)});
+      } else {
+        await fetch(API+'/api/auth/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(form)});
+      }
+      setShowModal(false); load();
+    } catch(e){alert(e.message);}
+    finally{setSaving(false);}
+  };
+
+  const ROLE_COLORS = { ADMIN:'badge-red', MANAGER:'badge-amber', OPERATOR:'badge-blue', READONLY:'badge-gray' };
+
+  return (
+    <div>
+      <div className="stats-grid">
+        <div className="stat-card"><div className="stat-label">Total Users</div><div className="stat-value">{data.length}</div></div>
+        <div className="stat-card"><div className="stat-label">Admins</div><div className="stat-value" style={{color:'#e53e3e'}}>{data.filter(u=>u.u_role==='ADMIN').length}</div></div>
+        <div className="stat-card"><div className="stat-label">Operators</div><div className="stat-value" style={{color:'#00AEEF'}}>{data.filter(u=>u.u_role==='OPERATOR').length}</div></div>
+        <div className="stat-card"><div className="stat-label">Active</div><div className="stat-value" style={{color:'#059669'}}>{data.filter(u=>u.u_active==='Y').length}</div></div>
+      </div>
+
+      <div className="filter-bar">
+        <button className="btn btn-primary btn-sm" onClick={openAdd}>+ Add User</button>
+        <button className="btn btn-sm" onClick={()=>exportCSV(data)}>⬇ Export CSV</button>
+      </div>
+
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th>Username</th><th>Full Name</th><th>Email</th><th>Role</th><th>Business Unit</th><th>Active</th></tr></thead>
+          <tbody>
+            {loading&&<tr><td colSpan={6}><div className="loading">Loading users…</div></td></tr>}
+            {!loading&&data.length===0&&<tr><td colSpan={6}><div className="empty-state">No users found</div></td></tr>}
+            {!loading&&data.map(u=>(
+              <tr key={u.u_id} onClick={()=>openEdit(u)}>
+                <td className="mono" style={{fontWeight:600}}>{u.u_username}</td>
+                <td>{u.u_name||'—'}</td>
+                <td>{u.u_email||'—'}</td>
+                <td><span className={`badge ${ROLE_COLORS[u.u_role]||'badge-gray'}`}>{u.u_role}</span></td>
+                <td>{u.u_bus_unit||'—'}</td>
+                <td><span className={`badge ${u.u_active==='Y'?'badge-green':'badge-red'}`}>{u.u_active==='Y'?'Active':'Inactive'}</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {showModal&&(
+        <div className="modal-overlay" onClick={()=>setShowModal(false)}>
+          <div className="modal" onClick={e=>e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>{editId?'Edit User':'Add New User'}</h3>
+              <button onClick={()=>setShowModal(false)} style={{background:'none',border:'none',color:'white',cursor:'pointer',fontSize:18}}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div className="form-row">
+                <div className="form-group"><label>Username *</label><input value={form.u_username} onChange={e=>set('u_username',e.target.value)} disabled={!!editId} /></div>
+                <div className="form-group"><label>{editId?'New Password (leave blank to keep)':'Password *'}</label><input type="password" value={form.u_password} onChange={e=>set('u_password',e.target.value)} /></div>
+              </div>
+              <div className="form-row">
+                <div className="form-group"><label>Full Name</label><input value={form.u_name} onChange={e=>set('u_name',e.target.value)} /></div>
+                <div className="form-group"><label>Email</label><input type="email" value={form.u_email} onChange={e=>set('u_email',e.target.value)} /></div>
+              </div>
+              <div className="form-row">
+                <div className="form-group"><label>Role</label>
+                  <select value={form.u_role} onChange={e=>set('u_role',e.target.value)}>
+                    <option value="ADMIN">Admin</option>
+                    <option value="MANAGER">Manager</option>
+                    <option value="OPERATOR">Operator</option>
+                    <option value="READONLY">Read Only</option>
+                  </select>
+                </div>
+                <div className="form-group"><label>Business Unit</label>
+                  <select value={form.u_bus_unit} onChange={e=>set('u_bus_unit',e.target.value)}>
+                    <option value="IDC">IDC</option><option value="IDM">IDM</option><option value="MOGWASE">Mogwase</option>
+                  </select>
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group"><label>Active</label>
+                  <select value={form.u_active} onChange={e=>set('u_active',e.target.value)}>
+                    <option value="Y">Yes</option><option value="N">No</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn" onClick={()=>setShowModal(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={save} disabled={saving}>{saving?'Saving…':editId?'Update User':'Add User'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
