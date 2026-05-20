@@ -14,6 +14,7 @@ export default function Clients() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [activeFilter, setActiveFilter] = useState('Y');
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState(EMPTY);
   const [saving, setSaving] = useState(false);
@@ -28,7 +29,8 @@ export default function Clients() {
 
   const filtered = data.filter(c=>{
     const s=search.toLowerCase();
-    return !s||c.c_code?.toLowerCase().includes(s)||c.c_name?.toLowerCase().includes(s);
+    return (!s||c.c_code?.toLowerCase().includes(s)||c.c_name?.toLowerCase().includes(s))
+      && (!activeFilter || c.c_active === activeFilter);
   });
 
   const openAdd = ()=>{setForm(EMPTY);setEditId(null);setShowModal(true);};
@@ -57,6 +59,11 @@ export default function Clients() {
 
       <div className="filter-bar">
         <input placeholder="Search client code or name…" value={search} onChange={e=>setSearch(e.target.value)} />
+        <select value={activeFilter} onChange={e=>setActiveFilter(e.target.value)}>
+          <option value="">All</option>
+          <option value="Y">Active</option>
+          <option value="N">Inactive</option>
+        </select>
         <button className="btn btn-primary btn-sm" onClick={openAdd}>+ Add Client</button>
         <button className="btn btn-sm" onClick={()=>exportCSV(filtered)}>⬇ Export CSV</button>
       </div>
