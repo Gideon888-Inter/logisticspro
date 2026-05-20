@@ -15,6 +15,7 @@ export default function Drivers() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
+  const [activeFilter, setActiveFilter] = useState('Y');
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState(EMPTY);
   const [saving, setSaving] = useState(false);
@@ -30,7 +31,8 @@ export default function Drivers() {
   const filtered = data.filter(d => {
     const s = search.toLowerCase();
     return (!s || d.d_nickname?.toLowerCase().includes(s) || d.d_id?.toLowerCase().includes(s) || (d.d_name||'').toLowerCase().includes(s))
-      && (!typeFilter || (d.d_type||'Interland') === typeFilter);
+      && (!typeFilter || (d.d_type||'Interland') === typeFilter)
+      && (!activeFilter || d.d_active === activeFilter);
   });
 
   const openAdd = () => { setForm(EMPTY); setEditId(null); setShowModal(true); };
@@ -68,6 +70,11 @@ export default function Drivers() {
         <input placeholder="Search nickname, name, ID…" value={search} onChange={e=>setSearch(e.target.value)} />
         <select value={typeFilter} onChange={e=>setTypeFilter(e.target.value)}>
           <option value="">All types</option><option value="Interland">Interland</option><option value="TRILLIUM">Trillium</option>
+        </select>
+        <select value={activeFilter} onChange={e=>setActiveFilter(e.target.value)}>
+          <option value="">All</option>
+          <option value="Y">Active</option>
+          <option value="N">Inactive</option>
         </select>
         <button className="btn btn-primary btn-sm" onClick={openAdd}>+ Add Driver</button>
         <button className="btn btn-sm" onClick={()=>exportCSV(filtered)}>⬇ Export CSV</button>
