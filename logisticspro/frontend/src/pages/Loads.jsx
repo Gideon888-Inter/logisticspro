@@ -399,7 +399,7 @@ function ExpandedRow({ load, onRefresh }) {
           <AddCostModal
             loadId={load.m_load_no}
             onClose={()=>setShowCostModal(false)}
-            onSaved={()=>{ setShowCostModal(false); loadDetails(); onRefresh(); }}
+            onSaved={()=>{ setShowCostModal(false); loadDetails(); }}
           />
         )}
       </td>
@@ -507,8 +507,8 @@ export default function Loads() {
                     <td>{l.m_from}</td>
                     <td>{l.m_to}</td>
                     <td className="mono">{fmtR(l.m_rate)}</td>
-                    <td className="mono" style={{color:extra>0?'#e53e3e':'#aaa'}}>{extra>0?fmtR(extra):'—'}</td>
-                    <td className="mono" style={{fontWeight:600,color:'#005A8E'}}>{fmtR(total)}</td>
+                    <td className="mono" style={{color:'#aaa'}}>{'—'}</td>
+                    <td className="mono" style={{fontWeight:600,color:'#005A8E'}}>{fmtR(l.m_rate||0)}</td>
                     <td><span className={`badge ${STATUS_BADGE[l.m_status]||'badge-gray'}`}>{l.m_status?.replace(/_/g,' ')}</span></td>
                   </tr>
                   {isOpen&&<ExpandedRow key={'exp-'+l.m_load_no} load={l} onRefresh={fetchLoads} />}
