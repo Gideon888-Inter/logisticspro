@@ -16,9 +16,14 @@ router.get('/', async (req, res) => {
 
 // POST add a cost
 router.post('/', async (req, res) => {
+  const payload = {
+    ...req.body,
+    c_operator: req.user.username,
+    c_description: req.body.c_description || req.body.c_code,
+  };
   const { data, error } = await supabase
     .from('lp_costs')
-    .insert([{ ...req.body, c_operator: req.user.username }])
+    .insert([payload])
     .select().single();
   if (error) return res.status(400).json({ error: error.message });
   res.status(201).json(data);
