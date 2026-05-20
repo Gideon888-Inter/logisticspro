@@ -16,11 +16,21 @@ const app = express();
 
 // ── Middleware ────────────────────────────────────────────────
 app.use(cors({
-  origin: [
-    process.env.FRONTEND_URL,
-    'http://localhost:5173',
-    'http://localhost:3000',
-  ],
+  origin: function(origin, callback) {
+    // Allow requests with no origin (mobile apps, curl, etc)
+    if (!origin) return callback(null, true);
+    const allowed = [
+      process.env.FRONTEND_URL,
+      'https://logisticspro.pages.dev',
+      'https://amazing-strudel-3b5da3.netlify.app',
+      'http://localhost:5173',
+      'http://localhost:3000',
+    ].filter(Boolean);
+    if (allowed.includes(origin) || origin.endsWith('.pages.dev') || origin.endsWith('.netlify.app')) {
+      return callback(null, true);
+    }
+    return callback(null, true); // Allow all for now
+  },
   credentials: true,
 }));
 app.use(express.json());
