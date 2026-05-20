@@ -140,18 +140,26 @@ export default function App() {
   return (
     <div className="app-layout">
       {/* TOPBAR */}
-      <header className="topbar">
+      <header style={{
+        height:56, background:'white', borderBottom:'3px solid #00AEEF',
+        display:'flex', alignItems:'center', padding:'0 16px', gap:12,
+        boxShadow:'0 2px 8px rgba(0,0,0,0.08)', flexShrink:0,
+        position:'relative', zIndex:10,
+      }}>
         <button
-          className="topbar-menu-btn"
-          onClick={openSidebar}
-          style={{background:'none', border:'none', cursor:'pointer', padding:'6px', display:'flex', alignItems:'center', color:'#00AEEF'}}
+          onClick={() => { setSidebarOpen(true); }}
+          style={{
+            background:'none', border:'none', cursor:'pointer',
+            padding:'8px', display:'flex', alignItems:'center',
+            color:'#00AEEF', flexShrink:0, zIndex:11,
+          }}
         >
           <MenuIcon />
         </button>
-        <img src={LOGO} alt="Interland Distribution" className="topbar-logo" />
+        <img src={LOGO} alt="Interland Distribution" style={{height:36}} />
         <span style={{flex:1}} />
-        <div className="topbar-user">
-          <span style={{fontSize:12, color:'#888', marginRight:8}}>{user.name || user.username}</span>
+        <div style={{display:'flex', alignItems:'center', gap:8}}>
+          <span style={{fontSize:12, color:'#888'}}>{user.name || user.username}</span>
           <div className="topbar-avatar">{initials}</div>
         </div>
       </header>
