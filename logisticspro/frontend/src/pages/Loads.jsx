@@ -17,7 +17,7 @@ const STATUS_BADGE = {
 
 const ALL_STATUSES = ['PRELOAD','EN_ROUTE','OFFLOADED','WAIT_ORDER_NO','WAIT_APPROVAL','WAIT_POD_SCAN','WAIT_INVOICE_NO','LOAD_INVOICED','REJECTED'];
 
-const COST_TYPES = ['Loadshift Cost','Fine','Labour','Extra Stop','Other'];
+const COST_TYPES = ['Loadshift','Fine','Labour','Extra Stop','Other'];
 
 function fmtDate(d) { return d ? new Date(d).toLocaleDateString('en-ZA',{day:'2-digit',month:'short',year:'numeric'}) : '—'; }
 function fmtR(n) { return (n||n===0) ? 'R '+Number(n).toLocaleString('en-ZA',{minimumFractionDigits:0}) : '—'; }
@@ -399,7 +399,7 @@ function ExpandedRow({ load, onRefresh }) {
           <AddCostModal
             loadId={load.m_load_no}
             onClose={()=>setShowCostModal(false)}
-            onSaved={()=>{ setShowCostModal(false); loadDetails(); }}
+            onSaved={()=>{ setShowCostModal(false); loadDetails(); onRefresh(); }}
           />
         )}
       </td>
@@ -417,8 +417,8 @@ export default function Loads() {
   const [showModal, setShowModal] = useState(false);
   const [loadCosts, setLoadCosts] = useState({});
 
-  const fetchLoads = async () => {
-    setLoading(true);
+  const fetchLoads = async (keepExpanded = false) => {
+    if (!keepExpanded) setLoading(true);
     try {
       const params = {};
       if(filters.status) params.status=filters.status;
@@ -436,7 +436,7 @@ export default function Loads() {
       }));
       setLoadCosts(costMap);
     } catch(e){console.error(e);}
-    finally{setLoading(false);}
+    finally{ if (!keepExpanded) setLoading(false); }
   };
 
   const fetchStats = async () => {
@@ -491,6 +491,8 @@ export default function Loads() {
             {!loading&&filtered.map(l=>{
               const extra = loadCosts[l.m_load_no]||0;
               const total = Number(l.m_rate||0)+extra;
+              const extra = loadCosts[l.m_load_no]||0;
+              const total = Number(l.m_rate||0)+extra;
               const isOpen = expandedRow===l.m_load_no;
               return (
                 <>
@@ -507,8 +509,8 @@ export default function Loads() {
                     <td>{l.m_from}</td>
                     <td>{l.m_to}</td>
                     <td className="mono">{fmtR(l.m_rate)}</td>
-                    <td className="mono" style={{color:'#aaa'}}>{'—'}</td>
-                    <td className="mono" style={{fontWeight:600,color:'#005A8E'}}>{fmtR(l.m_rate||0)}</td>
+                    <td className="mono" style={{color:extra>0?'#e53e3e':'#aaa'}}>{extra>0?fmtR(extra):'—'}</td>
+                    <td className="mono" style={{fontWeight:600,color:'#005A8E'}}>{fmtR(total)}</td>
                     <td><span className={`badge ${STATUS_BADGE[l.m_status]||'badge-gray'}`}>{l.m_status?.replace(/_/g,' ')}</span></td>
                   </tr>
                   {isOpen&&<ExpandedRow key={'exp-'+l.m_load_no} load={l} onRefresh={fetchLoads} />}
