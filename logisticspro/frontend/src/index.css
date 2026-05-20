@@ -97,7 +97,7 @@ body { background: var(--bg); color: var(--text); -webkit-font-smoothing: antial
   display: flex; align-items: center;
   padding: 0 16px; gap: 12px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-  flex-shrink: 0; z-index: 50; position: relative;
+  flex-shrink: 0;
 }
 .topbar-menu-btn {
   background: none; border: none; cursor: pointer;
