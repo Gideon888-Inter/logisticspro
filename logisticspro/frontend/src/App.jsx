@@ -74,13 +74,13 @@ const MENU = [
 ];
 
 const PAGE_TITLES = {
-  movement: 'Movement', vehicles: 'Vehicles',
+  movement: 'Loads', vehicles: 'Vehicles',
   'drivers-list': 'Drivers', 'drivers-leave': 'Driver Leave',
   clients: 'Clients', 'workshop-jobcards': 'Job Cards',
   'workshop-maintenance': 'Maintenance', 'workshop-inventory': 'Inventory',
   approvals: 'Approvals', 'rates-list': 'Client Rates', 'rates-routes': 'Routes',
   users: 'Users', bulk: 'Bulk Messaging', schedule: 'Report Schedule',
-  'search-loads': 'Search Loads', 'search-vehicles': 'Search Vehicles',
+
 };
 
 function PageContent({ page }) {
