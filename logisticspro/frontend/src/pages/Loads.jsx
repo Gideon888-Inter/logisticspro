@@ -13,9 +13,10 @@ const STATUS_BADGE = {
   EN_ROUTE:'badge-blue', OFFLOADED:'badge-green', WAIT_ORDER_NO:'badge-amber',
   WAIT_APPROVAL:'badge-amber', WAIT_POD_SCAN:'badge-gray', WAIT_INVOICE_NO:'badge-orange',
   LOAD_INVOICED:'badge-green', WAIT_PROCESSING:'badge-gray', PRELOAD:'badge-gray', REJECTED:'badge-red',
+  PENDING_KM_APPROVAL:'badge-orange', KM_CORRECTION_NEEDED:'badge-red',
 };
 
-const ALL_STATUSES = ['PRELOAD','EN_ROUTE','OFFLOADED','WAIT_ORDER_NO','WAIT_APPROVAL','WAIT_POD_SCAN','WAIT_INVOICE_NO','LOAD_INVOICED','REJECTED'];
+const ALL_STATUSES = ['PRELOAD','EN_ROUTE','OFFLOADED','WAIT_ORDER_NO','WAIT_APPROVAL','WAIT_POD_SCAN','WAIT_INVOICE_NO','LOAD_INVOICED','REJECTED','PENDING_KM_APPROVAL','KM_CORRECTION_NEEDED'];
 
 const COST_TYPES = ['Loadshift','Fine','Labour','Extra Stop','Other'];
 
@@ -33,8 +34,11 @@ function NewLoadModal({ onClose, onCreated }) {
     m_truck:'', m_driver_id:'', m_customer:'',
     m_trailer_size:'None', m_trailer1:'',
     m_from:'', m_to:'', m_rate:0, m_bus_unit: user?.bus_unit||'IDC',
+    m_opening_km:'',
   });
   const [saving, setSaving] = useState(false);
+  const [lastClosingKm, setLastClosingKm] = useState(null);
+  const [kmValidation, setKmValidation] = useState(null);
 
   useEffect(() => {
     Promise.all([
@@ -58,11 +62,32 @@ function NewLoadModal({ onClose, onCreated }) {
   const fromOptions = [...new Set(clientRates.map(r=>r.rc_from))].sort();
   const toOptions = [...new Set(clientRates.filter(r=>r.rc_from===form.m_from).map(r=>r.rc_to))].sort();
 
+  const fetchLastKm = async (truck) => {
+    if (!truck) return;
+    try {
+      const res = await req(`/km/last-closing/${encodeURIComponent(truck)}`);
+      setLastClosingKm(res.last_closing_km || 0);
+      setForm(f => ({ ...f, m_opening_km: res.last_closing_km || '' }));
+    } catch(e) { console.error(e); }
+  };
+
+  const validateOpeningKm = async (truck, opening_km) => {
+    if (!truck || !opening_km) return;
+    try {
+      const res = await req('/km/validate-opening', {
+        method: 'POST',
+        body: JSON.stringify({ truck, opening_km: Number(opening_km) })
+      });
+      setKmValidation(res);
+    } catch(e) { console.error(e); }
+  };
+
   const set = (k,v) => {
     setForm(f => {
       const next = {...f, [k]:v};
       // Reset downstream fields
       if(k==='m_customer') { next.m_from=''; next.m_to=''; next.m_rate=0; }
+      if(k==='m_truck') { fetchLastKm(v); }
       if(k==='m_from') { next.m_to=''; next.m_rate=0; }
       if(k==='m_to') {
         const matched = rates.find(r=>r.rc_client_code===next.m_customer && r.rc_from===next.m_from && r.rc_to===v);
@@ -83,9 +108,50 @@ function NewLoadModal({ onClose, onCreated }) {
   const save = async () => {
     if(!form.m_truck) return alert('Please select a truck');
     if(!form.m_customer) return alert('Please select a customer');
+    if(kmValidation && !kmValidation.valid) return alert(kmValidation.error);
+
     setSaving(true);
     try {
-      await api.createLoad({ ...form, m_operator: user?.username, m_status:'PRELOAD' });
+      // Determine status based on KM anomaly
+      const status = kmValidation?.anomaly ? 'PENDING_KM_APPROVAL' : 'PRELOAD';
+      const payload = {
+        ...form,
+        m_opening_km: Number(form.m_opening_km) || 0,
+        m_dead_km: kmValidation?.dead_km || 0,
+        m_operator: user?.username,
+        m_status: status
+      };
+      const newLoad = await api.createLoad(payload);
+
+      // If anomaly, create anomaly record and notifications
+      if (kmValidation?.anomaly && newLoad?.m_load_no) {
+        await req('/km/anomalies', {
+          method: 'POST',
+          body: JSON.stringify({
+            a_load_no: newLoad.m_load_no,
+            a_truck: form.m_truck,
+            a_type: 'DEAD_KM',
+            a_description: `Dead KM of ${kmValidation.dead_km.toLocaleString()} km exceeds ${kmValidation.anomaly_threshold} km threshold`,
+            a_dead_km: kmValidation.dead_km,
+            a_last_closing: kmValidation.last_closing_km,
+            a_new_opening: Number(form.m_opening_km),
+            a_operator: user?.username
+          })
+        }).catch(console.error);
+
+        // Create notification for OPERATIONS role
+        await req('/km/notifications', {
+          method: 'POST',
+          body: JSON.stringify({
+            n_role: 'OPERATIONS',
+            n_type: 'KM_ANOMALY',
+            n_title: 'KM Anomaly Requires Approval',
+            n_message: `Load ${newLoad.m_load_no} has a dead KM of ${kmValidation.dead_km.toLocaleString()} km for truck ${form.m_truck}`,
+            n_load_no: newLoad.m_load_no
+          })
+        }).catch(console.error);
+      }
+
       onCreated();
     } catch(e){ alert(e.message); }
     finally{ setSaving(false); }
@@ -182,6 +248,37 @@ function NewLoadModal({ onClose, onCreated }) {
                 style={{...inputStyle, background:'#f8f9fa', color: form.m_rate?'#005A8E':'#aaa', fontWeight:600}} />
             </div>
           </div>
+
+          {/* Opening KM */}
+          <div className="form-row">
+            <div className="form-group">
+              <label style={labelStyle}>
+                Opening KM
+                {lastClosingKm !== null && <span style={{color:'#888',fontWeight:400,textTransform:'none'}}> (last closing: {Number(lastClosingKm).toLocaleString()} km)</span>}
+              </label>
+              <input
+                type="number"
+                value={form.m_opening_km}
+                onChange={e => {
+                  set('m_opening_km', e.target.value);
+                  if (form.m_truck) validateOpeningKm(form.m_truck, e.target.value);
+                }}
+                placeholder={lastClosingKm !== null ? String(lastClosingKm) : 'Enter opening odometer reading'}
+                style={{...inputStyle, borderColor: kmValidation && !kmValidation.valid ? '#e53e3e' : kmValidation?.anomaly ? '#f59e0b' : undefined}}
+              />
+              {kmValidation && !kmValidation.valid && (
+                <div style={{color:'#e53e3e',fontSize:12,marginTop:4}}>⚠ {kmValidation.error}</div>
+              )}
+              {kmValidation?.anomaly && kmValidation.valid && (
+                <div style={{color:'#d97706',fontSize:12,marginTop:4,background:'#fef3c7',padding:'6px 8px',borderRadius:4}}>
+                  ⚠ Dead KM: {Number(kmValidation.dead_km).toLocaleString()} km exceeds {kmValidation.anomaly_threshold} km threshold — this load will require Operations approval
+                </div>
+              )}
+              {kmValidation?.valid && !kmValidation.anomaly && kmValidation.dead_km > 0 && (
+                <div style={{color:'#059669',fontSize:12,marginTop:4}}>✓ Dead KM: {Number(kmValidation.dead_km).toLocaleString()} km</div>
+              )}
+            </div>
+          </div>
         </div>
         <div className="modal-footer">
           <button className="btn" onClick={onClose}>Cancel</button>
@@ -263,6 +360,11 @@ function ExpandedRow({ load, onRefresh, onCostUpdate }) {
   const [newComment, setNewComment] = useState('');
   const [showCostModal, setShowCostModal] = useState(false);
   const [statusVal, setStatusVal] = useState(load.m_status);
+  const [showClosingKm, setShowClosingKm] = useState(false);
+  const [closingKm, setClosingKm] = useState('');
+  const [kmError, setKmError] = useState('');
+  const [kmSaving, setKmSaving] = useState(false);
+  const [kmMaxAllowed, setKmMaxAllowed] = useState(0);
 
   const loadDetails = async () => {
     try {
@@ -283,6 +385,36 @@ function ExpandedRow({ load, onRefresh, onCostUpdate }) {
   const sendComment = async () => {
     if(!newComment.trim()) return;
     try { await api.addComment(load.m_load_no, newComment); setNewComment(''); loadDetails(); } catch(e){alert(e.message);}
+  };
+
+  // Fetch route KM for max allowed calculation
+  useEffect(() => {
+    if (load.m_from && load.m_to && load.m_customer) {
+      req(`/rates/client-rates?client_code=${load.m_customer}`)
+        .then(rates => {
+          const match = rates.find(r => r.rc_from === load.m_from && r.rc_to === load.m_to);
+          if (match?.rc_kms) setKmMaxAllowed(Number(load.m_opening_km||0) + match.rc_kms + 500);
+        }).catch(()=>{});
+    }
+  }, []);
+
+  const saveClosingKm = async () => {
+    const opening = Number(load.m_opening_km || 0);
+    const closing = Number(closingKm);
+    if (!closingKm) return setKmError('Please enter the closing odometer reading');
+    if (closing < opening) return setKmError(`Cannot be less than opening KM (${opening.toLocaleString()})`);
+    if (kmMaxAllowed > 0 && closing > kmMaxAllowed) return setKmError(`Cannot exceed ${kmMaxAllowed.toLocaleString()} km (opening + route + 500 km tolerance)`);
+    setKmSaving(true);
+    try {
+      await req(`/km/closing/${encodeURIComponent(load.m_load_no)}`, {
+        method: 'POST',
+        body: JSON.stringify({ closing_km: closing })
+      });
+      setShowClosingKm(false);
+      onRefresh();
+      loadDetails();
+    } catch(e) { setKmError(e.message); }
+    finally { setKmSaving(false); }
   };
 
   const updateStatus = async (status) => {
@@ -367,13 +499,43 @@ function ExpandedRow({ load, onRefresh, onCostUpdate }) {
 
           {/* Status + Comments side by side */}
           <div style={{display:'flex',gap:24,flexWrap:'wrap'}}>
-            {/* Status */}
+            {/* Status + Closing KM */}
             <div style={{minWidth:200}}>
               <div style={{fontSize:12,fontWeight:600,color:'#005A8E',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:8}}>Update Status</div>
-              <select value={statusVal} onChange={e=>updateStatus(e.target.value)}
+              <select value={statusVal} onChange={e=>{ setStatusVal(e.target.value); if(e.target.value==='OFFLOADED') setShowClosingKm(true); else setShowClosingKm(false); }}
                 style={{width:'100%',padding:'8px 10px',fontSize:13,border:'1px solid #ddd',borderRadius:4,fontFamily:'inherit',background:'white'}}>
                 {ALL_STATUSES.map(s=><option key={s} value={s}>{s.replace(/_/g,' ')}</option>)}
               </select>
+
+              {showClosingKm && (
+                <div style={{marginTop:12,padding:12,background:'#f0fdf4',border:'1px solid #86efac',borderRadius:6}}>
+                  <div style={{fontSize:11,color:'#059669',fontWeight:600,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:6}}>
+                    Closing Odometer Reading
+                  </div>
+                  <div style={{fontSize:11,color:'#555',marginBottom:6}}>
+                    Opening KM: <strong>{Number(load.m_opening_km||0).toLocaleString()} km</strong>
+                    {kmMaxAllowed > 0 && <span> · Max allowed: <strong>{Number(kmMaxAllowed).toLocaleString()} km</strong></span>}
+                  </div>
+                  <input
+                    type="number"
+                    value={closingKm}
+                    onChange={e => { setClosingKm(e.target.value); setKmError(''); }}
+                    placeholder="Enter closing odometer reading"
+                    style={{width:'100%',padding:'7px 10px',fontSize:13,border:`1px solid ${kmError?'#e53e3e':'#86efac'}`,borderRadius:4,fontFamily:'inherit',marginBottom:4}}
+                  />
+                  {kmError && <div style={{color:'#e53e3e',fontSize:12,marginBottom:6}}>⚠ {kmError}</div>}
+                  <button className="btn btn-primary btn-sm" style={{width:'100%',marginTop:4,background:'#059669',borderColor:'#059669'}}
+                    onClick={saveClosingKm} disabled={kmSaving}>
+                    {kmSaving ? 'Saving…' : '✓ Confirm Offload & Save KM'}
+                  </button>
+                </div>
+              )}
+
+              {statusVal !== 'OFFLOADED' && (
+                <button className="btn btn-sm btn-primary" style={{width:'100%',marginTop:8}} onClick={()=>updateStatus(statusVal)}>
+                  Update Status
+                </button>
+              )}
             </div>
 
             {/* Comments */}
