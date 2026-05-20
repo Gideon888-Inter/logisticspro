@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useAuth } from './lib/AuthContext';
 import Login from './pages/Login';
 import Loads from './pages/Loads';
+import Approvals from './pages/Approvals';
 import Vehicles from './pages/Vehicles';
 import Drivers from './pages/Drivers';
 import Clients from './pages/Clients';
@@ -85,6 +86,7 @@ const PAGE_TITLES = {
 function PageContent({ page }) {
   switch(page) {
     case 'movement':             return <Loads />;
+    case 'approvals':            return <Approvals onNavigateToLoad={(loadNo) => { window._navigateToLoad = loadNo; }} />;
     case 'vehicles':             return <Vehicles />;
     case 'drivers-list':         return <Drivers />;
     case 'clients':              return <Clients />;
@@ -126,11 +128,42 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [page, setPage] = useState('');
   const [openMenus, setOpenMenus] = useState({});
+  const [notifications, setNotifications] = useState([]);
+  const [showNotifications, setShowNotifications] = useState(false);
 
   if (!user) return <Login />;
 
   const initials = (user.name || user.username || 'U')
     .split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
+
+  const API = import.meta.env.VITE_API_URL || '';
+  const fetchNotifications = async () => {
+    try {
+      const res = await fetch(API+'/api/km/notifications', {
+        headers: { 'Authorization': 'Bearer ' + localStorage.getItem('lp_token') }
+      });
+      const data = await res.json();
+      setNotifications(Array.isArray(data) ? data : []);
+    } catch(e) {}
+  };
+
+  useEffect(() => {
+    fetchNotifications();
+    const interval = setInterval(fetchNotifications, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const markAllRead = async () => {
+    try {
+      await fetch(API+'/api/km/notifications/read-all', {
+        method: 'PATCH',
+        headers: { 'Authorization': 'Bearer ' + localStorage.getItem('lp_token') }
+      });
+      fetchNotifications();
+    } catch(e) {}
+  };
+
+  const unreadCount = notifications.filter(n => n.n_read === 'N').length;
 
   const toggleMenu = (key) => {
     setOpenMenus(prev => ({ ...prev, [key]: !prev[key] }));
