@@ -64,8 +64,7 @@ async function exportAllLoadsCSV(dateFrom, dateTo, status) {
 
   const csv = [headers, ...rows]
     .map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(','))
-    .join('
-');
+    .join('\n');
 
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
