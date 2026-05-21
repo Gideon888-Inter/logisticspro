@@ -21,7 +21,10 @@ async function request(path, options = {}) {
 
 export const api = {
   // Auth
-  login: (body) => request('/auth/login', { method: 'POST', body: JSON.stringify(body) }),
+  login:          (body) => request('/auth/login', { method: 'POST', body: JSON.stringify(body) }),
+  changePassword: (body) => request('/auth/change-password', { method: 'POST', body: JSON.stringify(body) }),
+  forgotPassword: (body) => request('/auth/forgot-password', { method: 'POST', body: JSON.stringify(body) }),
+  getMe:          ()     => request('/auth/me'),
 
   // Loads
   getLoads:     (params = {}) => request('/loads?' + new URLSearchParams(params)),
