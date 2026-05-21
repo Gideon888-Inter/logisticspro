@@ -30,11 +30,12 @@ function NewLoadModal({ onClose, onCreated }) {
   const [drivers, setDrivers] = useState([]);
   const [clients, setClients] = useState([]);
   const [rates, setRates] = useState([]);
+  const [operators, setOperators] = useState([]);
   const [form, setForm] = useState({
     m_truck:'', m_driver_id:'', m_customer:'',
     m_trailer_size:'None', m_trailer1:'',
     m_from:'', m_to:'', m_rate:0, m_bus_unit: user?.bus_unit||'IDC',
-    m_opening_km:'',
+    m_opening_km:'', m_responsible_operator:'',
   });
   const [saving, setSaving] = useState(false);
   const [lastClosingKm, setLastClosingKm] = useState(null);
@@ -46,11 +47,13 @@ function NewLoadModal({ onClose, onCreated }) {
       api.getDrivers({active:'Y'}),
       api.getCustomers(),
       req('/rates/client-rates'),
-    ]).then(([v,d,c,r]) => {
+      req('/users').catch(()=>[]),
+    ]).then(([v,d,c,r,u]) => {
       setVehicles(Array.isArray(v)?v:[]);
       setDrivers(Array.isArray(d)?d:[]);
       setClients(Array.isArray(c)?c:[]);
       setRates(Array.isArray(r)?r:[]);
+      setOperators(Array.isArray(u)?u.filter(usr=>usr.u_role==='OPERATOR'||usr.u_role==='MANAGER'):[]);
     }).catch(console.error);
   }, []);
 
@@ -201,6 +204,17 @@ function NewLoadModal({ onClose, onCreated }) {
               <select value={form.m_trailer1} onChange={e=>set('m_trailer1',e.target.value)} style={inputStyle} disabled={form.m_trailer_size==='None'}>
                 <option value="">— Select trailer —</option>
                 {trailers.map(v=><option key={v.vh_code} value={v.vh_code}>{v.vh_code} — {v.vh_make} {v.vh_model}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* Row 2b: Responsible Operator */}
+          <div className="form-row">
+            <div className="form-group">
+              <label style={labelStyle}>Responsible Operator</label>
+              <select value={form.m_responsible_operator} onChange={e=>set('m_responsible_operator',e.target.value)} style={inputStyle}>
+                <option value="">— Select operator —</option>
+                {operators.map(o=><option key={o.u_id} value={o.u_username}>{o.u_name||o.u_username}{o.u_region?' ('+o.u_region+')':''}</option>)}
               </select>
             </div>
           </div>
