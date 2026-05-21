@@ -105,6 +105,7 @@ function NewLoadModal({ onClose, onCreated }) {
     m_trailer_size:'None', m_trailer1:'',
     m_from:'', m_to:'', m_rate:0, m_bus_unit: user?.bus_unit||'IDC',
     m_opening_km:'', m_responsible_operator:'',
+    m_loading_address:'', m_offloading_address:'',
   });
   const [saving, setSaving] = useState(false);
   const [lastClosingKm, setLastClosingKm] = useState(null);
@@ -332,6 +333,22 @@ function NewLoadModal({ onClose, onCreated }) {
             </div>
           </div>
 
+          {/* Loading & Offloading Addresses */}
+          <div className="form-row">
+            <div className="form-group">
+              <label style={labelStyle}>Loading Address</label>
+              <input value={form.m_loading_address} onChange={e=>set('m_loading_address',e.target.value)}
+                placeholder="Full loading address…"
+                style={inputStyle} />
+            </div>
+            <div className="form-group">
+              <label style={labelStyle}>Offloading Address</label>
+              <input value={form.m_offloading_address} onChange={e=>set('m_offloading_address',e.target.value)}
+                placeholder="Full offloading address…"
+                style={inputStyle} />
+            </div>
+          </div>
+
           {/* Opening KM */}
           <div className="form-row">
             <div className="form-group">
@@ -533,6 +550,8 @@ function ExpandedRow({ load, onRefresh, onCostUpdate }) {
             {cell('Order No', load.m_order_no)}
             {cell('Invoice', load.m_invoice)}
             {cell('Unit', load.m_bus_unit)}
+            {load.m_loading_address && cell('Loading Address', load.m_loading_address)}
+            {load.m_offloading_address && cell('Offloading Address', load.m_offloading_address)}
           </div>
 
           {/* Costs section */}
@@ -621,17 +640,33 @@ function ExpandedRow({ load, onRefresh, onCostUpdate }) {
               )}
             </div>
 
-            {/* Comments */}
+            {/* Audit Trail + Comments */}
             <div style={{flex:1,minWidth:300}}>
-              <div style={{fontSize:12,fontWeight:600,color:'#005A8E',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:8}}>Comments</div>
-              <div style={{maxHeight:120,overflowY:'auto',display:'flex',flexDirection:'column',gap:6,marginBottom:8}}>
-                {comments.length===0&&<div style={{fontSize:12,color:'#aaa'}}>No comments yet</div>}
-                {comments.map(c=>(
-                  <div key={c.id} style={{background:'white',border:'1px solid #e8f4fd',borderRadius:4,padding:'6px 10px'}}>
-                    <div style={{fontSize:12}}>{c.c_comment}</div>
-                    <div style={{fontSize:10,color:'#aaa',marginTop:2}}>{c.c_logged_by} · {fmtDate(c.c_time)}</div>
-                  </div>
-                ))}
+              <div style={{fontSize:12,fontWeight:600,color:'#005A8E',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:8}}>
+                Audit Trail & Comments
+              </div>
+              <div style={{maxHeight:200,overflowY:'auto',display:'flex',flexDirection:'column',gap:4,marginBottom:8}}>
+                {comments.length===0&&<div style={{fontSize:12,color:'#aaa'}}>No activity yet</div>}
+                {comments.map(c=>{
+                  const isSystem = c.c_comment?.startsWith('Status changed') || 
+                    c.c_comment?.startsWith('Load offloaded') ||
+                    c.c_comment?.startsWith('KM anomaly') ||
+                    c.c_comment?.startsWith('Cost added');
+                  return (
+                    <div key={c.id} style={{
+                      background: isSystem?'#f0f7ff':'white',
+                      border:`1px solid ${isSystem?'#bfdbfe':'#e8f4fd'}`,
+                      borderLeft:`3px solid ${isSystem?'#3b82f6':'#00AEEF'}`,
+                      borderRadius:4,padding:'6px 10px'
+                    }}>
+                      <div style={{fontSize:12,color: isSystem?'#1e40af':'#333'}}>{c.c_comment}</div>
+                      <div style={{fontSize:10,color:'#aaa',marginTop:2,display:'flex',gap:8}}>
+                        <span>👤 {c.c_logged_by}</span>
+                        <span>🕐 {fmtDate(c.c_time)}</span>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
               <div style={{display:'flex',gap:6}}>
                 <input value={newComment} onChange={e=>setNewComment(e.target.value)}
@@ -648,7 +683,11 @@ function ExpandedRow({ load, onRefresh, onCostUpdate }) {
           <AddCostModal
             loadId={load.m_load_no}
             onClose={()=>setShowCostModal(false)}
-            onSaved={()=>{ setShowCostModal(false); loadDetails(); onRefresh(); }}
+            onSaved={(costCode, costAmount)=>{ 
+                    setShowCostModal(false); 
+                    loadDetails(); 
+                    onRefresh(); 
+                  }}
           />
         )}
       </td>
