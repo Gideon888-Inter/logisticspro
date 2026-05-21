@@ -24,20 +24,36 @@ function fmtDate(d) { return d ? new Date(d).toLocaleDateString('en-ZA',{day:'2-
 function fmtR(n) { return (n||n===0) ? 'R '+Number(n).toLocaleString('en-ZA',{minimumFractionDigits:0}) : '—'; }
 
 async function exportAllLoadsCSV(dateFrom, dateTo, status, search) {
-  // Fetch ALL loads matching current filters (no pagination limit)
   const token = localStorage.getItem('lp_token');
   const API = import.meta.env.VITE_API_URL || '';
-  const params = new URLSearchParams({ limit: 99999, page: 1 });
-  if(dateFrom) params.append('date_from', dateFrom);
-  if(dateTo) params.append('date_to', dateTo);
-  if(status) params.append('status', status);
-  if(search) params.append('search', search);
+  
+  // Fetch in batches of 1000 to avoid timeout
+  let allLoads = [];
+  let currentPage = 1;
+  let hasMore = true;
+  const batchSize = 1000;
 
-  const res = await fetch(`${API}/api/loads?${params}`, {
-    headers: { 'Authorization': 'Bearer ' + token }
-  });
-  const json = await res.json();
-  const loads = json.data || [];
+  while (hasMore) {
+    const params = new URLSearchParams({ limit: batchSize, page: currentPage });
+    if(dateFrom) params.append('date_from', dateFrom);
+    if(dateTo) params.append('date_to', dateTo);
+    if(status) params.append('status', status);
+    if(search) params.append('search', search);
+
+    const res = await fetch(`${API}/api/loads?${params}`, {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    const json = await res.json();
+    const batch = json.data || [];
+    allLoads = allLoads.concat(batch);
+    
+    if (batch.length < batchSize) {
+      hasMore = false;
+    } else {
+      currentPage++;
+    }
+  }
+  const loads = allLoads;
 
   const headers = [
     'Load Number','Load Date','Client','Truck','Driver',
@@ -721,7 +737,7 @@ export default function Loads() {
     try { setStats(await api.getLoadStats()); } catch{}
   };
 
-  useEffect(()=>{ fetchLoads(); fetchStats(); },[filters.status, filters.bus_unit, page, dateFrom, dateTo]);
+  useEffect(()=>{ fetchLoads(); fetchStats(); },[filters.status, filters.bus_unit, page, dateFrom, dateTo, filters.search]);
 
 
 
@@ -739,7 +755,10 @@ export default function Loads() {
       </div>
 
       <div className="filter-bar">
-        <input placeholder="Search load no, truck, customer…" value={filters.search} onChange={e=>{setFilters(f=>({...f,search:e.target.value}));setPage(1);}} />
+        <input placeholder="Search load no, truck, customer…" value={filters.search} 
+          onChange={e=>{setFilters(f=>({...f,search:e.target.value}));setPage(1);}}
+          onKeyDown={e=>{ if(e.key==='Enter') fetchLoads(); }}
+        />
         <select value={filters.status} onChange={e=>{setFilters(f=>({...f,status:e.target.value}));setPage(1);}}>
           <option value="">All statuses</option>
           {ALL_STATUSES.map(s=><option key={s} value={s}>{s.replace(/_/g,' ')}</option>)}
@@ -749,7 +768,10 @@ export default function Loads() {
         <input type="date" value={dateTo} onChange={e=>{setDateTo(e.target.value);setPage(1);}}
           style={{padding:'7px 10px',fontSize:13,border:'1px solid #ddd',borderRadius:4}} />
         <button className="btn btn-sm" onClick={()=>{setDateFrom('');setDateTo('');setPage(1);}}>All dates</button>
-        <button className="btn btn-sm" onClick={()=>exportAllLoadsCSV(dateFrom, dateTo, filters.status, filters.search)}>⬇ Export CSV</button>
+        <button className="btn btn-sm" onClick={()=>{
+          if(window.confirm(`Export all loads${dateFrom?` from ${dateFrom}`:''}${dateTo?` to ${dateTo}`:''}? This may take a moment for large datasets.`))
+            exportAllLoadsCSV(dateFrom, dateTo, filters.status, filters.search);
+        }}>⬇ Export CSV</button>
         <button className="btn btn-primary btn-sm" onClick={()=>setShowModal(true)}>+ New Load</button>
       </div>
 
