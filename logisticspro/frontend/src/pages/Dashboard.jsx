@@ -124,15 +124,18 @@ export default function Dashboard() {
   if (loading) return <div className="loading" style={{paddingTop:40}}>Loading dashboard…</div>;
 
   // ── Calculations ──────────────────────────────────────────
-  const totalRevenue = loads.reduce((s,l) => s+Number(l.m_rate||0), 0);
-  const totalLoads = loads.length;
-  const enRoute = loads.filter(l=>l.m_status==='EN_ROUTE').length;
-  const notBilled = loads.filter(l=>!['LOAD_INVOICED','DELETED'].includes(l.m_status)).length;
+  const activeLoads = loads.filter(l=>l.m_status!=='DELETED');
+  const totalRevenue = activeLoads.reduce((s,l) => s+Number(l.m_rate||0), 0);
+  const billedRevenue = activeLoads.filter(l=>l.m_status==='LOAD_INVOICED').reduce((s,l) => s+Number(l.m_rate||0), 0);
+  const unbilledRevenue = totalRevenue - billedRevenue;
+  const totalLoads = activeLoads.length;
+  const enRoute = activeLoads.filter(l=>l.m_status==='EN_ROUTE').length;
+  const notBilled = activeLoads.filter(l=>!['LOAD_INVOICED','DELETED'].includes(l.m_status)).length;
 
   // Revenue by operator region
   const operators = users.filter(u => u.u_role==='OPERATOR' || u.u_role==='MANAGER');
   const revenueByRegion = operators.map(op => {
-    const opLoads = loads.filter(l => l.m_responsible_operator === op.u_username || l.m_operator === op.u_username);
+    const opLoads = activeLoads.filter(l => l.m_responsible_operator === op.u_username || l.m_operator === op.u_username);
     return {
       label: op.u_region || op.u_name || op.u_username,
       value: opLoads.reduce((s,l) => s+Number(l.m_rate||0), 0),
@@ -142,7 +145,7 @@ export default function Dashboard() {
 
   // Top clients by revenue
   const clientMap = {};
-  loads.forEach(l => {
+  activeLoads.forEach(l => {
     const key = l.lp_customers?.c_name || l.m_customer || 'Unknown';
     if (!clientMap[key]) clientMap[key] = 0;
     clientMap[key] += Number(l.m_rate||0);
@@ -153,7 +156,7 @@ export default function Dashboard() {
 
   // Top drivers by load count
   const driverMap = {};
-  loads.forEach(l => {
+  activeLoads.forEach(l => {
     const key = l.m_driver_id || 'Unassigned';
     driverMap[key] = (driverMap[key]||0) + 1;
   });
@@ -163,7 +166,7 @@ export default function Dashboard() {
 
   // Top routes by load count
   const routeMap = {};
-  loads.forEach(l => {
+  activeLoads.forEach(l => {
     if (l.m_from && l.m_to) {
       const key = `${l.m_from} → ${l.m_to}`;
       routeMap[key] = (routeMap[key]||0) + 1;
@@ -189,7 +192,7 @@ export default function Dashboard() {
   };
 
   const regionMap = {};
-  loads.forEach(l => {
+  activeLoads.forEach(l => {
     const op = l.m_responsible_operator || l.m_operator || '';
     const region = getRegion(op);
     regionMap[region] = (regionMap[region] || 0) + 1;
@@ -204,7 +207,7 @@ export default function Dashboard() {
 
   // Status breakdown
   const statusMap = {};
-  loads.forEach(l => { statusMap[l.m_status] = (statusMap[l.m_status]||0)+1; });
+  activeLoads.forEach(l => { statusMap[l.m_status] = (statusMap[l.m_status]||0)+1; });
 
   const card = (label, value, color='#00AEEF', sub='') => (
     <div className="stat-card" style={{borderTop:`3px solid ${color}`}}>
@@ -226,9 +229,11 @@ export default function Dashboard() {
       {/* Top stats */}
       <div className="stats-grid">
         {card('Total Loads', totalLoads, '#00AEEF', 'This month')}
-        {card('Total Revenue', fmtR(totalRevenue), '#005A8E', 'Rate value')}
+        {card('Total Revenue', fmtR(totalRevenue), '#005A8E', 'All loads this month')}
+        {card('Invoiced Revenue', fmtR(billedRevenue), '#059669', 'Billed to clients')}
+        {card('Unbilled Revenue', fmtR(unbilledRevenue), '#f59e0b', 'Not yet invoiced')}
         {card('En Route', enRoute, '#3b82f6', 'Currently active')}
-        {card('Not Yet Billed', notBilled, '#f59e0b', 'Requires attention')}
+        {card('Not Yet Billed', notBilled, '#d97706', 'Loads pending billing')}
       </div>
 
       {/* Revenue by region */}
