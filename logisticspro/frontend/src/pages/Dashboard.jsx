@@ -173,21 +173,34 @@ export default function Dashboard() {
     .map(([label, value]) => ({label, value}))
     .sort((a,b) => b.value-a.value).slice(0,5);
 
-  // Operator pie chart data
-  const pieData = operators.map(op => ({
-    label: op.u_region || op.u_name || op.u_username,
-    value: loads.filter(l => l.m_responsible_operator===op.u_username || l.m_operator===op.u_username).length,
-  })).filter(d => d.value > 0);
+  // Region pie chart - based on operator name mapping
+  // Lance = Cape Town, Sharon = Johannesburg
+  // Also use u_region from users table if available
+  const getRegion = (operatorName) => {
+    if (!operatorName) return 'Unknown';
+    const name = operatorName.toLowerCase();
+    // Check users table first
+    const user = users.find(u => u.u_username?.toLowerCase() === name || u.u_name?.toLowerCase().includes(operatorName.toLowerCase()));
+    if (user?.u_region) return user.u_region;
+    // Fallback name mapping
+    if (name.includes('lance')) return 'Cape Town';
+    if (name.includes('sharon')) return 'Johannesburg';
+    return 'Other';
+  };
 
-  // If no operator data, show by origin region
-  const jhbLoads = loads.filter(l => l.m_from?.toLowerCase().includes('johannesburg')||l.m_from?.toLowerCase().includes('joburg')||l.m_from?.toLowerCase().includes('jhb')).length;
-  const ctLoads = loads.filter(l => l.m_from?.toLowerCase().includes('cape town')||l.m_from?.toLowerCase().includes('cape')).length;
-  const otherLoads = totalLoads - jhbLoads - ctLoads;
-  const originPie = [
-    ...(jhbLoads > 0 ? [{label:'Johannesburg', value:jhbLoads}] : []),
-    ...(ctLoads > 0 ? [{label:'Cape Town', value:ctLoads}] : []),
-    ...(otherLoads > 0 ? [{label:'Other', value:otherLoads}] : []),
-  ];
+  const regionMap = {};
+  loads.forEach(l => {
+    const op = l.m_responsible_operator || l.m_operator || '';
+    const region = getRegion(op);
+    regionMap[region] = (regionMap[region] || 0) + 1;
+  });
+
+  const pieData = Object.entries(regionMap)
+    .map(([label, value]) => ({ label, value }))
+    .filter(d => d.value > 0)
+    .sort((a,b) => b.value - a.value);
+
+  const originPie = pieData; // Same data, kept for fallback reference
 
   // Status breakdown
   const statusMap = {};
@@ -237,9 +250,9 @@ export default function Dashboard() {
         {/* Operator / Region pie */}
         <div style={{background:'white', borderRadius:8, padding:20, boxShadow:'0 2px 12px rgba(0,0,0,0.08)'}}>
           <div style={{fontWeight:600, fontSize:14, color:'#005A8E', marginBottom:16}}>
-            {pieData.length > 0 ? 'Loads by Operator Region' : 'Loads by Origin City'}
+            Loads by Region
           </div>
-          <PieChart data={pieData.length > 0 ? pieData : originPie} />
+          <PieChart data={pieData.length > 0 ? pieData : []} />
         </div>
 
         {/* Status breakdown */}
