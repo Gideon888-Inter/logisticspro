@@ -74,6 +74,9 @@ export default function Login() {
     <div style={{
       minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center',
       background:'linear-gradient(135deg, #005A8E 0%, #00AEEF 100%)',
+      backgroundImage:'url("https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?w=1600&q=80")',
+      backgroundSize:'cover', backgroundPosition:'center',
+      backgroundBlendMode:'overlay',
     }}>
       <div style={{
         background:'white', borderRadius:12, padding:'40px 36px', width:400,
