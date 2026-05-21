@@ -13,22 +13,47 @@ function fmtDate(d) { return d ? new Date(d).toLocaleDateString('en-ZA',{day:'2-
 export default function Approvals({ onNavigateToLoad }) {
   const { user } = useAuth();
   const [anomalies, setAnomalies] = useState([]);
+  const [costDeletions, setCostDeletions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
   const [rejectionReason, setRejectionReason] = useState('');
   const [saving, setSaving] = useState(false);
   const [filter, setFilter] = useState('PENDING');
+  const [tab, setTab] = useState('km');
 
   const load = async () => {
     setLoading(true);
     try {
-      const data = await req(`/km/anomalies${filter ? '?status='+filter : ''}`);
-      setAnomalies(Array.isArray(data) ? data : []);
+      const [kmData, costData] = await Promise.all([
+        req(`/km/anomalies${filter ? '?status='+filter : ''}`),
+        req('/costs/pending-deletions'),
+      ]);
+      setAnomalies(Array.isArray(kmData) ? kmData : []);
+      setCostDeletions(Array.isArray(costData) ? costData : []);
     } catch(e){ console.error(e); }
     finally { setLoading(false); }
   };
 
   useEffect(() => { load(); }, [filter]);
+
+  const approveCostDeletion = async (id) => {
+    setSaving(true);
+    try {
+      await req(`/costs/${id}/approve-delete`, { method:'PATCH', body: JSON.stringify({ action:'approve' }) });
+      load();
+    } catch(e){ alert(e.message); }
+    finally { setSaving(false); }
+  };
+
+  const rejectCostDeletion = async (id) => {
+    if (!rejectionReason.trim()) return alert('Please enter a rejection reason');
+    setSaving(true);
+    try {
+      await req(`/costs/${id}/approve-delete`, { method:'PATCH', body: JSON.stringify({ action:'reject', rejection_reason: rejectionReason }) });
+      setSelected(null); setRejectionReason(''); load();
+    } catch(e){ alert(e.message); }
+    finally { setSaving(false); }
+  };
 
   const approve = async (id) => {
     setSaving(true);
@@ -57,10 +82,76 @@ export default function Approvals({ onNavigateToLoad }) {
   return (
     <div>
       <div className="stats-grid">
-        <div className="stat-card"><div className="stat-label">Pending</div><div className="stat-value" style={{color:'#d97706'}}>{anomalies.filter(a=>a.a_status==='PENDING').length}</div></div>
-        <div className="stat-card"><div className="stat-label">Approved today</div><div className="stat-value" style={{color:'#059669'}}>{anomalies.filter(a=>a.a_status==='APPROVED').length}</div></div>
-        <div className="stat-card"><div className="stat-label">Rejected</div><div className="stat-value" style={{color:'#e53e3e'}}>{anomalies.filter(a=>a.a_status==='REJECTED').length}</div></div>
+        <div className="stat-card"><div className="stat-label">KM Anomalies Pending</div><div className="stat-value" style={{color:'#d97706'}}>{anomalies.filter(a=>a.a_status==='PENDING').length}</div></div>
+        <div className="stat-card"><div className="stat-label">Cost Deletions Pending</div><div className="stat-value" style={{color:'#e53e3e'}}>{costDeletions.length}</div></div>
+        <div className="stat-card"><div className="stat-label">KM Approved</div><div className="stat-value" style={{color:'#059669'}}>{anomalies.filter(a=>a.a_status==='APPROVED').length}</div></div>
+        <div className="stat-card"><div className="stat-label">KM Rejected</div><div className="stat-value" style={{color:'#e53e3e'}}>{anomalies.filter(a=>a.a_status==='REJECTED').length}</div></div>
       </div>
+
+      {/* Tabs */}
+      <div style={{display:'flex',gap:0,marginBottom:16,borderBottom:'2px solid #e5e7eb'}}>
+        {[['km','KM Anomalies'],['costs','Cost Deletions']].map(([key,label])=>(
+          <button key={key} onClick={()=>setTab(key)} style={{
+            padding:'10px 24px',border:'none',cursor:'pointer',fontSize:13,fontWeight:600,
+            background:'none',borderBottom: tab===key?'2px solid #00AEEF':'2px solid transparent',
+            color: tab===key?'#00AEEF':'#888', marginBottom:'-2px',
+          }}>{label}{key==='costs'&&costDeletions.length>0&&<span style={{marginLeft:6,background:'#e53e3e',color:'white',borderRadius:10,padding:'1px 6px',fontSize:11}}>{costDeletions.length}</span>}</button>
+        ))}
+      </div>
+
+      {/* Cost Deletions Tab */}
+      {tab==='costs' && (
+        <div className="table-wrap">
+          <table>
+            <thead><tr>
+              <th>Load No</th><th>Cost Type</th><th>Description</th><th>Amount</th>
+              <th>Requested By</th><th>Reason</th><th></th>
+            </tr></thead>
+            <tbody>
+              {loading && <tr><td colSpan={7}><div className="loading">Loading…</div></td></tr>}
+              {!loading && costDeletions.length===0 && <tr><td colSpan={7}><div className="empty-state">No pending cost deletions</div></td></tr>}
+              {!loading && costDeletions.map(c=>(
+                <>
+                  <tr key={c.c_cost_no}>
+                    <td className="mono" style={{fontWeight:600,color:'#00AEEF'}}>{c.c_load}</td>
+                    <td>{c.c_code}</td>
+                    <td style={{color:'#555'}}>{c.c_description}</td>
+                    <td className="mono" style={{color:'#e53e3e',fontWeight:600}}>R {Number(c.c_amount).toLocaleString('en-ZA',{minimumFractionDigits:2})}</td>
+                    <td>{c.c_delete_requested_by}</td>
+                    <td style={{color:'#555',fontSize:12}}>{c.c_delete_reason}</td>
+                    <td>
+                      <button className="btn btn-sm" onClick={()=>setSelected(selected===c.c_cost_no?null:c.c_cost_no)}>
+                        {selected===c.c_cost_no?'Cancel':'Review'}
+                      </button>
+                    </td>
+                  </tr>
+                  {selected===c.c_cost_no && (
+                    <tr key={'rev-'+c.c_cost_no}>
+                      <td colSpan={7} style={{background:'#fff5f5',padding:'12px 16px',borderBottom:'2px solid #fca5a5'}}>
+                        <div style={{display:'flex',gap:12,alignItems:'flex-end',flexWrap:'wrap'}}>
+                          <div style={{flex:1,minWidth:200}}>
+                            <div style={{fontSize:11,color:'#555',marginBottom:4,textTransform:'uppercase',letterSpacing:'0.06em'}}>Rejection reason</div>
+                            <input value={rejectionReason} onChange={e=>setRejectionReason(e.target.value)}
+                              placeholder="Required to reject…"
+                              style={{width:'100%',padding:'7px 10px',fontSize:13,border:'1px solid #ddd',borderRadius:4,fontFamily:'inherit'}} />
+                          </div>
+                          <button className="btn btn-primary" onClick={()=>approveCostDeletion(c.c_cost_no)} disabled={saving}
+                            style={{background:'#059669',borderColor:'#059669'}}>✓ Approve Deletion</button>
+                          <button className="btn" onClick={()=>rejectCostDeletion(c.c_cost_no)} disabled={saving}
+                            style={{color:'#e53e3e',borderColor:'#fca5a5'}}>✕ Reject</button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* KM Anomalies Tab */}
+      {tab==='km' && (
 
       <div className="filter-bar">
         <select value={filter} onChange={e=>setFilter(e.target.value)}>
@@ -139,6 +230,8 @@ export default function Approvals({ onNavigateToLoad }) {
           </tbody>
         </table>
       </div>
+    </div>
+      )}
     </div>
   );
 }
