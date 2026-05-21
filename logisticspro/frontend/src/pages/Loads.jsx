@@ -462,6 +462,10 @@ function ExpandedRow({ load, onRefresh, onCostUpdate }) {
   const [deleteReason, setDeleteReason] = useState('');
   const [deletingCost, setDeletingCost] = useState(null);
   const [deleteSaving, setDeleteSaving] = useState(false);
+  const [orderNoEdit, setOrderNoEdit] = useState(false);
+  const [orderNoVal, setOrderNoVal] = useState(load.m_order_no||'');
+  const [orderNoSaving, setOrderNoSaving] = useState(false);
+  const [orderNoMsg, setOrderNoMsg] = useState('');
   const [statusVal, setStatusVal] = useState(load.m_status);
   const [showClosingKm, setShowClosingKm] = useState(false);
   const [closingKm, setClosingKm] = useState('');
@@ -550,7 +554,44 @@ function ExpandedRow({ load, onRefresh, onCostUpdate }) {
             {cell('To', load.m_to)}
             {cell('Trailer', load.m_trailer1||'None')}
             {cell('Rate', fmtR(load.m_rate))}
-            {cell('Order No', load.m_order_no)}
+            <div style={{minWidth:180}}>
+              <div style={{fontSize:10,color:'#aaa',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:2}}>Order No</div>
+              {orderNoEdit ? (
+                <div style={{display:'flex',gap:4,alignItems:'center'}}>
+                  <input value={orderNoVal} onChange={e=>setOrderNoVal(e.target.value)}
+                    style={{padding:'3px 6px',fontSize:13,border:'1px solid #00AEEF',borderRadius:3,fontFamily:'inherit',width:120}}
+                    autoFocus onKeyDown={e=>{if(e.key==='Escape'){setOrderNoEdit(false);setOrderNoVal(load.m_order_no||'');}}} />
+                  <button onClick={async()=>{
+                    setOrderNoSaving(true); setOrderNoMsg('');
+                    try {
+                      const res = await req(`/loads/${load.m_load_no}/request-order-no`,{method:'POST',body:JSON.stringify({order_no:orderNoVal})});
+                      setOrderNoEdit(false);
+                      setOrderNoMsg(res.pending ? '⏳ Pending approval' : '✓ Saved');
+                      loadDetails(); onRefresh();
+                    } catch(e){setOrderNoMsg('Error: '+e.message);}
+                    finally{setOrderNoSaving(false);}
+                  }} disabled={orderNoSaving}
+                    style={{background:'#00AEEF',color:'white',border:'none',borderRadius:3,padding:'3px 8px',fontSize:12,cursor:'pointer'}}>
+                    {orderNoSaving?'…':'✓'}
+                  </button>
+                  <button onClick={()=>{setOrderNoEdit(false);setOrderNoVal(load.m_order_no||'');}}
+                    style={{background:'none',border:'1px solid #ddd',borderRadius:3,padding:'3px 6px',fontSize:12,cursor:'pointer'}}>✕</button>
+                </div>
+              ) : (
+                <div style={{display:'flex',alignItems:'center',gap:6}}>
+                  <span style={{fontSize:13,fontWeight:500}}>
+                    {load.m_order_no_pending
+                      ? <><span style={{textDecoration:'line-through',color:'#aaa'}}>{load.m_order_no||'—'}</span> <span style={{color:'#d97706'}}>→ {load.m_order_no_pending} ⏳</span></>
+                      : load.m_order_no||'—'}
+                  </span>
+                  <button onClick={()=>setOrderNoEdit(true)}
+                    style={{background:'none',border:'none',cursor:'pointer',color:'#00AEEF',fontSize:11,padding:'1px 4px'}}>
+                    ✏️
+                  </button>
+                </div>
+              )}
+              {orderNoMsg && <div style={{fontSize:11,color:orderNoMsg.includes('⏳')?'#d97706':'#059669',marginTop:2}}>{orderNoMsg}</div>}
+            </div>
             {cell('Invoice', load.m_invoice)}
             {cell('Unit', load.m_bus_unit)}
             {load.m_loading_address && cell('Loading Address', load.m_loading_address)}
@@ -876,7 +917,7 @@ export default function Loads() {
               <th style={{width:32}}></th>
               <th>Load No</th><th>Date</th><th>Truck</th>
               <th>Customer</th><th>From</th><th>To</th>
-              <th>Rate</th><th>Extra Costs</th><th>Total</th><th>Status</th>
+              <th>Rate</th><th>Extra Costs</th><th>Total</th><th>Order No</th><th>Status</th>
             </tr>
           </thead>
           <tbody>
@@ -903,6 +944,7 @@ export default function Loads() {
                     <td className="mono">{fmtR(l.m_rate)}</td>
                     <td className="mono" style={{color:extra>0?'#e53e3e':'#aaa'}}>{extra>0?fmtR(extra):'—'}</td>
                     <td className="mono" style={{fontWeight:600,color:'#005A8E'}}>{fmtR(total)}</td>
+                    <td style={{fontSize:12,color:'#555'}}>{l.m_order_no_pending?<span style={{color:'#d97706'}}>⏳</span>:''}{l.m_order_no||'—'}</td>
                     <td><span className={`badge ${STATUS_BADGE[l.m_status]||'badge-gray'}`}>{l.m_status?.replace(/_/g,' ')}</span></td>
                   </tr>
                   {isOpen&&<ExpandedRow key={'exp-'+l.m_load_no} load={l} onRefresh={fetchLoads}
