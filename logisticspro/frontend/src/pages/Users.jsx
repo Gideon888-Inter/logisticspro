@@ -70,6 +70,9 @@ export default function Users() {
           <option value="MANAGER">Manager</option>
           <option value="OPERATIONS">Operations</option>
           <option value="OPERATOR">Operator</option>
+          <option value="TRACKING">Tracking</option>
+          <option value="ACCOUNTING">Accounting</option>
+          <option value="WORKSHOP">Workshop</option>
           <option value="READONLY">Read Only</option>
         </select>
         <select value={activeFilter} onChange={e=>setActiveFilter(e.target.value)}>
@@ -124,6 +127,9 @@ export default function Users() {
                     <option value="MANAGER">Manager</option>
                     <option value="OPERATIONS">Operations</option>
                     <option value="OPERATOR">Operator</option>
+                    <option value="TRACKING">Tracking</option>
+                    <option value="ACCOUNTING">Accounting</option>
+                    <option value="WORKSHOP">Workshop</option>
                     <option value="READONLY">Read Only</option>
                   </select>
                 </div>
