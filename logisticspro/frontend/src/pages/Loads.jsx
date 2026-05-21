@@ -612,8 +612,8 @@ export default function Loads() {
       const params = { page, limit: LIMIT };
       if(filters.status) params.status=filters.status;
       if(filters.bus_unit) params.bus_unit=filters.bus_unit;
-      if(dateFrom) params.from=dateFrom;
-      if(dateTo) params.to=dateTo;
+      if(dateFrom) params.date_from=dateFrom;
+      if(dateTo) params.date_to=dateTo;
       const res = await api.getLoads(params);
       const data = res.data||[];
       setLoads(data);
