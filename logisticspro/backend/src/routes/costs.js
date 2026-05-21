@@ -43,6 +43,17 @@ router.post('/', async (req, res) => {
     .insert([payload])
     .select().single();
   if (error) return res.status(400).json({ error: error.message });
+
+  // Add audit trail comment
+  if (req.body.c_load) {
+    const amount = Number(req.body.c_amount||0).toLocaleString('en-ZA', {minimumFractionDigits:2});
+    await supabase.from('lp_comments').insert([{
+      c_load: req.body.c_load,
+      c_comment: `Cost added: ${req.body.c_code} — R ${amount} (${req.body.c_description || req.body.c_code})`,
+      c_logged_by: req.user.username,
+    }]);
+  }
+
   res.status(201).json(data);
 });
 
