@@ -40,7 +40,8 @@ const LogoutIcon = () => (
 );
 
 const MENU = [
-  { key: 'movement',   label: 'Movement',       icon: '🚛' },
+  { key: '',           label: 'Home',            icon: '🏠' },
+  { key: 'movement',   label: 'Loads',           icon: '🚛' },
   { key: 'workshop',   label: 'Workshop',        icon: '🔧',
     sub: [
       { key: 'workshop-jobcards',    label: 'Job Cards' },
@@ -64,14 +65,7 @@ const MENU = [
   },
   { key: 'clients',    label: 'Clients',           icon: '🏢' },
   { key: 'users',      label: 'Users',              icon: '👥' },
-  { key: 'bulk',       label: 'Bulk Messaging',    icon: '📢' },
   { key: 'schedule',   label: 'Report Schedule',   icon: '📅' },
-  { key: 'search',     label: 'Search',             icon: '🔍',
-    sub: [
-      { key: 'search-loads',    label: 'Search Loads' },
-      { key: 'search-vehicles', label: 'Search Vehicles' },
-    ]
-  },
 ];
 
 const PAGE_TITLES = {
@@ -81,7 +75,7 @@ const PAGE_TITLES = {
   clients: 'Clients', 'workshop-jobcards': 'Job Cards',
   'workshop-maintenance': 'Maintenance', 'workshop-inventory': 'Inventory',
   approvals: 'Approvals', 'rates-list': 'Client Rates', 'rates-routes': 'Routes',
-  users: 'Users', bulk: 'Bulk Messaging', schedule: 'Report Schedule',
+  users: 'Users', schedule: 'Report Schedule',
 
 };
 
@@ -107,7 +101,6 @@ function PageContent({ page }) {
     );
   }
 }
-
 
 export default function App() {
   const { user, logout } = useAuth();
@@ -185,7 +178,39 @@ export default function App() {
         </button>
         <img src={LOGO} alt="Interland Distribution" style={{height:36}} />
         <span style={{flex:1}} />
-        <div style={{display:'flex', alignItems:'center', gap:8}}>
+        <div style={{display:'flex', alignItems:'center', gap:8, position:'relative'}}>
+          <button onClick={() => { setShowNotifications(!showNotifications); if(!showNotifications) markAllRead(); }}
+            style={{background:'none',border:'none',cursor:'pointer',position:'relative',padding:'4px 6px',display:'flex',alignItems:'center'}}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="1.8">
+              <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/>
+            </svg>
+            {unreadCount > 0 && (
+              <span style={{position:'absolute',top:0,right:0,background:'#e53e3e',color:'white',borderRadius:'50%',width:16,height:16,fontSize:10,fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center'}}>
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
+          </button>
+          {showNotifications && (
+            <div style={{position:'absolute',top:36,right:0,width:360,background:'white',borderRadius:8,boxShadow:'0 8px 32px rgba(0,0,0,0.15)',border:'1px solid #e5e7eb',zIndex:200}}>
+              <div style={{padding:'12px 16px',borderBottom:'1px solid #f0f0f0',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <div style={{fontWeight:600,fontSize:14}}>Notifications</div>
+                <button onClick={()=>setShowNotifications(false)} style={{background:'none',border:'none',cursor:'pointer',color:'#888',fontSize:16}}>✕</button>
+              </div>
+              <div style={{maxHeight:320,overflowY:'auto'}}>
+                {notifications.length === 0 && <div style={{padding:'24px',textAlign:'center',color:'#aaa',fontSize:13}}>No notifications</div>}
+                {notifications.map(n => (
+                  <div key={n.id} onClick={() => { if(n.n_load_no){ navigate('movement'); setShowNotifications(false); } }}
+                    style={{padding:'12px 16px',borderBottom:'1px solid #f9f9f9',cursor:n.n_load_no?'pointer':'default',
+                      background: n.n_read==='N'?'#fef9e7':'white',
+                      borderLeft: n.n_read==='N'?'3px solid #f59e0b':'3px solid transparent'}}>
+                    <div style={{fontWeight:600,fontSize:13,color:n.n_type?.includes('REJECTED')?'#e53e3e':n.n_type?.includes('APPROVED')?'#059669':'#d97706'}}>{n.n_title}</div>
+                    <div style={{fontSize:12,color:'#555',marginTop:2}}>{n.n_message}</div>
+                    <div style={{fontSize:11,color:'#aaa',marginTop:4}}>{new Date(n.created_at).toLocaleString('en-ZA')}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <span style={{fontSize:12, color:'#888'}}>{user.name || user.username}</span>
           <div className="topbar-avatar">{initials}</div>
         </div>
