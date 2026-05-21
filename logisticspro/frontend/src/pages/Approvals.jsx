@@ -14,6 +14,7 @@ export default function Approvals({ onNavigateToLoad }) {
   const { user } = useAuth();
   const [anomalies, setAnomalies] = useState([]);
   const [costDeletions, setCostDeletions] = useState([]);
+  const [orderNos, setOrderNos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
   const [rejectionReason, setRejectionReason] = useState('');
@@ -35,6 +36,16 @@ export default function Approvals({ onNavigateToLoad }) {
   };
 
   useEffect(() => { load(); }, [filter]);
+
+  const approveOrderNo = async (loadNo, action) => {
+    if (action === 'reject' && !rejectionReason.trim()) return alert('Please enter a rejection reason');
+    setSaving(true);
+    try {
+      await req(`/loads/${loadNo}/approve-order-no`, { method:'PATCH', body: JSON.stringify({ action, rejection_reason: rejectionReason }) });
+      setSelected(null); setRejectionReason(''); load();
+    } catch(e){ alert(e.message); }
+    finally { setSaving(false); }
+  };
 
   const approveCostDeletion = async (id) => {
     setSaving(true);
@@ -86,11 +97,12 @@ export default function Approvals({ onNavigateToLoad }) {
         <div className="stat-card"><div className="stat-label">Cost Deletions Pending</div><div className="stat-value" style={{color:'#e53e3e'}}>{costDeletions.length}</div></div>
         <div className="stat-card"><div className="stat-label">KM Approved</div><div className="stat-value" style={{color:'#059669'}}>{anomalies.filter(a=>a.a_status==='APPROVED').length}</div></div>
         <div className="stat-card"><div className="stat-label">KM Rejected</div><div className="stat-value" style={{color:'#e53e3e'}}>{anomalies.filter(a=>a.a_status==='REJECTED').length}</div></div>
+        <div className="stat-card"><div className="stat-label">Order No Pending</div><div className="stat-value" style={{color:'#d97706'}}>{orderNos.length}</div></div>
       </div>
 
       {/* Tabs */}
       <div style={{display:'flex',gap:0,marginBottom:16,borderBottom:'2px solid #e5e7eb'}}>
-        {[['km','KM Anomalies'],['costs','Cost Deletions']].map(([key,label])=>(
+        {[['km','KM Anomalies'],['costs','Cost Deletions'],['ordernos','Order Numbers']].map(([key,label])=>(
           <button key={key} onClick={()=>setTab(key)} style={{
             padding:'10px 24px',border:'none',cursor:'pointer',fontSize:13,fontWeight:600,
             background:'none',borderBottom: tab===key?'2px solid #00AEEF':'2px solid transparent',
@@ -138,6 +150,58 @@ export default function Approvals({ onNavigateToLoad }) {
                           <button className="btn btn-primary" onClick={()=>approveCostDeletion(c.c_cost_no)} disabled={saving}
                             style={{background:'#059669',borderColor:'#059669'}}>✓ Approve Deletion</button>
                           <button className="btn" onClick={()=>rejectCostDeletion(c.c_cost_no)} disabled={saving}
+                            style={{color:'#e53e3e',borderColor:'#fca5a5'}}>✕ Reject</button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Order Number Changes Tab */}
+      {tab==='ordernos' && (
+        <div className="table-wrap">
+          <table>
+            <thead><tr>
+              <th>Load No</th><th>Date</th><th>Customer</th><th>Truck</th>
+              <th>Current Order No</th><th>Requested Change</th><th>Requested By</th><th></th>
+            </tr></thead>
+            <tbody>
+              {loading && <tr><td colSpan={8}><div className="loading">Loading…</div></td></tr>}
+              {!loading && orderNos.length===0 && <tr><td colSpan={8}><div className="empty-state">No pending order number changes</div></td></tr>}
+              {!loading && orderNos.map(o=>(
+                <>
+                  <tr key={o.m_load_no}>
+                    <td className="mono" style={{fontWeight:600,color:'#00AEEF'}}>{o.m_load_no}</td>
+                    <td>{o.m_date}</td>
+                    <td>{o.m_customer}</td>
+                    <td className="mono">{o.m_truck}</td>
+                    <td style={{color:'#555'}}>{o.m_order_no||'—'}</td>
+                    <td style={{fontWeight:600,color:'#d97706'}}>{o.m_order_no_pending}</td>
+                    <td>{o.m_order_no_requested_by}</td>
+                    <td>
+                      <button className="btn btn-sm" onClick={()=>setSelected(selected===o.m_load_no?null:o.m_load_no)}>
+                        {selected===o.m_load_no?'Cancel':'Review'}
+                      </button>
+                    </td>
+                  </tr>
+                  {selected===o.m_load_no && (
+                    <tr key={'rev-'+o.m_load_no}>
+                      <td colSpan={8} style={{background:'#fef9e7',padding:'12px 16px',borderBottom:'2px solid #f59e0b'}}>
+                        <div style={{display:'flex',gap:12,alignItems:'flex-end',flexWrap:'wrap'}}>
+                          <div style={{flex:1,minWidth:200}}>
+                            <div style={{fontSize:11,color:'#555',marginBottom:4,textTransform:'uppercase',letterSpacing:'0.06em'}}>Rejection reason</div>
+                            <input value={rejectionReason} onChange={e=>setRejectionReason(e.target.value)}
+                              placeholder="Required to reject…"
+                              style={{width:'100%',padding:'7px 10px',fontSize:13,border:'1px solid #ddd',borderRadius:4,fontFamily:'inherit'}} />
+                          </div>
+                          <button className="btn btn-primary" onClick={()=>approveOrderNo(o.m_load_no,'approve')} disabled={saving}
+                            style={{background:'#059669',borderColor:'#059669'}}>✓ Approve Change</button>
+                          <button className="btn" onClick={()=>approveOrderNo(o.m_load_no,'reject')} disabled={saving}
                             style={{color:'#e53e3e',borderColor:'#fca5a5'}}>✕ Reject</button>
                         </div>
                       </td>
