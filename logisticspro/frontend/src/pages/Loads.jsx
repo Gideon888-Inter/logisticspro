@@ -1,193 +1,1127 @@
-import { useState } from 'react';
-import { useAuth } from '../lib/AuthContext';
+import React, { useState, useEffect } from 'react';
 import { api } from '../lib/api';
+import { useAuth } from '../lib/AuthContext';
 
-const LOGO = "data:image/jpeg;base64,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";
+const API = import.meta.env.VITE_API_URL || '';
+const MAPS_KEY = 'AIzaSyBezdBaV_ZJFlb2Eyd3DRNzqJSVpxlVjAo';
 
-export default function Login() {
-  const { login } = useAuth();
-  const [mode, setMode] = useState('login'); // 'login' | 'forgot' | 'change'
-  const [form, setForm] = useState({ username:'', password:'' });
-  const [changeForm, setChangeForm] = useState({ current:'', newPass:'', confirm:'' });
-  const [forgotUsername, setForgotUsername] = useState('');
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [tempPassword, setTempPassword] = useState('');
-  const [firstLoginUser, setFirstLoginUser] = useState(null);
+// Load Google Maps script once
+let mapsLoaded = false;
+let mapsLoading = false;
+const mapsCallbacks = [];
+function loadGoogleMaps(cb) {
+  if (mapsLoaded) return cb();
+  mapsCallbacks.push(cb);
+  if (mapsLoading) return;
+  mapsLoading = true;
+  const script = document.createElement('script');
+  script.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_KEY}&libraries=places`;
+  script.async = true;
+  script.onload = () => { mapsLoaded = true; mapsCallbacks.forEach(f=>f()); mapsCallbacks.length=0; };
+  document.head.appendChild(script);
+}
+const token = () => localStorage.getItem('lp_token');
+const req = (path, opts={}) => fetch(API+'/api'+path, {
+  ...opts,
+  headers: {'Content-Type':'application/json','Authorization':'Bearer '+token(),...(opts.headers||{})}
+}).then(r=>r.json());
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    setError(''); setLoading(true);
-    try {
-      const user = await login(form.username, form.password);
-      if (user?.first_login) {
-        setFirstLoginUser(user);
-        setMode('change');
+const STATUS_BADGE = {
+  EN_ROUTE:'badge-blue', OFFLOADED:'badge-green', WAIT_ORDER_NO:'badge-amber',
+  WAIT_APPROVAL:'badge-amber', WAIT_POD_SCAN:'badge-gray', WAIT_INVOICE_NO:'badge-orange',
+  LOAD_INVOICED:'badge-green', WAIT_PROCESSING:'badge-gray', PRELOAD:'badge-gray', REJECTED:'badge-red',
+  PENDING_KM_APPROVAL:'badge-orange', KM_CORRECTION_NEEDED:'badge-red',
+};
+
+const ALL_STATUSES = ['PRELOAD','EN_ROUTE','OFFLOADED','WAIT_ORDER_NO','WAIT_APPROVAL','WAIT_POD_SCAN','WAIT_INVOICE_NO','LOAD_INVOICED','REJECTED','PENDING_KM_APPROVAL','KM_CORRECTION_NEEDED'];
+
+const COST_TYPES = ['Loadshift','Fine','Labour','Extra Stop','Other'];
+
+function fmtDate(d) { return d ? new Date(d).toLocaleDateString('en-ZA',{day:'2-digit',month:'short',year:'numeric'}) : '—'; }
+function fmtR(n) { return (n||n===0) ? 'R '+Number(n).toLocaleString('en-ZA',{minimumFractionDigits:0}) : '—'; }
+
+async function exportAllLoadsCSV(dateFrom, dateTo, status, search) {
+  const token = localStorage.getItem('lp_token');
+  const API = import.meta.env.VITE_API_URL || '';
+const MAPS_KEY = 'AIzaSyBezdBaV_ZJFlb2Eyd3DRNzqJSVpxlVjAo';
+
+// Load Google Maps script once
+let mapsLoaded = false;
+let mapsLoading = false;
+const mapsCallbacks = [];
+function loadGoogleMaps(cb) {
+  if (mapsLoaded) return cb();
+  mapsCallbacks.push(cb);
+  if (mapsLoading) return;
+  mapsLoading = true;
+  const script = document.createElement('script');
+  script.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_KEY}&libraries=places`;
+  script.async = true;
+  script.onload = () => { mapsLoaded = true; mapsCallbacks.forEach(f=>f()); mapsCallbacks.length=0; };
+  document.head.appendChild(script);
+}
+  
+  // Fetch in batches of 1000 to avoid timeout
+  let allLoads = [];
+  let currentPage = 1;
+  let hasMore = true;
+  const batchSize = 1000;
+
+  while (hasMore) {
+    const params = new URLSearchParams({ limit: batchSize, page: currentPage });
+    if(dateFrom) params.append('date_from', dateFrom);
+    if(dateTo) params.append('date_to', dateTo);
+    if(status) params.append('status', status);
+    if(search) params.append('search', search);
+
+    const res = await fetch(`${API}/api/loads?${params}`, {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    const json = await res.json();
+    const batch = json.data || [];
+    allLoads = allLoads.concat(batch);
+    
+    if (batch.length < batchSize) {
+      hasMore = false;
+    } else {
+      currentPage++;
+    }
+  }
+  const loads = allLoads;
+
+  const headers = [
+    'Load Number','Load Date','Client','Truck','Driver',
+    'From','To','Rate','Status','Opening KM','Closing KM',
+    'Trailer 1','Operator','Invoice No','Order No'
+  ];
+
+  const rows = loads.map(l => [
+    l.m_load_no || '',
+    l.m_date || '',
+    l.m_customer || '',
+    l.m_truck || '',
+    l.m_driver_id || '',
+    l.m_from || '',
+    l.m_to || '',
+    l.m_rate || 0,
+    l.m_status || '',
+    l.m_opening_km || 0,
+    l.m_closing_km || 0,
+    l.m_trailer1 || '',
+    l.m_responsible_operator || '',
+    l.m_invoice || '',
+    l.m_order_no || ''
+  ]);
+
+  const csv = [headers, ...rows]
+    .map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(','))
+    .join('\n');
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `loads_export_${dateFrom||'all'}_to_${dateTo||'today'}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ── Map Location Picker ──────────────────────────────────────
+function MapPicker({ label, value, onChange, onClose }) {
+  const mapRef = React.useRef(null);
+  const inputRef = React.useRef(null);
+  const [map, setMap] = React.useState(null);
+  const [marker, setMarker] = React.useState(null);
+  const [address, setAddress] = React.useState(value || '');
+
+  React.useEffect(() => {
+    loadGoogleMaps(() => {
+      const defaultPos = { lat: -26.2041, lng: 28.0473 }; // Johannesburg
+      const m = new window.google.maps.Map(mapRef.current, {
+        center: defaultPos, zoom: 10,
+        mapTypeControl: false, streetViewControl: false,
+      });
+
+      const mk = new window.google.maps.Marker({ map: m, draggable: true });
+
+      // Search box
+      const autocomplete = new window.google.maps.places.Autocomplete(inputRef.current, {
+        componentRestrictions: { country: 'za' },
+      });
+      autocomplete.bindTo('bounds', m);
+      autocomplete.addListener('place_changed', () => {
+        const place = autocomplete.getPlace();
+        if (!place.geometry) return;
+        m.setCenter(place.geometry.location);
+        m.setZoom(15);
+        mk.setPosition(place.geometry.location);
+        setAddress(place.formatted_address || inputRef.current.value);
+      });
+
+      // Click to pin
+      m.addListener('click', (e) => {
+        mk.setPosition(e.latLng);
+        const geocoder = new window.google.maps.Geocoder();
+        geocoder.geocode({ location: e.latLng }, (results, status) => {
+          if (status === 'OK' && results[0]) {
+            setAddress(results[0].formatted_address);
+            if(inputRef.current) inputRef.current.value = results[0].formatted_address;
+          }
+        });
+      });
+
+      // Drag marker
+      mk.addListener('dragend', (e) => {
+        const geocoder = new window.google.maps.Geocoder();
+        geocoder.geocode({ location: e.latLng }, (results, status) => {
+          if (status === 'OK' && results[0]) {
+            setAddress(results[0].formatted_address);
+            if(inputRef.current) inputRef.current.value = results[0].formatted_address;
+          }
+        });
+      });
+
+      // If value already set, geocode it to show on map
+      if (value) {
+        const geocoder = new window.google.maps.Geocoder();
+        geocoder.geocode({ address: value + ', South Africa' }, (results, status) => {
+          if (status === 'OK' && results[0]) {
+            m.setCenter(results[0].geometry.location);
+            m.setZoom(14);
+            mk.setPosition(results[0].geometry.location);
+          }
+        });
       }
-    } catch(err) {
-      setError(err.message || 'Login failed');
-    } finally { setLoading(false); }
+
+      setMap(m);
+      setMarker(mk);
+    });
+  }, []);
+
+  const confirm = () => { onChange(address); onClose(); };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e=>e.stopPropagation()} style={{width:680,maxHeight:'90vh'}}>
+        <div className="modal-header">
+          <h3>📍 Pin {label}</h3>
+          <button onClick={onClose} style={{background:'none',border:'none',color:'white',cursor:'pointer',fontSize:18}}>✕</button>
+        </div>
+        <div className="modal-body" style={{padding:0}}>
+          <div style={{padding:'12px 16px',borderBottom:'1px solid #eee'}}>
+            <input ref={inputRef} defaultValue={value}
+              placeholder="Search for an address…"
+              style={{width:'100%',padding:'8px 12px',fontSize:13,border:'1px solid #ddd',borderRadius:4,fontFamily:'inherit',boxSizing:'border-box'}} />
+          </div>
+          <div ref={mapRef} style={{width:'100%',height:380}} />
+          {address && (
+            <div style={{padding:'10px 16px',background:'#f0fdf4',borderTop:'1px solid #86efac',fontSize:13,color:'#059669'}}>
+              📍 <strong>Selected:</strong> {address}
+            </div>
+          )}
+        </div>
+        <div className="modal-footer">
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={confirm} disabled={!address}>✓ Confirm Location</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── New Load Modal ────────────────────────────────────────────
+function NewLoadModal({ onClose, onCreated }) {
+  const { user } = useAuth();
+  const [vehicles, setVehicles] = useState([]);
+  const [drivers, setDrivers] = useState([]);
+  const [clients, setClients] = useState([]);
+  const [rates, setRates] = useState([]);
+  const [operators, setOperators] = useState([]);
+  const [form, setForm] = useState({
+    m_truck:'', m_driver_id:'', m_customer:'',
+    m_trailer_size:'None', m_trailer1:'',
+    m_from:'', m_to:'', m_rate:0, m_bus_unit: user?.bus_unit||'IDC',
+    m_opening_km:'', m_responsible_operator:'',
+    m_loading_address:'', m_offloading_address:'',
+  });
+  const [saving, setSaving] = useState(false);
+  const [lastClosingKm, setLastClosingKm] = useState(null);
+  const [mapPicker, setMapPicker] = useState(null); // 'loading' or 'offloading'
+  const [kmValidation, setKmValidation] = useState(null);
+
+  useEffect(() => {
+    Promise.all([
+      api.getVehicles({active:'Y'}),
+      api.getDrivers({active:'Y'}),
+      api.getCustomers(),
+      req('/rates/client-rates'),
+      req('/users').catch(()=>[]),
+    ]).then(([v,d,c,r,u]) => {
+      setVehicles(Array.isArray(v)?v:[]);
+      setDrivers(Array.isArray(d)?d:[]);
+      setClients(Array.isArray(c)?c:[]);
+      setRates(Array.isArray(r)?r:[]);
+      setOperators(Array.isArray(u)?u.filter(usr=>usr.u_role==='OPERATOR'||usr.u_role==='MANAGER'):[]);
+    }).catch(console.error);
+  }, []);
+
+  const horses = vehicles.filter(v=>v.vh_type==='Horse');
+  const trailers = vehicles.filter(v=>v.vh_type==='Trailer');
+
+  // Get unique FROM locations for selected client
+  const clientRates = rates.filter(r=>r.rc_client_code===form.m_customer);
+  const fromOptions = [...new Set(clientRates.map(r=>r.rc_from))].sort();
+  const toOptions = [...new Set(clientRates.filter(r=>r.rc_from===form.m_from).map(r=>r.rc_to))].sort();
+
+  const fetchLastKm = async (truck) => {
+    if (!truck) return;
+    try {
+      const res = await req(`/km/last-closing/${encodeURIComponent(truck)}`);
+      setLastClosingKm(res.last_closing_km || 0);
+      setForm(f => ({ ...f, m_opening_km: res.last_closing_km || '' }));
+    } catch(e) { console.error(e); }
   };
 
-  const handleForgot = async (e) => {
-    e.preventDefault();
-    setError(''); setSuccess(''); setLoading(true);
+  const validateOpeningKm = async (truck, opening_km) => {
+    if (!truck || !opening_km) return;
     try {
-      const res = await api.forgotPassword({ username: forgotUsername });
-      if (res.temp_password) {
-        setTempPassword(res.temp_password);
-        setSuccess('Temporary password generated. Please note it below and use it to login.');
-      } else {
-        setSuccess(res.message);
+      const res = await req('/km/validate-opening', {
+        method: 'POST',
+        body: JSON.stringify({ truck, opening_km: Number(opening_km) })
+      });
+      setKmValidation(res);
+    } catch(e) { console.error(e); }
+  };
+
+  const set = (k,v) => {
+    setForm(f => {
+      const next = {...f, [k]:v};
+      // Reset downstream fields
+      if(k==='m_customer') { next.m_from=''; next.m_to=''; next.m_rate=0; }
+      if(k==='m_truck') { fetchLastKm(v); }
+      if(k==='m_from') { next.m_to=''; next.m_rate=0; }
+      if(k==='m_to') {
+        const matched = rates.find(r=>r.rc_client_code===next.m_customer && r.rc_from===next.m_from && r.rc_to===v);
+        if(matched) {
+          const size = next.m_trailer_size;
+          next.m_rate = size==='18m' ? (matched.rc_rate_18m||0) : (matched.rc_rate_15m||matched.rc_rate_18m||0);
+        }
       }
-    } catch(err) {
-      setError(err.message || 'Failed to reset password');
-    } finally { setLoading(false); }
+      if(k==='m_trailer_size') {
+        const matched = rates.find(r=>r.rc_client_code===next.m_customer && r.rc_from===next.m_from && r.rc_to===next.m_to);
+        if(matched) next.m_rate = v==='18m' ? (matched.rc_rate_18m||0) : (matched.rc_rate_15m||matched.rc_rate_18m||0);
+        if(v==='None') next.m_trailer1='';
+      }
+      return next;
+    });
   };
 
-  const handleChangePassword = async (e) => {
-    e.preventDefault();
-    setError(''); setLoading(true);
-    if (changeForm.newPass.length < 8) return setError('New password must be at least 8 characters') || setLoading(false);
-    if (changeForm.newPass !== changeForm.confirm) return setError('Passwords do not match') || setLoading(false);
+  const save = async () => {
+    if(!form.m_truck) return alert('Please select a truck');
+    if(!form.m_customer) return alert('Please select a customer');
+    if(kmValidation && !kmValidation.valid) return alert(kmValidation.error);
+
+    setSaving(true);
     try {
-      await api.changePassword({ current_password: changeForm.current, new_password: changeForm.newPass });
-      setSuccess('Password changed successfully! Redirecting…');
-      setTimeout(() => window.location.reload(), 1500);
-    } catch(err) {
-      setError(err.message || 'Failed to change password');
-    } finally { setLoading(false); }
+      // Determine status based on KM anomaly
+      const status = kmValidation?.anomaly ? 'PENDING_KM_APPROVAL' : 'PRELOAD';
+      const payload = {
+        ...form,
+        m_opening_km: Number(form.m_opening_km) || 0,
+        m_dead_km: kmValidation?.dead_km || 0,
+        m_operator: user?.username,
+        m_status: status
+      };
+      const newLoad = await api.createLoad(payload);
+
+      // If anomaly, create anomaly record and notifications
+      if (kmValidation?.anomaly && newLoad?.m_load_no) {
+        await req('/km/anomalies', {
+          method: 'POST',
+          body: JSON.stringify({
+            a_load_no: newLoad.m_load_no,
+            a_truck: form.m_truck,
+            a_type: 'DEAD_KM',
+            a_description: `Dead KM of ${kmValidation.dead_km.toLocaleString()} km exceeds ${kmValidation.anomaly_threshold} km threshold`,
+            a_dead_km: kmValidation.dead_km,
+            a_last_closing: kmValidation.last_closing_km,
+            a_new_opening: Number(form.m_opening_km),
+            a_operator: user?.username
+          })
+        }).catch(console.error);
+
+        // Create notification for OPERATIONS role
+        await req('/km/notifications', {
+          method: 'POST',
+          body: JSON.stringify({
+            n_role: 'OPERATIONS',
+            n_type: 'KM_ANOMALY',
+            n_title: 'KM Anomaly Requires Approval',
+            n_message: `Load ${newLoad.m_load_no} has a dead KM of ${kmValidation.dead_km.toLocaleString()} km for truck ${form.m_truck}`,
+            n_load_no: newLoad.m_load_no
+          })
+        }).catch(console.error);
+      }
+
+      onCreated();
+    } catch(e){ alert(e.message); }
+    finally{ setSaving(false); }
   };
 
-  const inputStyle = {
-    width:'100%', padding:'12px 14px', fontSize:14, border:'1px solid #ddd',
-    borderRadius:6, fontFamily:'inherit', boxSizing:'border-box', outline:'none',
-  };
-  const btnStyle = {
-    width:'100%', padding:'12px', fontSize:14, fontWeight:600, border:'none',
-    borderRadius:6, background:'#00AEEF', color:'white', cursor:'pointer',
-    marginTop:8, opacity: loading ? 0.7 : 1,
+  const inputStyle = {width:'100%',padding:'8px 10px',fontSize:13,border:'1px solid #ddd',borderRadius:4,fontFamily:'inherit'};
+  const labelStyle = {fontSize:11,color:'#555',textTransform:'uppercase',letterSpacing:'0.06em',fontWeight:500,display:'block',marginBottom:4};
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e=>e.stopPropagation()} style={{width:620}}>
+        <div className="modal-header">
+          <h3>New Load</h3>
+          <button onClick={onClose} style={{background:'none',border:'none',color:'white',cursor:'pointer',fontSize:18}}>✕</button>
+        </div>
+        <div className="modal-body">
+          {/* Row 1: Truck + Driver */}
+          <div className="form-row">
+            <div className="form-group">
+              <label style={labelStyle}>Truck *</label>
+              <select value={form.m_truck} onChange={e=>set('m_truck',e.target.value)} style={inputStyle}>
+                <option value="">— Select truck —</option>
+                {horses.map(v=><option key={v.vh_code} value={v.vh_code}>{v.vh_code} — {v.vh_make} {v.vh_model}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label style={labelStyle}>Driver *</label>
+              <select value={form.m_driver_id} onChange={e=>set('m_driver_id',e.target.value)} style={inputStyle}>
+                <option value="">— Select driver —</option>
+                {drivers.map(d=><option key={d.d_id} value={d.d_nickname}>{d.d_nickname}{d.d_name?' — '+d.d_name:''}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* Row 2: Trailer size + trailer selection */}
+          <div className="form-row">
+            <div className="form-group">
+              <label style={labelStyle}>Trailer Size</label>
+              <select value={form.m_trailer_size} onChange={e=>set('m_trailer_size',e.target.value)} style={inputStyle}>
+                <option value="None">None</option>
+                <option value="15m">15m</option>
+                <option value="18m">18m</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label style={labelStyle}>Trailer {form.m_trailer_size==='None'?'(not required)':'*'}</label>
+              <select value={form.m_trailer1} onChange={e=>set('m_trailer1',e.target.value)} style={inputStyle} disabled={form.m_trailer_size==='None'}>
+                <option value="">— Select trailer —</option>
+                {trailers.map(v=><option key={v.vh_code} value={v.vh_code}>{v.vh_code} — {v.vh_make} {v.vh_model}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* Row 2b: Responsible Operator */}
+          <div className="form-row">
+            <div className="form-group">
+              <label style={labelStyle}>Responsible Operator</label>
+              <select value={form.m_responsible_operator} onChange={e=>set('m_responsible_operator',e.target.value)} style={inputStyle}>
+                <option value="">— Select operator —</option>
+                {operators.map(o=><option key={o.u_id} value={o.u_username}>{o.u_name||o.u_username}{o.u_region?' ('+o.u_region+')':''}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* Row 3: Customer */}
+          <div className="form-row">
+            <div className="form-group">
+              <label style={labelStyle}>Customer *</label>
+              <select value={form.m_customer} onChange={e=>set('m_customer',e.target.value)} style={inputStyle}>
+                <option value="">— Select customer —</option>
+                {clients.map(c=><option key={c.c_code} value={c.c_code}>{c.c_code} — {c.c_name}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label style={labelStyle}>Business Unit</label>
+              <select value={form.m_bus_unit} onChange={e=>set('m_bus_unit',e.target.value)} style={inputStyle}>
+                <option value="IDC">IDC</option><option value="IDM">IDM</option><option value="MOGWASE">Mogwase</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Row 4: From + To (from rate card) */}
+          <div className="form-row">
+            <div className="form-group">
+              <label style={labelStyle}>From {!form.m_customer&&<span style={{color:'#aaa'}}>(select customer first)</span>}</label>
+              <select value={form.m_from} onChange={e=>set('m_from',e.target.value)} style={inputStyle} disabled={!form.m_customer}>
+                <option value="">— Select origin —</option>
+                {fromOptions.map(f=><option key={f} value={f}>{f}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label style={labelStyle}>To {!form.m_from&&<span style={{color:'#aaa'}}>(select origin first)</span>}</label>
+              <select value={form.m_to} onChange={e=>set('m_to',e.target.value)} style={inputStyle} disabled={!form.m_from}>
+                <option value="">— Select destination —</option>
+                {toOptions.map(t=><option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* Rate (auto-populated, read only) */}
+          <div className="form-row">
+            <div className="form-group">
+              <label style={labelStyle}>Rate (auto from rate card)</label>
+              <input value={form.m_rate ? 'R '+Number(form.m_rate).toLocaleString('en-ZA') : '—'} readOnly
+                style={{...inputStyle, background:'#f8f9fa', color: form.m_rate?'#005A8E':'#aaa', fontWeight:600}} />
+            </div>
+          </div>
+
+          {/* Loading & Offloading Addresses */}
+          <div className="form-row">
+            <div className="form-group">
+              <label style={labelStyle}>Loading Address</label>
+              <div style={{display:'flex',gap:6}}>
+                <input value={form.m_loading_address} onChange={e=>set('m_loading_address',e.target.value)}
+                  placeholder="Type or pin on map…" style={{...inputStyle,flex:1}} />
+                <button type="button" onClick={()=>setMapPicker('loading')}
+                  title="Pin on map"
+                  style={{padding:'8px 10px',border:'1px solid #ddd',borderRadius:4,background:'white',cursor:'pointer',fontSize:16}}>
+                  📍
+                </button>
+              </div>
+            </div>
+            <div className="form-group">
+              <label style={labelStyle}>Offloading Address</label>
+              <div style={{display:'flex',gap:6}}>
+                <input value={form.m_offloading_address} onChange={e=>set('m_offloading_address',e.target.value)}
+                  placeholder="Type or pin on map…" style={{...inputStyle,flex:1}} />
+                <button type="button" onClick={()=>setMapPicker('offloading')}
+                  title="Pin on map"
+                  style={{padding:'8px 10px',border:'1px solid #ddd',borderRadius:4,background:'white',cursor:'pointer',fontSize:16}}>
+                  📍
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Opening KM */}
+          <div className="form-row">
+            <div className="form-group">
+              <label style={labelStyle}>
+                Opening KM
+                {lastClosingKm !== null && <span style={{color:'#888',fontWeight:400,textTransform:'none'}}> (last closing: {Number(lastClosingKm).toLocaleString()} km)</span>}
+              </label>
+              <input
+                type="number"
+                value={form.m_opening_km}
+                onChange={e => {
+                  set('m_opening_km', e.target.value);
+                  if (form.m_truck) validateOpeningKm(form.m_truck, e.target.value);
+                }}
+                placeholder={lastClosingKm !== null ? String(lastClosingKm) : 'Enter opening odometer reading'}
+                style={{...inputStyle, borderColor: kmValidation && !kmValidation.valid ? '#e53e3e' : kmValidation?.anomaly ? '#f59e0b' : undefined}}
+              />
+              {kmValidation && !kmValidation.valid && (
+                <div style={{color:'#e53e3e',fontSize:12,marginTop:4}}>⚠ {kmValidation.error}</div>
+              )}
+              {kmValidation?.anomaly && kmValidation.valid && (
+                <div style={{color:'#d97706',fontSize:12,marginTop:4,background:'#fef3c7',padding:'6px 8px',borderRadius:4}}>
+                  ⚠ Dead KM: {Number(kmValidation.dead_km).toLocaleString()} km exceeds {kmValidation.anomaly_threshold} km threshold — this load will require Operations approval
+                </div>
+              )}
+              {kmValidation?.valid && !kmValidation.anomaly && kmValidation.dead_km > 0 && (
+                <div style={{color:'#059669',fontSize:12,marginTop:4}}>✓ Dead KM: {Number(kmValidation.dead_km).toLocaleString()} km</div>
+              )}
+            </div>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={save} disabled={saving}>{saving?'Saving…':'Create Load'}</button>
+        </div>
+      </div>
+      {mapPicker==='loading' && (
+        <MapPicker label="Loading Address" value={form.m_loading_address}
+          onChange={addr=>set('m_loading_address',addr)}
+          onClose={()=>setMapPicker(null)} />
+      )}
+      {mapPicker==='offloading' && (
+        <MapPicker label="Offloading Address" value={form.m_offloading_address}
+          onChange={addr=>set('m_offloading_address',addr)}
+          onClose={()=>setMapPicker(null)} />
+      )}
+    </div>
+  );
+}
+
+// ── Add Cost Modal ────────────────────────────────────────────
+function AddCostModal({ loadId, onClose, onSaved }) {
+  const { user } = useAuth();
+  const [form, setForm] = useState({ c_code:'Loadshift Cost', c_description:'', c_amount:'' });
+  const [saving, setSaving] = useState(false);
+  const set = (k,v) => setForm(f=>({...f,[k]:v}));
+
+  const save = async () => {
+    if(!form.c_amount || isNaN(Number(form.c_amount))) return alert('Please enter a valid amount');
+    if(form.c_code==='Other' && !form.c_description.trim()) return alert('Please enter a reason for Other cost');
+    setSaving(true);
+    try {
+      await req('/costs', { method:'POST', body: JSON.stringify({
+        c_load: loadId,
+        c_code: form.c_code,
+        c_description: form.c_code==='Other' ? form.c_description : form.c_code,
+        c_amount: Number(form.c_amount),
+        c_operator: user?.username,
+      })});
+      onSaved();
+    } catch(e){ alert(e.message); }
+    finally{ setSaving(false); }
   };
 
   return (
-    <div style={{
-      minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center',
-      background:'linear-gradient(135deg, #005A8E 0%, #00AEEF 100%)',
-    }}>
-      <div style={{
-        background:'white', borderRadius:12, padding:'40px 36px', width:400,
-        boxShadow:'0 20px 60px rgba(0,0,0,0.3)',
-      }}>
-        {/* Logo */}
-        <div style={{textAlign:'center', marginBottom:28}}>
-          <img src={LOGO} alt="Interland Distribution" style={{height:60, marginBottom:12}} />
-          <div style={{fontSize:11, color:'#aaa', letterSpacing:'0.1em', textTransform:'uppercase'}}>
-            Transport Management System
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e=>e.stopPropagation()} style={{width:420}}>
+        <div className="modal-header">
+          <h3>Add Cost — {loadId}</h3>
+          <button onClick={onClose} style={{background:'none',border:'none',color:'white',cursor:'pointer',fontSize:18}}>✕</button>
+        </div>
+        <div className="modal-body">
+          <div className="form-group">
+            <label>Cost Type *</label>
+            <select value={form.c_code} onChange={e=>set('c_code',e.target.value)}
+              style={{width:'100%',padding:'8px 10px',fontSize:13,border:'1px solid #ddd',borderRadius:4,fontFamily:'inherit'}}>
+              {COST_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+          {form.c_code==='Other' && (
+            <div className="form-group">
+              <label>Reason *</label>
+              <input value={form.c_description} onChange={e=>set('c_description',e.target.value)}
+                placeholder="Describe the cost reason…"
+                style={{width:'100%',padding:'8px 10px',fontSize:13,border:'1px solid #ddd',borderRadius:4,fontFamily:'inherit'}} />
+            </div>
+          )}
+          <div className="form-group">
+            <label>Amount (R) *</label>
+            <input type="number" value={form.c_amount} onChange={e=>set('c_amount',e.target.value)}
+              placeholder="0.00"
+              style={{width:'100%',padding:'8px 10px',fontSize:13,border:'1px solid #ddd',borderRadius:4,fontFamily:'inherit'}} />
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={save} disabled={saving}>{saving?'Saving…':'Add Cost'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Expanded Load Row ─────────────────────────────────────────
+function ExpandedRow({ load, onRefresh, onCostUpdate }) {
+  const { user } = useAuth();
+  const [comments, setComments] = useState([]);
+  const [costs, setCosts] = useState([]);
+  const [newComment, setNewComment] = useState('');
+  const [showCostModal, setShowCostModal] = useState(false);
+  const [deleteReason, setDeleteReason] = useState('');
+  const [deletingCost, setDeletingCost] = useState(null);
+  const [deleteSaving, setDeleteSaving] = useState(false);
+  const [orderNoEdit, setOrderNoEdit] = useState(false);
+  const [orderNoVal, setOrderNoVal] = useState(load.m_order_no||'');
+  const [orderNoSaving, setOrderNoSaving] = useState(false);
+  const [orderNoMsg, setOrderNoMsg] = useState('');
+  const [statusVal, setStatusVal] = useState(load.m_status);
+  const [showClosingKm, setShowClosingKm] = useState(false);
+  const [closingKm, setClosingKm] = useState('');
+  const [kmError, setKmError] = useState('');
+  const [kmSaving, setKmSaving] = useState(false);
+  const [kmMaxAllowed, setKmMaxAllowed] = useState(0);
+
+  const loadDetails = async () => {
+    try {
+      const [c, co] = await Promise.all([
+        api.getComments(load.m_load_no),
+        req(`/costs?load=${encodeURIComponent(load.m_load_no)}`).catch(()=>[]),
+      ]);
+      setComments(Array.isArray(c)?c:[]);
+      const costsArr = Array.isArray(co) ? co : [];
+      setCosts(costsArr);
+      // Push total up to parent table immediately
+      const extraTotal = costsArr.reduce((s,c) => s + Number(c.c_amount||0), 0);
+      if (onCostUpdate) onCostUpdate(load.m_load_no, extraTotal);
+    } catch(e){console.error(e);}
+  };
+  useEffect(()=>{ loadDetails(); },[load.m_load_no]);
+
+  const sendComment = async () => {
+    if(!newComment.trim()) return;
+    try { await api.addComment(load.m_load_no, newComment); setNewComment(''); loadDetails(); } catch(e){alert(e.message);}
+  };
+
+  // Fetch route KM for max allowed calculation
+  useEffect(() => {
+    if (load.m_from && load.m_to && load.m_customer) {
+      req(`/rates/client-rates?client_code=${load.m_customer}`)
+        .then(rates => {
+          const match = rates.find(r => r.rc_from === load.m_from && r.rc_to === load.m_to);
+          if (match?.rc_kms) setKmMaxAllowed(Number(load.m_opening_km||0) + match.rc_kms + 500);
+        }).catch(()=>{});
+    }
+  }, []);
+
+  const saveClosingKm = async () => {
+    const opening = Number(load.m_opening_km || 0);
+    const closing = Number(closingKm);
+    if (!closingKm) return setKmError('Please enter the closing odometer reading');
+    if (closing < opening) return setKmError(`Cannot be less than opening KM (${opening.toLocaleString()})`);
+    if (kmMaxAllowed > 0 && closing > kmMaxAllowed) return setKmError(`Cannot exceed ${kmMaxAllowed.toLocaleString()} km (opening + route + 500 km tolerance)`);
+    setKmSaving(true);
+    try {
+      await req(`/km/closing/${encodeURIComponent(load.m_load_no)}`, {
+        method: 'POST',
+        body: JSON.stringify({ closing_km: closing })
+      });
+      setShowClosingKm(false);
+      onRefresh();
+      loadDetails();
+    } catch(e) { setKmError(e.message); }
+    finally { setKmSaving(false); }
+  };
+
+  const updateStatus = async (status) => {
+    try { await api.updateLoad(load.m_load_no,{m_status:status}); setStatusVal(status); onRefresh(); loadDetails(); } catch(e){alert(e.message);}
+  };
+
+  const totalCosts = costs.reduce((s,c)=>s+Number(c.c_amount||0),0);
+  const grandTotal = Number(load.m_rate||0) + totalCosts;
+
+  const cell = (label,value) => (
+    <div style={{minWidth:120}}>
+      <div style={{fontSize:10,color:'#aaa',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:2}}>{label}</div>
+      <div style={{fontSize:13,fontWeight:500}}>{value||'—'}</div>
+    </div>
+  );
+
+  return (
+    <tr>
+      <td colSpan={9} style={{padding:0,background:'#f8fafc',borderBottom:'2px solid #00AEEF'}}>
+        <div style={{padding:'16px 20px', display:'flex', flexDirection:'column', gap:16}}>
+
+          {/* Load details grid */}
+          <div style={{display:'flex', flexWrap:'wrap', gap:'12px 32px'}}>
+            {cell('Load No', load.m_load_no)}
+            {cell('Date', fmtDate(load.m_date))}
+            {cell('Truck', load.m_truck)}
+            {cell('Driver', load.m_driver_id)}
+            {cell('Customer', load.m_customer)}
+            {cell('From', load.m_from)}
+            {cell('To', load.m_to)}
+            {cell('Trailer', load.m_trailer1||'None')}
+            {cell('Rate', fmtR(load.m_rate))}
+            <div style={{minWidth:180}}>
+              <div style={{fontSize:10,color:'#aaa',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:2}}>Order No</div>
+              {orderNoEdit ? (
+                <div style={{display:'flex',gap:4,alignItems:'center'}}>
+                  <input value={orderNoVal} onChange={e=>setOrderNoVal(e.target.value)}
+                    style={{padding:'3px 6px',fontSize:13,border:'1px solid #00AEEF',borderRadius:3,fontFamily:'inherit',width:120}}
+                    autoFocus onKeyDown={e=>{if(e.key==='Escape'){setOrderNoEdit(false);setOrderNoVal(load.m_order_no||'');}}} />
+                  <button onClick={async()=>{
+                    setOrderNoSaving(true); setOrderNoMsg('');
+                    try {
+                      const res = await req(`/loads/${load.m_load_no}/request-order-no`,{method:'POST',body:JSON.stringify({order_no:orderNoVal})});
+                      setOrderNoEdit(false);
+                      setOrderNoMsg(res.pending ? '⏳ Pending approval' : '✓ Saved');
+                      loadDetails(); onRefresh();
+                    } catch(e){setOrderNoMsg('Error: '+e.message);}
+                    finally{setOrderNoSaving(false);}
+                  }} disabled={orderNoSaving}
+                    style={{background:'#00AEEF',color:'white',border:'none',borderRadius:3,padding:'3px 8px',fontSize:12,cursor:'pointer'}}>
+                    {orderNoSaving?'…':'✓'}
+                  </button>
+                  <button onClick={()=>{setOrderNoEdit(false);setOrderNoVal(load.m_order_no||'');}}
+                    style={{background:'none',border:'1px solid #ddd',borderRadius:3,padding:'3px 6px',fontSize:12,cursor:'pointer'}}>✕</button>
+                </div>
+              ) : (
+                <div style={{display:'flex',alignItems:'center',gap:6}}>
+                  <span style={{fontSize:13,fontWeight:500}}>
+                    {load.m_order_no_pending
+                      ? <><span style={{textDecoration:'line-through',color:'#aaa'}}>{load.m_order_no||'—'}</span> <span style={{color:'#d97706'}}>→ {load.m_order_no_pending} ⏳</span></>
+                      : load.m_order_no||'—'}
+                  </span>
+                  <button onClick={()=>setOrderNoEdit(true)}
+                    style={{background:'none',border:'none',cursor:'pointer',color:'#00AEEF',fontSize:11,padding:'1px 4px'}}>
+                    ✏️
+                  </button>
+                </div>
+              )}
+              {orderNoMsg && <div style={{fontSize:11,color:orderNoMsg.includes('⏳')?'#d97706':'#059669',marginTop:2}}>{orderNoMsg}</div>}
+            </div>
+            {cell('Invoice', load.m_invoice)}
+            {cell('Unit', load.m_bus_unit)}
+            {load.m_loading_address && cell('Loading Address', load.m_loading_address)}
+            {load.m_offloading_address && cell('Offloading Address', load.m_offloading_address)}
+          </div>
+
+          {/* Costs section */}
+          <div>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+              <div style={{fontSize:12,fontWeight:600,color:'#005A8E',textTransform:'uppercase',letterSpacing:'0.06em'}}>Additional Costs</div>
+              <button className="btn btn-sm btn-primary" onClick={()=>setShowCostModal(true)}>+ Add Cost</button>
+            </div>
+            {costs.length===0 ? (
+              <div style={{fontSize:12,color:'#aaa',padding:'8px 0'}}>No additional costs</div>
+            ) : (
+              <table style={{width:'100%',borderCollapse:'collapse',fontSize:13,marginBottom:8}}>
+                <thead>
+                  <tr style={{background:'#e8f4fd'}}>
+                    <th style={{padding:'6px 10px',textAlign:'left',fontSize:11,color:'#005A8E'}}>Type</th>
+                    <th style={{padding:'6px 10px',textAlign:'left',fontSize:11,color:'#005A8E'}}>Description</th>
+                    <th style={{padding:'6px 10px',textAlign:'right',fontSize:11,color:'#005A8E'}}>Amount</th>
+                    <th style={{padding:'6px 10px',textAlign:'right',fontSize:11,color:'#005A8E'}}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {costs.filter(c=>c.c_deleted!=='Y').map(c=>(
+                    <>
+                      <tr key={c.c_cost_no} style={{borderBottom:'1px solid #e8f4fd',
+                        background: c.c_delete_requested==='Y' ? '#fef9e7' : undefined,
+                        opacity: c.c_delete_requested==='Y' ? 0.8 : 1}}>
+                        <td style={{padding:'6px 10px'}}>{c.c_code}</td>
+                        <td style={{padding:'6px 10px',color:'#555'}}>{c.c_description}</td>
+                        <td style={{padding:'6px 10px',textAlign:'right',fontFamily:'monospace'}}>{fmtR(c.c_amount)}</td>
+                        <td style={{padding:'6px 10px',textAlign:'right'}}>
+                          {c.c_delete_requested==='Y' ? (
+                            <span style={{fontSize:11,color:'#d97706',fontWeight:600}}>⏳ Pending approval</span>
+                          ) : (
+                            <button onClick={()=>setDeletingCost(deletingCost===c.c_cost_no?null:c.c_cost_no)}
+                              style={{background:'none',border:'1px solid #fca5a5',borderRadius:4,color:'#e53e3e',
+                                fontSize:11,cursor:'pointer',padding:'2px 8px'}}>
+                              🗑 Delete
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                      {deletingCost===c.c_cost_no && (
+                        <tr key={'del-'+c.c_cost_no}>
+                          <td colSpan={4} style={{padding:'8px 10px',background:'#fff5f5',borderBottom:'1px solid #fecaca'}}>
+                            <div style={{fontSize:12,color:'#e53e3e',marginBottom:6,fontWeight:600}}>
+                              Request deletion of {c.c_code} — {fmtR(c.c_amount)}
+                            </div>
+                            <div style={{display:'flex',gap:6}}>
+                              <input value={deleteReason} onChange={e=>setDeleteReason(e.target.value)}
+                                placeholder="Reason for deletion (required)…"
+                                style={{flex:1,padding:'5px 8px',fontSize:12,border:'1px solid #fca5a5',borderRadius:4,fontFamily:'inherit'}} />
+                              <button disabled={deleteSaving || !deleteReason.trim()}
+                                onClick={async()=>{
+                                  if(!deleteReason.trim()) return;
+                                  setDeleteSaving(true);
+                                  try {
+                                    await req(`/costs/${c.c_cost_no}/request-delete`,{method:'PATCH',body:JSON.stringify({reason:deleteReason})});
+                                    setDeletingCost(null); setDeleteReason(''); loadDetails();
+                                  } catch(e){alert(e.message);}
+                                  finally{setDeleteSaving(false);}
+                                }}
+                                style={{background:'#e53e3e',color:'white',border:'none',borderRadius:4,
+                                  padding:'5px 12px',fontSize:12,cursor:'pointer'}}>
+                                {deleteSaving?'Sending…':'Submit Request'}
+                              </button>
+                              <button onClick={()=>{setDeletingCost(null);setDeleteReason('');}}
+                                style={{background:'none',border:'1px solid #ddd',borderRadius:4,
+                                  padding:'5px 10px',fontSize:12,cursor:'pointer'}}>
+                                Cancel
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            {/* Totals */}
+            <div style={{display:'flex',gap:24,justifyContent:'flex-end',paddingTop:8,borderTop:'1px solid #ddd'}}>
+              <div style={{textAlign:'right'}}>
+                <div style={{fontSize:10,color:'#aaa',textTransform:'uppercase',letterSpacing:'0.06em'}}>Rate</div>
+                <div style={{fontFamily:'monospace',fontWeight:600,color:'#005A8E'}}>{fmtR(load.m_rate)}</div>
+              </div>
+              {totalCosts>0&&<div style={{textAlign:'right'}}>
+                <div style={{fontSize:10,color:'#aaa',textTransform:'uppercase',letterSpacing:'0.06em'}}>Extra Costs</div>
+                <div style={{fontFamily:'monospace',fontWeight:600,color:'#e53e3e'}}>{fmtR(totalCosts)}</div>
+              </div>}
+              <div style={{textAlign:'right'}}>
+                <div style={{fontSize:10,color:'#aaa',textTransform:'uppercase',letterSpacing:'0.06em'}}>Total</div>
+                <div style={{fontFamily:'monospace',fontWeight:700,fontSize:15,color:'#005A8E'}}>{fmtR(grandTotal)}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Status + Comments side by side */}
+          <div style={{display:'flex',gap:24,flexWrap:'wrap'}}>
+            {/* Status + Closing KM */}
+            <div style={{minWidth:200}}>
+              <div style={{fontSize:12,fontWeight:600,color:'#005A8E',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:8}}>Update Status</div>
+              <select value={statusVal} onChange={e=>{ setStatusVal(e.target.value); if(e.target.value==='OFFLOADED') setShowClosingKm(true); else setShowClosingKm(false); }}
+                style={{width:'100%',padding:'8px 10px',fontSize:13,border:'1px solid #ddd',borderRadius:4,fontFamily:'inherit',background:'white'}}>
+                {ALL_STATUSES.map(s=><option key={s} value={s}>{s.replace(/_/g,' ')}</option>)}
+              </select>
+
+              {showClosingKm && (
+                <div style={{marginTop:12,padding:12,background:'#f0fdf4',border:'1px solid #86efac',borderRadius:6}}>
+                  <div style={{fontSize:11,color:'#059669',fontWeight:600,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:6}}>
+                    Closing Odometer Reading
+                  </div>
+                  <div style={{fontSize:11,color:'#555',marginBottom:6}}>
+                    Opening KM: <strong>{Number(load.m_opening_km||0).toLocaleString()} km</strong>
+                    {kmMaxAllowed > 0 && <span> · Max allowed: <strong>{Number(kmMaxAllowed).toLocaleString()} km</strong></span>}
+                  </div>
+                  <input
+                    type="number"
+                    value={closingKm}
+                    onChange={e => { setClosingKm(e.target.value); setKmError(''); }}
+                    placeholder="Enter closing odometer reading"
+                    style={{width:'100%',padding:'7px 10px',fontSize:13,border:`1px solid ${kmError?'#e53e3e':'#86efac'}`,borderRadius:4,fontFamily:'inherit',marginBottom:4}}
+                  />
+                  {kmError && <div style={{color:'#e53e3e',fontSize:12,marginBottom:6}}>⚠ {kmError}</div>}
+                  <button className="btn btn-primary btn-sm" style={{width:'100%',marginTop:4,background:'#059669',borderColor:'#059669'}}
+                    onClick={saveClosingKm} disabled={kmSaving}>
+                    {kmSaving ? 'Saving…' : '✓ Confirm Offload & Save KM'}
+                  </button>
+                </div>
+              )}
+
+              {statusVal !== 'OFFLOADED' && (
+                <button className="btn btn-sm btn-primary" style={{width:'100%',marginTop:8}} onClick={()=>updateStatus(statusVal)}>
+                  Update Status
+                </button>
+              )}
+            </div>
+
+            {/* Audit Trail + Comments */}
+            <div style={{flex:1,minWidth:300}}>
+              <div style={{fontSize:12,fontWeight:600,color:'#005A8E',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:8}}>
+                Audit Trail & Comments
+              </div>
+              <div style={{maxHeight:200,overflowY:'auto',display:'flex',flexDirection:'column',gap:4,marginBottom:8}}>
+                {comments.length===0&&<div style={{fontSize:12,color:'#aaa'}}>No activity yet</div>}
+                {comments.map(c=>{
+                  const isSystem = c.c_comment?.startsWith('Status changed') || 
+                    c.c_comment?.startsWith('Load offloaded') ||
+                    c.c_comment?.startsWith('KM anomaly') ||
+                    c.c_comment?.startsWith('Cost added');
+                  return (
+                    <div key={c.id} style={{
+                      background: isSystem?'#f0f7ff':'white',
+                      border:`1px solid ${isSystem?'#bfdbfe':'#e8f4fd'}`,
+                      borderLeft:`3px solid ${isSystem?'#3b82f6':'#00AEEF'}`,
+                      borderRadius:4,padding:'6px 10px'
+                    }}>
+                      <div style={{fontSize:12,color: isSystem?'#1e40af':'#333'}}>{c.c_comment}</div>
+                      <div style={{fontSize:10,color:'#aaa',marginTop:2,display:'flex',gap:8}}>
+                        <span>👤 {c.c_logged_by}</span>
+                        <span>🕐 {fmtDate(c.c_time)}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{display:'flex',gap:6}}>
+                <input value={newComment} onChange={e=>setNewComment(e.target.value)}
+                  onKeyDown={e=>e.key==='Enter'&&sendComment()}
+                  placeholder="Add comment…"
+                  style={{flex:1,padding:'6px 8px',fontSize:12,border:'1px solid #ddd',borderRadius:4,fontFamily:'inherit'}} />
+                <button className="btn btn-sm btn-primary" onClick={sendComment}>Add</button>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* ── LOGIN ── */}
-        {mode === 'login' && (
-          <form onSubmit={handleLogin}>
-            <div style={{marginBottom:14}}>
-              <label style={{fontSize:12,color:'#555',display:'block',marginBottom:5}}>Username</label>
-              <input style={inputStyle} value={form.username}
-                onChange={e=>setForm(f=>({...f,username:e.target.value}))}
-                placeholder="Enter your username" autoFocus />
-            </div>
-            <div style={{marginBottom:20}}>
-              <label style={{fontSize:12,color:'#555',display:'block',marginBottom:5}}>Password</label>
-              <input style={inputStyle} type="password" value={form.password}
-                onChange={e=>setForm(f=>({...f,password:e.target.value}))}
-                placeholder="Enter your password" />
-            </div>
-            {error && <div style={{color:'#e53e3e',fontSize:13,marginBottom:12,textAlign:'center'}}>{error}</div>}
-            <button type="submit" style={btnStyle} disabled={loading}>
-              {loading ? 'Signing in…' : 'Sign In'}
-            </button>
-            <div style={{textAlign:'center',marginTop:16}}>
-              <button type="button" onClick={()=>{setMode('forgot');setError('');setSuccess('');}}
-                style={{background:'none',border:'none',color:'#00AEEF',cursor:'pointer',fontSize:13}}>
-                Forgot password?
-              </button>
-            </div>
-          </form>
+        {showCostModal && (
+          <AddCostModal
+            loadId={load.m_load_no}
+            onClose={()=>setShowCostModal(false)}
+            onSaved={(costCode, costAmount)=>{ 
+                    setShowCostModal(false); 
+                    loadDetails(); 
+                    onRefresh(); 
+                  }}
+          />
         )}
+      </td>
+    </tr>
+  );
+}
 
-        {/* ── FORGOT PASSWORD ── */}
-        {mode === 'forgot' && (
-          <form onSubmit={handleForgot}>
-            <div style={{fontSize:14,color:'#555',marginBottom:20,textAlign:'center'}}>
-              Enter your username to receive a temporary password
-            </div>
-            <div style={{marginBottom:16}}>
-              <label style={{fontSize:12,color:'#555',display:'block',marginBottom:5}}>Username</label>
-              <input style={inputStyle} value={forgotUsername}
-                onChange={e=>setForgotUsername(e.target.value)}
-                placeholder="Enter your username" autoFocus />
-            </div>
-            {error && <div style={{color:'#e53e3e',fontSize:13,marginBottom:12,textAlign:'center'}}>{error}</div>}
-            {success && (
-              <div style={{background:'#f0fdf4',border:'1px solid #86efac',borderRadius:6,padding:12,marginBottom:12,fontSize:13,color:'#059669'}}>
-                {success}
-              </div>
-            )}
-            {tempPassword && (
-              <div style={{background:'#fef9e7',border:'2px solid #f59e0b',borderRadius:6,padding:14,marginBottom:12,textAlign:'center'}}>
-                <div style={{fontSize:11,color:'#92400e',marginBottom:4,textTransform:'uppercase',letterSpacing:'0.06em'}}>Your temporary password</div>
-                <div style={{fontSize:22,fontWeight:700,fontFamily:'monospace',color:'#92400e',letterSpacing:'0.1em'}}>{tempPassword}</div>
-                <div style={{fontSize:11,color:'#92400e',marginTop:4}}>You will be asked to change this on login</div>
-              </div>
-            )}
-            <button type="submit" style={btnStyle} disabled={loading}>
-              {loading ? 'Generating…' : 'Get Temporary Password'}
-            </button>
-            <div style={{textAlign:'center',marginTop:12}}>
-              <button type="button" onClick={()=>{setMode('login');setError('');setSuccess('');setTempPassword('');}}
-                style={{background:'none',border:'none',color:'#00AEEF',cursor:'pointer',fontSize:13}}>
-                ← Back to login
-              </button>
-            </div>
-          </form>
-        )}
+// ── Pagination Bar ───────────────────────────────────────────
+function PaginationBar({ page, total, limit, setPage }) {
+  const totalPages = Math.ceil(total / limit);
+  
+  // Generate page numbers to show
+  const getPages = () => {
+    const pages = [];
+    const delta = 2; // pages around current
+    const left = Math.max(1, page - delta);
+    const right = Math.min(totalPages, page + delta);
+    
+    if (left > 1) { pages.push(1); if (left > 2) pages.push('...'); }
+    for (let i = left; i <= right; i++) pages.push(i);
+    if (right < totalPages) { if (right < totalPages - 1) pages.push('...'); pages.push(totalPages); }
+    return pages;
+  };
 
-        {/* ── CHANGE PASSWORD (first login) ── */}
-        {mode === 'change' && (
-          <form onSubmit={handleChangePassword}>
-            <div style={{background:'#fef9e7',border:'1px solid #f59e0b',borderRadius:6,padding:12,marginBottom:20,fontSize:13,color:'#92400e',textAlign:'center'}}>
-              👋 Welcome{firstLoginUser?.name ? `, ${firstLoginUser.name}` : ''}! Please set a new password to continue.
-            </div>
-            <div style={{marginBottom:14}}>
-              <label style={{fontSize:12,color:'#555',display:'block',marginBottom:5}}>Current / Temporary Password</label>
-              <input style={inputStyle} type="password" value={changeForm.current}
-                onChange={e=>setChangeForm(f=>({...f,current:e.target.value}))}
-                placeholder="Enter current password" autoFocus />
-            </div>
-            <div style={{marginBottom:14}}>
-              <label style={{fontSize:12,color:'#555',display:'block',marginBottom:5}}>New Password</label>
-              <input style={inputStyle} type="password" value={changeForm.newPass}
-                onChange={e=>setChangeForm(f=>({...f,newPass:e.target.value}))}
-                placeholder="Minimum 8 characters" />
-            </div>
-            <div style={{marginBottom:20}}>
-              <label style={{fontSize:12,color:'#555',display:'block',marginBottom:5}}>Confirm New Password</label>
-              <input style={inputStyle} type="password" value={changeForm.confirm}
-                onChange={e=>setChangeForm(f=>({...f,confirm:e.target.value}))}
-                placeholder="Repeat new password" />
-            </div>
-            {error && <div style={{color:'#e53e3e',fontSize:13,marginBottom:12,textAlign:'center'}}>{error}</div>}
-            {success && <div style={{color:'#059669',fontSize:13,marginBottom:12,textAlign:'center'}}>{success}</div>}
-            <button type="submit" style={btnStyle} disabled={loading}>
-              {loading ? 'Saving…' : 'Set New Password'}
-            </button>
-          </form>
-        )}
+  const btnStyle = (isActive) => ({
+    padding:'4px 8px', fontSize:12, border:'1px solid #ddd',
+    borderRadius:4, cursor:'pointer', background: isActive?'#00AEEF':'white',
+    color: isActive?'white':'#555', fontWeight: isActive?700:400, minWidth:32,
+  });
 
-        <div style={{textAlign:'center',marginTop:24,fontSize:11,color:'#ccc'}}>
-          Interland Distribution © {new Date().getFullYear()}
-        </div>
+  return (
+    <div style={{display:'flex',alignItems:'center',gap:4,marginBottom:10,flexWrap:'wrap'}}>
+      <button style={btnStyle(false)} onClick={()=>setPage(1)} disabled={page===1}>«</button>
+      <button style={btnStyle(false)} onClick={()=>setPage(p=>Math.max(1,p-1))} disabled={page===1}>‹</button>
+      {getPages().map((p,i) => p === '...'
+        ? <span key={i} style={{padding:'0 4px',color:'#aaa'}}>…</span>
+        : <button key={p} style={btnStyle(p===page)} onClick={()=>setPage(p)}>{p}</button>
+      )}
+      <button style={btnStyle(false)} onClick={()=>setPage(p=>Math.min(totalPages,p+1))} disabled={page>=totalPages}>›</button>
+      <button style={btnStyle(false)} onClick={()=>setPage(totalPages)} disabled={page>=totalPages}>»</button>
+      <span style={{fontSize:12,color:'#888',marginLeft:8}}>
+        Page {page} of {totalPages.toLocaleString()} ({total.toLocaleString()} loads)
+      </span>
+    </div>
+  );
+}
+
+// ── Main Loads Page ───────────────────────────────────────────
+export default function Loads() {
+  const [loads, setLoads] = useState([]);
+  const [stats, setStats] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [filters, setFilters] = useState({ status:'', bus_unit:'', search:'' });
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const LIMIT = 100;
+
+  // Default date filter - current month
+  const now = new Date();
+  const defaultFrom = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
+  const [dateFrom, setDateFrom] = useState(defaultFrom);
+  const [dateTo, setDateTo] = useState('');
+  const [expandedRow, setExpandedRow] = useState(null);
+  const [showModal, setShowModal] = useState(false);
+  const [loadCosts, setLoadCosts] = useState({});
+
+  const fetchLoads = async (keepExpanded = false) => {
+    if (!keepExpanded) setLoading(true);
+    try {
+      const params = { page, limit: LIMIT };
+      if(filters.status) params.status=filters.status;
+      if(filters.bus_unit) params.bus_unit=filters.bus_unit;
+      if(dateFrom) params.date_from=dateFrom;
+      if(dateTo) params.date_to=dateTo;
+      if(filters.search) params.search=filters.search;
+      const res = await api.getLoads(params);
+      const data = res.data||[];
+      setLoads(data);
+      setTotal(res.total||0);
+      setLoading(false);
+    } catch(e){ console.error(e); }
+    finally{ setLoading(false); }
+  };
+
+  const fetchStats = async () => {
+    try { setStats(await api.getLoadStats()); } catch{}
+  };
+
+  useEffect(()=>{ fetchLoads(); fetchStats(); },[filters.status, filters.bus_unit, page, dateFrom, dateTo, filters.search]);
+
+
+
+  const filtered = loads; // Search is now server-side
+
+  const toggleRow = (id) => setExpandedRow(e=>e===id?null:id);
+
+  return (
+    <div>
+      <div className="stats-grid">
+        <div className="stat-card"><div className="stat-label">Active Loads</div><div className="stat-value">{stats.total??'—'}</div></div>
+        <div className="stat-card"><div className="stat-label">En Route</div><div className="stat-value" style={{color:'#00AEEF'}}>{stats.en_route??'—'}</div></div>
+        <div className="stat-card"><div className="stat-label">Awaiting Approval</div><div className="stat-value" style={{color:'#d97706'}}>{stats.wait_approval??'—'}</div></div>
+        <div className="stat-card"><div className="stat-label">Invoiced Value</div><div className="stat-value" style={{fontSize:18}}>{fmtR(stats.total_value)}</div></div>
       </div>
+
+      <div className="filter-bar">
+        <input placeholder="Search load no, truck, customer…" value={filters.search} 
+          onChange={e=>{setFilters(f=>({...f,search:e.target.value}));setPage(1);}}
+          onKeyDown={e=>{ if(e.key==='Enter') fetchLoads(); }}
+        />
+        <select value={filters.status} onChange={e=>{setFilters(f=>({...f,status:e.target.value}));setPage(1);}}>
+          <option value="">All statuses</option>
+          {ALL_STATUSES.map(s=><option key={s} value={s}>{s.replace(/_/g,' ')}</option>)}
+        </select>
+        <input type="date" value={dateFrom} onChange={e=>{setDateFrom(e.target.value);setPage(1);}}
+          style={{padding:'7px 10px',fontSize:13,border:'1px solid #ddd',borderRadius:4}} />
+        <input type="date" value={dateTo} onChange={e=>{setDateTo(e.target.value);setPage(1);}}
+          style={{padding:'7px 10px',fontSize:13,border:'1px solid #ddd',borderRadius:4}} />
+        <button className="btn btn-sm" onClick={()=>{setDateFrom('');setDateTo('');setPage(1);}}>All dates</button>
+        <button className="btn btn-sm" onClick={()=>{
+          if(window.confirm(`Export all loads${dateFrom?` from ${dateFrom}`:''}${dateTo?` to ${dateTo}`:''}? This may take a moment for large datasets.`))
+            exportAllLoadsCSV(dateFrom, dateTo, filters.status, filters.search);
+        }}>⬇ Export CSV</button>
+        <button className="btn btn-primary btn-sm" onClick={()=>setShowModal(true)}>+ New Load</button>
+      </div>
+
+      {/* Pagination */}
+      {total > LIMIT && <PaginationBar page={page} total={total} limit={LIMIT} setPage={setPage} />}
+
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style={{width:32}}></th>
+              <th>Load No</th><th>Date</th><th>Truck</th>
+              <th>Customer</th><th>From</th><th>To</th>
+              <th>Rate</th><th>Extra Costs</th><th>Total</th><th>Order No</th><th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading&&<tr><td colSpan={11}><div className="loading">Loading…</div></td></tr>}
+            {!loading&&filtered.length===0&&<tr><td colSpan={11}><div className="empty-state">No loads found</div></td></tr>}
+            {!loading&&filtered.map(l=>{
+              const extra = Number(l._extra || loadCosts[l.m_load_no] || 0);
+              const total = Number(l.m_rate||0) + extra;
+              const isOpen = expandedRow===l.m_load_no;
+              return (
+                <>
+                  <tr key={l.m_load_no}
+                    style={{background:isOpen?'#e8f4fd':undefined, cursor:'pointer'}}
+                    onClick={()=>toggleRow(l.m_load_no)}>
+                    <td style={{textAlign:'center',color:'#00AEEF',fontWeight:700,fontSize:16}}>
+                      {isOpen?'▲':'▼'}
+                    </td>
+                    <td className="mono" style={{fontWeight:600}}>{l.m_load_no}</td>
+                    <td>{fmtDate(l.m_date)}</td>
+                    <td className="mono">{l.m_truck}</td>
+                    <td>{l.m_customer}</td>
+                    <td>{l.m_from}</td>
+                    <td>{l.m_to}</td>
+                    <td className="mono">{fmtR(l.m_rate)}</td>
+                    <td className="mono" style={{color:extra>0?'#e53e3e':'#aaa'}}>{extra>0?fmtR(extra):'—'}</td>
+                    <td className="mono" style={{fontWeight:600,color:'#005A8E'}}>{fmtR(total)}</td>
+                    <td style={{fontSize:12,color:'#555'}}>{l.m_order_no_pending?<span style={{color:'#d97706'}}>⏳</span>:''}{l.m_order_no||'—'}</td>
+                    <td><span className={`badge ${STATUS_BADGE[l.m_status]||'badge-gray'}`}>{l.m_status?.replace(/_/g,' ')}</span></td>
+                  </tr>
+                  {isOpen&&<ExpandedRow key={'exp-'+l.m_load_no} load={l} onRefresh={fetchLoads}
+                    onCostUpdate={(id, total) => {
+                      setLoadCosts(prev => ({...prev, [id]: total}));
+                      setLoads(prev => prev.map(ld => ld.m_load_no === id ? {...ld, _extra: total} : ld));
+                    }}
+                  />}
+                </>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {total > LIMIT && <PaginationBar page={page} total={total} limit={LIMIT} setPage={setPage} />}
+      {showModal&&<NewLoadModal onClose={()=>setShowModal(false)} onCreated={()=>{setShowModal(false);fetchLoads();fetchStats();}} />}
     </div>
   );
 }
