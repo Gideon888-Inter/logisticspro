@@ -23,6 +23,59 @@ const COST_TYPES = ['Loadshift','Fine','Labour','Extra Stop','Other'];
 function fmtDate(d) { return d ? new Date(d).toLocaleDateString('en-ZA',{day:'2-digit',month:'short',year:'numeric'}) : '—'; }
 function fmtR(n) { return (n||n===0) ? 'R '+Number(n).toLocaleString('en-ZA',{minimumFractionDigits:0}) : '—'; }
 
+async function exportAllLoadsCSV(dateFrom, dateTo, status) {
+  // Fetch ALL loads matching current filters (no pagination limit)
+  const token = localStorage.getItem('lp_token');
+  const API = import.meta.env.VITE_API_URL || '';
+  const params = new URLSearchParams({ limit: 99999, page: 1 });
+  if(dateFrom) params.append('date_from', dateFrom);
+  if(dateTo) params.append('date_to', dateTo);
+  if(status) params.append('status', status);
+
+  const res = await fetch(`${API}/api/loads?${params}`, {
+    headers: { 'Authorization': 'Bearer ' + token }
+  });
+  const json = await res.json();
+  const loads = json.data || [];
+
+  const headers = [
+    'Load Number','Load Date','Client','Truck','Driver',
+    'From','To','Rate','Status','Opening KM','Closing KM',
+    'Trailer 1','Operator','Invoice No','Order No'
+  ];
+
+  const rows = loads.map(l => [
+    l.m_load_no || '',
+    l.m_date || '',
+    l.m_customer || '',
+    l.m_truck || '',
+    l.m_driver_id || '',
+    l.m_from || '',
+    l.m_to || '',
+    l.m_rate || 0,
+    l.m_status || '',
+    l.m_opening_km || 0,
+    l.m_closing_km || 0,
+    l.m_trailer1 || '',
+    l.m_responsible_operator || '',
+    l.m_invoice || '',
+    l.m_order_no || ''
+  ]);
+
+  const csv = [headers, ...rows]
+    .map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(','))
+    .join('
+');
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `loads_export_${dateFrom||'all'}_to_${dateTo||'today'}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 // ── New Load Modal ────────────────────────────────────────────
 function NewLoadModal({ onClose, onCreated }) {
   const { user } = useAuth();
@@ -659,6 +712,7 @@ export default function Loads() {
         <input type="date" value={dateTo} onChange={e=>{setDateTo(e.target.value);setPage(1);}}
           style={{padding:'7px 10px',fontSize:13,border:'1px solid #ddd',borderRadius:4}} />
         <button className="btn btn-sm" onClick={()=>{setDateFrom('');setDateTo('');setPage(1);}}>All dates</button>
+        <button className="btn btn-sm" onClick={()=>exportAllLoadsCSV(dateFrom, dateTo, filters.status)}>⬇ Export CSV</button>
         <button className="btn btn-primary btn-sm" onClick={()=>setShowModal(true)}>+ New Load</button>
       </div>
 
