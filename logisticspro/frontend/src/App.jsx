@@ -39,7 +39,7 @@ const LogoutIcon = () => (
 );
 
 const MENU = [
-  { key: 'movement',   label: 'Movement',       icon: '🚛' },
+  { key: 'movement',   label: 'Loads',          icon: '🚛' },
   { key: 'workshop',   label: 'Workshop',        icon: '🔧',
     sub: [
       { key: 'workshop-jobcards',    label: 'Job Cards' },
@@ -63,14 +63,7 @@ const MENU = [
   },
   { key: 'clients',    label: 'Clients',           icon: '🏢' },
   { key: 'users',      label: 'Users',              icon: '👥' },
-  { key: 'bulk',       label: 'Bulk Messaging',    icon: '📢' },
   { key: 'schedule',   label: 'Report Schedule',   icon: '📅' },
-  { key: 'search',     label: 'Search',             icon: '🔍',
-    sub: [
-      { key: 'search-loads',    label: 'Search Loads' },
-      { key: 'search-vehicles', label: 'Search Vehicles' },
-    ]
-  },
 ];
 
 const PAGE_TITLES = {
