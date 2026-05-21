@@ -7,7 +7,7 @@ router.use(authMiddleware);
 
 // GET /api/loads — list with filters
 router.get('/', async (req, res) => {
-  const { status, bus_unit, customer, truck, from, to, page = 1, limit = 100 } = req.query;
+  const { status, bus_unit, customer, truck, date_from, date_to, page = 1, limit = 100 } = req.query;
   const offset = (page - 1) * limit;
   let query = supabase
     .from('lp_movement')
@@ -19,8 +19,8 @@ router.get('/', async (req, res) => {
   if (bus_unit) query = query.eq('m_bus_unit', bus_unit);
   if (customer) query = query.eq('m_customer', customer);
   if (truck)    query = query.eq('m_truck', truck);
-  if (from)     query = query.gte('m_date', from);
-  if (to)       query = query.lte('m_date', to);
+  if (date_from) query = query.gte('m_date', date_from);
+  if (date_to)   query = query.lte('m_date', date_to);
   const { data, error, count } = await query;
   if (error) return res.status(500).json({ error: error.message });
   res.json({ data, total: count, page: Number(page), limit: Number(limit) });
