@@ -111,7 +111,6 @@ export default function App() {
   const [showNotifications, setShowNotifications] = useState(false);
 
   if (!user) return <Login />;
-  if (user.first_login) return <Login />;
 
   const initials = (user.name || user.username || 'U')
     .split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
@@ -342,7 +341,7 @@ export default function App() {
         </nav>
 
         {/* MAIN CONTENT */}
-        <main className="main-content">
+        <main className="main-content" key={user?.username}>
           <div className="page-header">
             <h1>{PAGE_TITLES[page] !== undefined ? PAGE_TITLES[page] : page}</h1>
           </div>
