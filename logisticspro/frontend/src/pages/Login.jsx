@@ -73,11 +73,17 @@ export default function Login() {
   return (
     <div style={{
       minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center',
-      background:'linear-gradient(135deg, #005A8E 0%, #00AEEF 100%)',
-      backgroundImage:'url("https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?w=1600&q=80")',
-      backgroundSize:'cover', backgroundPosition:'center',
-      backgroundBlendMode:'overlay',
+      background:'linear-gradient(160deg, #001f3f 0%, #003d7a 40%, #005A8E 70%, #00AEEF 100%)',
+      position:'relative', overflow:'hidden',
     }}>
+      {/* Decorative truck silhouette background */}
+      <div style={{position:'absolute',bottom:0,left:0,right:0,height:'35%',opacity:0.06,
+        backgroundImage:`url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 200'%3E%3Crect x='10' y='80' width='480' height='100' rx='8' fill='white'/%3E%3Crect x='490' y='50' width='180' height='130' rx='6' fill='white'/%3E%3Ccircle cx='120' cy='185' r='30' fill='white'/%3E%3Ccircle cx='400' cy='185' r='30' fill='white'/%3E%3Ccircle cx='590' cy='185' r='30' fill='white'/%3E%3Crect x='490' y='60' width='80' height='60' rx='4' fill='%23001f3f'/%3E%3C/svg%3E")`,
+        backgroundRepeat:'repeat-x', backgroundPosition:'bottom', backgroundSize:'600px auto',
+      }} />
+      {/* Animated road lines */}
+      <div style={{position:'absolute',bottom:'28%',left:0,right:0,height:4,background:'rgba(255,255,255,0.1)'}} />
+      <div style={{position:'absolute',bottom:'26%',left:0,right:0,height:2,background:'rgba(255,255,255,0.05)'}} />
       <div style={{
         background:'white', borderRadius:12, padding:'40px 36px', width:400,
         boxShadow:'0 20px 60px rgba(0,0,0,0.3)',
