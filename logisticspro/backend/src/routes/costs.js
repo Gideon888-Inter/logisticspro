@@ -24,7 +24,8 @@ router.get('/', async (req, res) => {
   if (summary === 'true') {
     const { data, error } = await supabase
       .from('lp_costs')
-      .select('c_load, c_amount');
+      .select('c_load, c_amount')
+      .neq('c_deleted', 'Y');
     if (error) return res.status(500).json({ error: error.message });
     const map = {};
     (data || []).forEach(c => {
@@ -38,6 +39,7 @@ router.get('/', async (req, res) => {
     .from('lp_costs')
     .select('*')
     .eq('c_load', load)
+    .neq('c_deleted', 'Y')
     .order('created_at', { ascending: true });
   if (error) return res.status(500).json({ error: error.message });
   res.json(data || []);
