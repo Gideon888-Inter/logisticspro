@@ -112,7 +112,7 @@ export default function Dashboard() {
     const now = new Date();
     const from = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
     Promise.all([
-      req(`/loads?from=${from}&limit=500`),
+      req(`/loads?date_from=${from}&limit=500`),
       req('/users').catch(()=>[]),
     ]).then(([l, u]) => {
       setLoads(l.data || []);
