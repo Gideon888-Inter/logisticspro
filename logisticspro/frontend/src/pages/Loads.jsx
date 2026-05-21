@@ -593,6 +593,15 @@ export default function Loads() {
   const [stats, setStats] = useState({});
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({ status:'', bus_unit:'', search:'' });
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const LIMIT = 100;
+
+  // Default date filter - current month
+  const now = new Date();
+  const defaultFrom = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
+  const [dateFrom, setDateFrom] = useState(defaultFrom);
+  const [dateTo, setDateTo] = useState('');
   const [expandedRow, setExpandedRow] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [loadCosts, setLoadCosts] = useState({});
@@ -600,12 +609,15 @@ export default function Loads() {
   const fetchLoads = async (keepExpanded = false) => {
     if (!keepExpanded) setLoading(true);
     try {
-      const params = {};
+      const params = { page, limit: LIMIT };
       if(filters.status) params.status=filters.status;
       if(filters.bus_unit) params.bus_unit=filters.bus_unit;
+      if(dateFrom) params.from=dateFrom;
+      if(dateTo) params.to=dateTo;
       const res = await api.getLoads(params);
       const data = res.data||[];
       setLoads(data);
+      setTotal(res.total||0);
       setLoading(false);
     } catch(e){ console.error(e); }
     finally{ setLoading(false); }
@@ -615,7 +627,7 @@ export default function Loads() {
     try { setStats(await api.getLoadStats()); } catch{}
   };
 
-  useEffect(()=>{ fetchLoads(); fetchStats(); },[filters.status, filters.bus_unit]);
+  useEffect(()=>{ fetchLoads(); fetchStats(); },[filters.status, filters.bus_unit, page, dateFrom, dateTo]);
 
 
 
@@ -638,16 +650,26 @@ export default function Loads() {
 
       <div className="filter-bar">
         <input placeholder="Search load no, truck, customer…" value={filters.search} onChange={e=>setFilters(f=>({...f,search:e.target.value}))} />
-        <select value={filters.status} onChange={e=>setFilters(f=>({...f,status:e.target.value}))}>
+        <select value={filters.status} onChange={e=>{setFilters(f=>({...f,status:e.target.value}));setPage(1);}}>
           <option value="">All statuses</option>
           {ALL_STATUSES.map(s=><option key={s} value={s}>{s.replace(/_/g,' ')}</option>)}
         </select>
-        <select value={filters.bus_unit} onChange={e=>setFilters(f=>({...f,bus_unit:e.target.value}))}>
-          <option value="">All units</option>
-          <option value="IDC">IDC</option><option value="IDM">IDM</option><option value="MOGWASE">Mogwase</option>
-        </select>
+        <input type="date" value={dateFrom} onChange={e=>{setDateFrom(e.target.value);setPage(1);}}
+          style={{padding:'7px 10px',fontSize:13,border:'1px solid #ddd',borderRadius:4}} />
+        <input type="date" value={dateTo} onChange={e=>{setDateTo(e.target.value);setPage(1);}}
+          style={{padding:'7px 10px',fontSize:13,border:'1px solid #ddd',borderRadius:4}} />
+        <button className="btn btn-sm" onClick={()=>{setDateFrom('');setDateTo('');setPage(1);}}>All dates</button>
         <button className="btn btn-primary btn-sm" onClick={()=>setShowModal(true)}>+ New Load</button>
       </div>
+
+      {/* Pagination */}
+      {total > LIMIT && (
+        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10,fontSize:13,color:'#555'}}>
+          <button className="btn btn-sm" onClick={()=>setPage(p=>Math.max(1,p-1))} disabled={page===1}>← Prev</button>
+          <span>Page {page} of {Math.ceil(total/LIMIT)} ({total.toLocaleString()} total)</span>
+          <button className="btn btn-sm" onClick={()=>setPage(p=>p+1)} disabled={page>=Math.ceil(total/LIMIT)}>Next →</button>
+        </div>
+      )}
 
       <div className="table-wrap">
         <table>
