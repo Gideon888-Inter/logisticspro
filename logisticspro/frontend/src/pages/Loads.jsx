@@ -459,6 +459,9 @@ function ExpandedRow({ load, onRefresh, onCostUpdate }) {
   const [costs, setCosts] = useState([]);
   const [newComment, setNewComment] = useState('');
   const [showCostModal, setShowCostModal] = useState(false);
+  const [deleteReason, setDeleteReason] = useState('');
+  const [deletingCost, setDeletingCost] = useState(null);
+  const [deleteSaving, setDeleteSaving] = useState(false);
   const [statusVal, setStatusVal] = useState(load.m_status);
   const [showClosingKm, setShowClosingKm] = useState(false);
   const [closingKm, setClosingKm] = useState('');
@@ -569,15 +572,64 @@ function ExpandedRow({ load, onRefresh, onCostUpdate }) {
                     <th style={{padding:'6px 10px',textAlign:'left',fontSize:11,color:'#005A8E'}}>Type</th>
                     <th style={{padding:'6px 10px',textAlign:'left',fontSize:11,color:'#005A8E'}}>Description</th>
                     <th style={{padding:'6px 10px',textAlign:'right',fontSize:11,color:'#005A8E'}}>Amount</th>
+                    <th style={{padding:'6px 10px',textAlign:'right',fontSize:11,color:'#005A8E'}}></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {costs.map(c=>(
-                    <tr key={c.c_cost_no} style={{borderBottom:'1px solid #e8f4fd'}}>
-                      <td style={{padding:'6px 10px'}}>{c.c_code}</td>
-                      <td style={{padding:'6px 10px',color:'#555'}}>{c.c_description}</td>
-                      <td style={{padding:'6px 10px',textAlign:'right',fontFamily:'monospace'}}>{fmtR(c.c_amount)}</td>
-                    </tr>
+                  {costs.filter(c=>c.c_deleted!=='Y').map(c=>(
+                    <>
+                      <tr key={c.c_cost_no} style={{borderBottom:'1px solid #e8f4fd',
+                        background: c.c_delete_requested==='Y' ? '#fef9e7' : undefined,
+                        opacity: c.c_delete_requested==='Y' ? 0.8 : 1}}>
+                        <td style={{padding:'6px 10px'}}>{c.c_code}</td>
+                        <td style={{padding:'6px 10px',color:'#555'}}>{c.c_description}</td>
+                        <td style={{padding:'6px 10px',textAlign:'right',fontFamily:'monospace'}}>{fmtR(c.c_amount)}</td>
+                        <td style={{padding:'6px 10px',textAlign:'right'}}>
+                          {c.c_delete_requested==='Y' ? (
+                            <span style={{fontSize:11,color:'#d97706',fontWeight:600}}>⏳ Pending approval</span>
+                          ) : (
+                            <button onClick={()=>setDeletingCost(deletingCost===c.c_cost_no?null:c.c_cost_no)}
+                              style={{background:'none',border:'1px solid #fca5a5',borderRadius:4,color:'#e53e3e',
+                                fontSize:11,cursor:'pointer',padding:'2px 8px'}}>
+                              🗑 Delete
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                      {deletingCost===c.c_cost_no && (
+                        <tr key={'del-'+c.c_cost_no}>
+                          <td colSpan={4} style={{padding:'8px 10px',background:'#fff5f5',borderBottom:'1px solid #fecaca'}}>
+                            <div style={{fontSize:12,color:'#e53e3e',marginBottom:6,fontWeight:600}}>
+                              Request deletion of {c.c_code} — {fmtR(c.c_amount)}
+                            </div>
+                            <div style={{display:'flex',gap:6}}>
+                              <input value={deleteReason} onChange={e=>setDeleteReason(e.target.value)}
+                                placeholder="Reason for deletion (required)…"
+                                style={{flex:1,padding:'5px 8px',fontSize:12,border:'1px solid #fca5a5',borderRadius:4,fontFamily:'inherit'}} />
+                              <button disabled={deleteSaving || !deleteReason.trim()}
+                                onClick={async()=>{
+                                  if(!deleteReason.trim()) return;
+                                  setDeleteSaving(true);
+                                  try {
+                                    await req(`/costs/${c.c_cost_no}/request-delete`,{method:'PATCH',body:JSON.stringify({reason:deleteReason})});
+                                    setDeletingCost(null); setDeleteReason(''); loadDetails();
+                                  } catch(e){alert(e.message);}
+                                  finally{setDeleteSaving(false);}
+                                }}
+                                style={{background:'#e53e3e',color:'white',border:'none',borderRadius:4,
+                                  padding:'5px 12px',fontSize:12,cursor:'pointer'}}>
+                                {deleteSaving?'Sending…':'Submit Request'}
+                              </button>
+                              <button onClick={()=>{setDeletingCost(null);setDeleteReason('');}}
+                                style={{background:'none',border:'1px solid #ddd',borderRadius:4,
+                                  padding:'5px 10px',fontSize:12,cursor:'pointer'}}>
+                                Cancel
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </>
                   ))}
                 </tbody>
               </table>
