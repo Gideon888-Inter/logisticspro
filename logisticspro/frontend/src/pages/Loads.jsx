@@ -456,7 +456,7 @@ function ExpandedRow({ load, onRefresh, onCostUpdate }) {
             {cell('Date', fmtDate(load.m_date))}
             {cell('Truck', load.m_truck)}
             {cell('Driver', load.m_driver_id)}
-            {cell('Customer', load.lp_customers?.c_name||load.m_customer)}
+            {cell('Customer', load.m_customer)}
             {cell('From', load.m_from)}
             {cell('To', load.m_to)}
             {cell('Trailer', load.m_trailer1||'None')}
@@ -699,7 +699,7 @@ export default function Loads() {
                     <td className="mono" style={{fontWeight:600}}>{l.m_load_no}</td>
                     <td>{fmtDate(l.m_date)}</td>
                     <td className="mono">{l.m_truck}</td>
-                    <td>{l.lp_customers?.c_name||l.m_customer}</td>
+                    <td>{l.m_customer}</td>
                     <td>{l.m_from}</td>
                     <td>{l.m_to}</td>
                     <td className="mono">{fmtR(l.m_rate)}</td>
