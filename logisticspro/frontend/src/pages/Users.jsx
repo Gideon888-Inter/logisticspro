@@ -5,7 +5,7 @@ const API = import.meta.env.VITE_API_URL || '';
 const token = () => localStorage.getItem('lp_token');
 const req = (path,opts={}) => fetch(API+'/api'+path,{...opts,headers:{'Content-Type':'application/json','Authorization':'Bearer '+token(),...(opts.headers||{})}}).then(r=>r.json());
 
-const EMPTY = { u_username:'', u_password:'', u_name:'', u_email:'', u_role:'OPERATOR', u_bus_unit:'IDC', u_active:'Y' };
+const EMPTY = { u_username:'', u_password:'', u_name:'', u_email:'', u_role:'OPERATOR', u_bus_unit:'IDC', u_active:'Y', u_region:'' };
 
 function exportCSV(data) {
   const headers=['Username','Name','Email','Role','Business Unit','Active'];
@@ -83,7 +83,7 @@ export default function Users() {
 
       <div className="table-wrap">
         <table>
-          <thead><tr><th>Username</th><th>Full Name</th><th>Email</th><th>Role</th><th>Business Unit</th><th>Active</th></tr></thead>
+          <thead><tr><th>Username</th><th>Full Name</th><th>Email</th><th>Role</th><th>Region</th><th>Active</th></tr></thead>
           <tbody>
             {loading&&<tr><td colSpan={6}><div className="loading">Loading users…</div></td></tr>}
             {!loading&&data.length===0&&<tr><td colSpan={6}><div className="empty-state">No users found</div></td></tr>}
@@ -93,7 +93,7 @@ export default function Users() {
                 <td>{u.u_name||'—'}</td>
                 <td>{u.u_email||'—'}</td>
                 <td><span className={`badge ${ROLE_COLORS[u.u_role]||'badge-gray'}`}>{u.u_role}</span></td>
-                <td>{u.u_bus_unit||'—'}</td>
+                <td>{u.u_region||'—'}</td>
                 <td><span className={`badge ${u.u_active==='Y'?'badge-green':'badge-red'}`}>{u.u_active==='Y'?'Active':'Inactive'}</span></td>
               </tr>
             ))}
@@ -130,6 +130,16 @@ export default function Users() {
                 <div className="form-group"><label>Business Unit</label>
                   <select value={form.u_bus_unit} onChange={e=>set('u_bus_unit',e.target.value)}>
                     <option value="IDC">IDC</option><option value="IDM">IDM</option><option value="MOGWASE">Mogwase</option>
+                  </select>
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group"><label>Region</label>
+                  <select value={form.u_region||''} onChange={e=>set('u_region',e.target.value)}>
+                    <option value="">— No region —</option>
+                    <option value="Johannesburg">Johannesburg</option>
+                    <option value="Cape Town">Cape Town</option>
+                    <option value="Other">Other</option>
                   </select>
                 </div>
               </div>
