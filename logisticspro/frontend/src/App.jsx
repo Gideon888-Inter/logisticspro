@@ -111,6 +111,7 @@ export default function App() {
   const [showNotifications, setShowNotifications] = useState(false);
 
   if (!user) return <Login />;
+  if (user.first_login) return <Login />;
 
   const initials = (user.name || user.username || 'U')
     .split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
