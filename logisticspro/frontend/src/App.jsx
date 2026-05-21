@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from './lib/AuthContext';
 import Login from './pages/Login';
 import Loads from './pages/Loads';
+import Dashboard from './pages/Dashboard';
 import Approvals from './pages/Approvals';
 import Vehicles from './pages/Vehicles';
 import Drivers from './pages/Drivers';
@@ -39,7 +40,7 @@ const LogoutIcon = () => (
 );
 
 const MENU = [
-  { key: 'movement',   label: 'Loads',          icon: '🚛' },
+  { key: 'movement',   label: 'Movement',       icon: '🚛' },
   { key: 'workshop',   label: 'Workshop',        icon: '🔧',
     sub: [
       { key: 'workshop-jobcards',    label: 'Job Cards' },
@@ -63,10 +64,18 @@ const MENU = [
   },
   { key: 'clients',    label: 'Clients',           icon: '🏢' },
   { key: 'users',      label: 'Users',              icon: '👥' },
+  { key: 'bulk',       label: 'Bulk Messaging',    icon: '📢' },
   { key: 'schedule',   label: 'Report Schedule',   icon: '📅' },
+  { key: 'search',     label: 'Search',             icon: '🔍',
+    sub: [
+      { key: 'search-loads',    label: 'Search Loads' },
+      { key: 'search-vehicles', label: 'Search Vehicles' },
+    ]
+  },
 ];
 
 const PAGE_TITLES = {
+  '': 'Overview',
   movement: 'Loads', vehicles: 'Vehicles',
   'drivers-list': 'Drivers', 'drivers-leave': 'Driver Leave',
   clients: 'Clients', 'workshop-jobcards': 'Job Cards',
@@ -78,6 +87,7 @@ const PAGE_TITLES = {
 
 function PageContent({ page }) {
   switch(page) {
+    case '':                     return <Dashboard />;
     case 'movement':             return <Loads />;
     case 'approvals':            return <Approvals onNavigateToLoad={(loadNo) => { window._navigateToLoad = loadNo; }} />;
     case 'vehicles':             return <Vehicles />;
@@ -324,21 +334,10 @@ export default function App() {
 
         {/* MAIN CONTENT */}
         <main className="main-content">
-          {page === '' ? (
-            <>
-              <div className="page-header">
-                <h1>Overview</h1>
-              </div>
-              <Dashboard />
-            </>
-          ) : (
-            <>
-              <div className="page-header">
-                <h1>{PAGE_TITLES[page] || page}</h1>
-              </div>
-              <PageContent page={page} />
-            </>
-          )}
+          <div className="page-header">
+            <h1>{PAGE_TITLES[page] !== undefined ? PAGE_TITLES[page] : page}</h1>
+          </div>
+          <PageContent page={page} />
         </main>
       </div>
     </div>
