@@ -13,6 +13,7 @@ export function AuthProvider({ children }) {
     localStorage.setItem('lp_token', token);
     localStorage.setItem('lp_user', JSON.stringify(user));
     setUser(user);
+    return user;
   }, []);
 
   const logout = useCallback(() => {
@@ -21,8 +22,14 @@ export function AuthProvider({ children }) {
     setUser(null);
   }, []);
 
+  const updateUser = useCallback((updates) => {
+    const updated = { ...JSON.parse(localStorage.getItem('lp_user')), ...updates };
+    localStorage.setItem('lp_user', JSON.stringify(updated));
+    setUser(updated);
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ user, login, logout }}>
+    <AuthContext.Provider value={{ user, login, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   );
