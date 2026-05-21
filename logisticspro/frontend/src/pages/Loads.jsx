@@ -23,7 +23,7 @@ const COST_TYPES = ['Loadshift','Fine','Labour','Extra Stop','Other'];
 function fmtDate(d) { return d ? new Date(d).toLocaleDateString('en-ZA',{day:'2-digit',month:'short',year:'numeric'}) : '—'; }
 function fmtR(n) { return (n||n===0) ? 'R '+Number(n).toLocaleString('en-ZA',{minimumFractionDigits:0}) : '—'; }
 
-async function exportAllLoadsCSV(dateFrom, dateTo, status) {
+async function exportAllLoadsCSV(dateFrom, dateTo, status, search) {
   // Fetch ALL loads matching current filters (no pagination limit)
   const token = localStorage.getItem('lp_token');
   const API = import.meta.env.VITE_API_URL || '';
@@ -31,6 +31,7 @@ async function exportAllLoadsCSV(dateFrom, dateTo, status) {
   if(dateFrom) params.append('date_from', dateFrom);
   if(dateTo) params.append('date_to', dateTo);
   if(status) params.append('status', status);
+  if(search) params.append('search', search);
 
   const res = await fetch(`${API}/api/loads?${params}`, {
     headers: { 'Authorization': 'Bearer ' + token }
@@ -639,6 +640,46 @@ function ExpandedRow({ load, onRefresh, onCostUpdate }) {
   );
 }
 
+// ── Pagination Bar ───────────────────────────────────────────
+function PaginationBar({ page, total, limit, setPage }) {
+  const totalPages = Math.ceil(total / limit);
+  
+  // Generate page numbers to show
+  const getPages = () => {
+    const pages = [];
+    const delta = 2; // pages around current
+    const left = Math.max(1, page - delta);
+    const right = Math.min(totalPages, page + delta);
+    
+    if (left > 1) { pages.push(1); if (left > 2) pages.push('...'); }
+    for (let i = left; i <= right; i++) pages.push(i);
+    if (right < totalPages) { if (right < totalPages - 1) pages.push('...'); pages.push(totalPages); }
+    return pages;
+  };
+
+  const btnStyle = (isActive) => ({
+    padding:'4px 8px', fontSize:12, border:'1px solid #ddd',
+    borderRadius:4, cursor:'pointer', background: isActive?'#00AEEF':'white',
+    color: isActive?'white':'#555', fontWeight: isActive?700:400, minWidth:32,
+  });
+
+  return (
+    <div style={{display:'flex',alignItems:'center',gap:4,marginBottom:10,flexWrap:'wrap'}}>
+      <button style={btnStyle(false)} onClick={()=>setPage(1)} disabled={page===1}>«</button>
+      <button style={btnStyle(false)} onClick={()=>setPage(p=>Math.max(1,p-1))} disabled={page===1}>‹</button>
+      {getPages().map((p,i) => p === '...'
+        ? <span key={i} style={{padding:'0 4px',color:'#aaa'}}>…</span>
+        : <button key={p} style={btnStyle(p===page)} onClick={()=>setPage(p)}>{p}</button>
+      )}
+      <button style={btnStyle(false)} onClick={()=>setPage(p=>Math.min(totalPages,p+1))} disabled={page>=totalPages}>›</button>
+      <button style={btnStyle(false)} onClick={()=>setPage(totalPages)} disabled={page>=totalPages}>»</button>
+      <span style={{fontSize:12,color:'#888',marginLeft:8}}>
+        Page {page} of {totalPages.toLocaleString()} ({total.toLocaleString()} loads)
+      </span>
+    </div>
+  );
+}
+
 // ── Main Loads Page ───────────────────────────────────────────
 export default function Loads() {
   const [loads, setLoads] = useState([]);
@@ -666,6 +707,7 @@ export default function Loads() {
       if(filters.bus_unit) params.bus_unit=filters.bus_unit;
       if(dateFrom) params.date_from=dateFrom;
       if(dateTo) params.date_to=dateTo;
+      if(filters.search) params.search=filters.search;
       const res = await api.getLoads(params);
       const data = res.data||[];
       setLoads(data);
@@ -683,11 +725,7 @@ export default function Loads() {
 
 
 
-  const filtered = loads.filter(l=>{
-    if(!filters.search) return true;
-    const s=filters.search.toLowerCase();
-    return l.m_load_no?.toLowerCase().includes(s)||l.m_truck?.toLowerCase().includes(s)||l.m_customer?.toLowerCase().includes(s)||l.m_from?.toLowerCase().includes(s)||l.m_to?.toLowerCase().includes(s);
-  });
+  const filtered = loads; // Search is now server-side
 
   const toggleRow = (id) => setExpandedRow(e=>e===id?null:id);
 
@@ -701,7 +739,7 @@ export default function Loads() {
       </div>
 
       <div className="filter-bar">
-        <input placeholder="Search load no, truck, customer…" value={filters.search} onChange={e=>setFilters(f=>({...f,search:e.target.value}))} />
+        <input placeholder="Search load no, truck, customer…" value={filters.search} onChange={e=>{setFilters(f=>({...f,search:e.target.value}));setPage(1);}} />
         <select value={filters.status} onChange={e=>{setFilters(f=>({...f,status:e.target.value}));setPage(1);}}>
           <option value="">All statuses</option>
           {ALL_STATUSES.map(s=><option key={s} value={s}>{s.replace(/_/g,' ')}</option>)}
@@ -711,18 +749,12 @@ export default function Loads() {
         <input type="date" value={dateTo} onChange={e=>{setDateTo(e.target.value);setPage(1);}}
           style={{padding:'7px 10px',fontSize:13,border:'1px solid #ddd',borderRadius:4}} />
         <button className="btn btn-sm" onClick={()=>{setDateFrom('');setDateTo('');setPage(1);}}>All dates</button>
-        <button className="btn btn-sm" onClick={()=>exportAllLoadsCSV(dateFrom, dateTo, filters.status)}>⬇ Export CSV</button>
+        <button className="btn btn-sm" onClick={()=>exportAllLoadsCSV(dateFrom, dateTo, filters.status, filters.search)}>⬇ Export CSV</button>
         <button className="btn btn-primary btn-sm" onClick={()=>setShowModal(true)}>+ New Load</button>
       </div>
 
       {/* Pagination */}
-      {total > LIMIT && (
-        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10,fontSize:13,color:'#555'}}>
-          <button className="btn btn-sm" onClick={()=>setPage(p=>Math.max(1,p-1))} disabled={page===1}>← Prev</button>
-          <span>Page {page} of {Math.ceil(total/LIMIT)} ({total.toLocaleString()} total)</span>
-          <button className="btn btn-sm" onClick={()=>setPage(p=>p+1)} disabled={page>=Math.ceil(total/LIMIT)}>Next →</button>
-        </div>
-      )}
+      {total > LIMIT && <PaginationBar page={page} total={total} limit={LIMIT} setPage={setPage} />}
 
       <div className="table-wrap">
         <table>
@@ -773,6 +805,7 @@ export default function Loads() {
         </table>
       </div>
 
+      {total > LIMIT && <PaginationBar page={page} total={total} limit={LIMIT} setPage={setPage} />}
       {showModal&&<NewLoadModal onClose={()=>setShowModal(false)} onCreated={()=>{setShowModal(false);fetchLoads();fetchStats();}} />}
     </div>
   );
