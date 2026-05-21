@@ -114,6 +114,14 @@ router.post('/', async (req, res) => {
       .single();
 
     if (error) return res.status(400).json({ error: error.message });
+
+    // Audit trail - load created
+    await supabase.from('lp_comments').insert([{
+      c_load: data.m_load_no,
+      c_comment: `Load created by ${req.user.username}. Truck: ${load.m_truck}, Customer: ${load.m_customer}, Route: ${load.m_from} → ${load.m_to}, Rate: R ${Number(load.m_rate||0).toLocaleString('en-ZA')}`,
+      c_logged_by: req.user.username,
+    }]);
+
     res.status(201).json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
