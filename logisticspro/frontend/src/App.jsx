@@ -108,23 +108,6 @@ function PageContent({ page }) {
   }
 }
 
-function Dashboard() {
-  return (
-    <div style={{padding: '0'}}>
-      <div className="stats-grid">
-        <div className="stat-card"><div className="stat-label">Active Loads</div><div className="stat-value" style={{color:'#00AEEF'}}>—</div><div className="stat-sub">Import data to begin</div></div>
-        <div className="stat-card"><div className="stat-label">En Route</div><div className="stat-value" style={{color:'#00AEEF'}}>—</div><div className="stat-sub">No active loads</div></div>
-        <div className="stat-card"><div className="stat-label">Vehicles</div><div className="stat-value" style={{color:'#00AEEF'}}>—</div><div className="stat-sub">Fleet not loaded yet</div></div>
-        <div className="stat-card"><div className="stat-label">Drivers</div><div className="stat-value" style={{color:'#00AEEF'}}>—</div><div className="stat-sub">No drivers imported</div></div>
-      </div>
-      <div style={{background:'white', borderRadius:6, padding:32, textAlign:'center', color:'#bbb', boxShadow:'0 2px 12px rgba(0,0,0,0.08)', marginTop:8}}>
-        <div style={{fontSize:48, marginBottom:16}}>📊</div>
-        <div style={{fontSize:16, fontWeight:600, color:'#555', marginBottom:8}}>Dashboard Charts Coming Soon</div>
-        <div style={{fontSize:13}}>Once your data is imported, this area will show load activity graphs, fleet status, and key performance indicators.</div>
-      </div>
-    </div>
-  );
-}
 
 export default function App() {
   const { user, logout } = useAuth();
