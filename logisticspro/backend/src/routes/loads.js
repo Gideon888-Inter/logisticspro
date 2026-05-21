@@ -11,7 +11,7 @@ router.get('/', async (req, res) => {
   const offset = (page - 1) * limit;
   let query = supabase
     .from('lp_movement')
-    .select('*, lp_customers(c_name)', { count: 'exact' })
+    .select('m_load_no, m_date, m_customer, m_truck, m_driver_id, m_from, m_to, m_rate, m_status, m_invoice, m_opening_km, m_closing_km, m_trailer1, m_responsible_operator, m_bus_unit', { count: 'exact' })
     .neq('m_status', 'DELETED')
     .order('m_date', { ascending: false })
     .range(offset, offset + Number(limit) - 1);
