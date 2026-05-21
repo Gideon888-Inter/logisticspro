@@ -160,4 +160,120 @@ router.delete('/:id', requireRole('ADMIN', 'MANAGER'), async (req, res) => {
   res.json({ message: 'Load deleted' });
 });
 
+// POST request order number change
+router.post('/:id/request-order-no', async (req, res) => {
+  const { order_no } = req.body;
+  if (!order_no?.trim()) return res.status(400).json({ error: 'Please provide an order number' });
+
+  const { data: load } = await supabase
+    .from('lp_movement').select('m_order_no, m_order_no_pending').eq('m_load_no', req.params.id).single();
+  if (!load) return res.status(404).json({ error: 'Load not found' });
+
+  // If no existing order number, save directly
+  if (!load.m_order_no || load.m_order_no.trim() === '' || load.m_order_no === '0') {
+    await supabase.from('lp_movement').update({
+      m_order_no: order_no,
+      updated_at: new Date().toISOString(),
+    }).eq('m_load_no', req.params.id);
+
+    await supabase.from('lp_comments').insert([{
+      c_load: req.params.id,
+      c_comment: `Order number set to: ${order_no}`,
+      c_logged_by: req.user.username,
+    }]);
+    return res.json({ saved: true, message: 'Order number saved' });
+  }
+
+  // Existing order number — requires approval
+  await supabase.from('lp_movement').update({
+    m_order_no_pending: order_no,
+    m_order_no_requested_by: req.user.username,
+    m_order_no_request_time: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  }).eq('m_load_no', req.params.id);
+
+  await supabase.from('lp_comments').insert([{
+    c_load: req.params.id,
+    c_comment: `Order number change requested: "${load.m_order_no}" → "${order_no}" — awaiting approval`,
+    c_logged_by: req.user.username,
+  }]);
+
+  await supabase.from('lp_notifications').insert([{
+    n_role: 'OPERATIONS',
+    n_type: 'ORDER_NO_CHANGE',
+    n_title: 'Order Number Change Approval Required',
+    n_message: `${req.user.username} requested order number change on load ${req.params.id}: "${load.m_order_no}" → "${order_no}"`,
+    n_load_no: req.params.id,
+  }]);
+
+  res.json({ saved: false, pending: true, message: 'Change submitted for approval' });
+});
+
+// PATCH approve or reject order number change
+router.patch('/:id/approve-order-no', async (req, res) => {
+  const { action, rejection_reason } = req.body;
+
+  const { data: load } = await supabase
+    .from('lp_movement').select('m_order_no, m_order_no_pending, m_order_no_requested_by').eq('m_load_no', req.params.id).single();
+  if (!load) return res.status(404).json({ error: 'Load not found' });
+
+  if (action === 'approve') {
+    await supabase.from('lp_movement').update({
+      m_order_no: load.m_order_no_pending,
+      m_order_no_pending: null,
+      m_order_no_requested_by: null,
+      m_order_no_request_time: null,
+      updated_at: new Date().toISOString(),
+    }).eq('m_load_no', req.params.id);
+
+    await supabase.from('lp_comments').insert([{
+      c_load: req.params.id,
+      c_comment: `Order number change APPROVED by ${req.user.username}: "${load.m_order_no}" → "${load.m_order_no_pending}"`,
+      c_logged_by: req.user.username,
+    }]);
+
+    await supabase.from('lp_notifications').insert([{
+      n_user: load.m_order_no_requested_by,
+      n_type: 'ORDER_NO_APPROVED',
+      n_title: 'Order Number Change Approved',
+      n_message: `Your order number change on load ${req.params.id} was approved: "${load.m_order_no_pending}"`,
+      n_load_no: req.params.id,
+    }]);
+  } else {
+    await supabase.from('lp_movement').update({
+      m_order_no_pending: null,
+      m_order_no_requested_by: null,
+      m_order_no_request_time: null,
+      updated_at: new Date().toISOString(),
+    }).eq('m_load_no', req.params.id);
+
+    await supabase.from('lp_comments').insert([{
+      c_load: req.params.id,
+      c_comment: `Order number change REJECTED by ${req.user.username}. Reason: ${rejection_reason || 'No reason given'}`,
+      c_logged_by: req.user.username,
+    }]);
+
+    await supabase.from('lp_notifications').insert([{
+      n_user: load.m_order_no_requested_by,
+      n_type: 'ORDER_NO_REJECTED',
+      n_title: 'Order Number Change Rejected',
+      n_message: `Your order number change on load ${req.params.id} was rejected. Reason: ${rejection_reason || 'No reason given'}`,
+      n_load_no: req.params.id,
+    }]);
+  }
+
+  res.json({ success: true, action });
+});
+
+// GET pending order number changes
+router.get('/pending-order-nos', async (req, res) => {
+  const { data, error } = await supabase
+    .from('lp_movement')
+    .select('m_load_no, m_date, m_customer, m_truck, m_order_no, m_order_no_pending, m_order_no_requested_by, m_order_no_request_time')
+    .not('m_order_no_pending', 'is', null)
+    .order('m_order_no_request_time', { ascending: false });
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data || []);
+});
+
 module.exports = router;
