@@ -1,8 +1,25 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/AuthContext';
 
 const API = import.meta.env.VITE_API_URL || '';
+const MAPS_KEY = 'AIzaSyBezdBaV_ZJFlb2Eyd3DRNzqJSVpxlVjAo';
+
+// Load Google Maps script once
+let mapsLoaded = false;
+let mapsLoading = false;
+const mapsCallbacks = [];
+function loadGoogleMaps(cb) {
+  if (mapsLoaded) return cb();
+  mapsCallbacks.push(cb);
+  if (mapsLoading) return;
+  mapsLoading = true;
+  const script = document.createElement('script');
+  script.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_KEY}&libraries=places`;
+  script.async = true;
+  script.onload = () => { mapsLoaded = true; mapsCallbacks.forEach(f=>f()); mapsCallbacks.length=0; };
+  document.head.appendChild(script);
+}
 const token = () => localStorage.getItem('lp_token');
 const req = (path, opts={}) => fetch(API+'/api'+path, {
   ...opts,
@@ -26,6 +43,23 @@ function fmtR(n) { return (n||n===0) ? 'R '+Number(n).toLocaleString('en-ZA',{mi
 async function exportAllLoadsCSV(dateFrom, dateTo, status, search) {
   const token = localStorage.getItem('lp_token');
   const API = import.meta.env.VITE_API_URL || '';
+const MAPS_KEY = 'AIzaSyBezdBaV_ZJFlb2Eyd3DRNzqJSVpxlVjAo';
+
+// Load Google Maps script once
+let mapsLoaded = false;
+let mapsLoading = false;
+const mapsCallbacks = [];
+function loadGoogleMaps(cb) {
+  if (mapsLoaded) return cb();
+  mapsCallbacks.push(cb);
+  if (mapsLoading) return;
+  mapsLoading = true;
+  const script = document.createElement('script');
+  script.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_KEY}&libraries=places`;
+  script.async = true;
+  script.onload = () => { mapsLoaded = true; mapsCallbacks.forEach(f=>f()); mapsCallbacks.length=0; };
+  document.head.appendChild(script);
+}
   
   // Fetch in batches of 1000 to avoid timeout
   let allLoads = [];
@@ -92,6 +126,109 @@ async function exportAllLoadsCSV(dateFrom, dateTo, status, search) {
   URL.revokeObjectURL(url);
 }
 
+// ── Map Location Picker ──────────────────────────────────────
+function MapPicker({ label, value, onChange, onClose }) {
+  const mapRef = React.useRef(null);
+  const inputRef = React.useRef(null);
+  const [map, setMap] = React.useState(null);
+  const [marker, setMarker] = React.useState(null);
+  const [address, setAddress] = React.useState(value || '');
+
+  React.useEffect(() => {
+    loadGoogleMaps(() => {
+      const defaultPos = { lat: -26.2041, lng: 28.0473 }; // Johannesburg
+      const m = new window.google.maps.Map(mapRef.current, {
+        center: defaultPos, zoom: 10,
+        mapTypeControl: false, streetViewControl: false,
+      });
+
+      const mk = new window.google.maps.Marker({ map: m, draggable: true });
+
+      // Search box
+      const autocomplete = new window.google.maps.places.Autocomplete(inputRef.current, {
+        componentRestrictions: { country: 'za' },
+      });
+      autocomplete.bindTo('bounds', m);
+      autocomplete.addListener('place_changed', () => {
+        const place = autocomplete.getPlace();
+        if (!place.geometry) return;
+        m.setCenter(place.geometry.location);
+        m.setZoom(15);
+        mk.setPosition(place.geometry.location);
+        setAddress(place.formatted_address || inputRef.current.value);
+      });
+
+      // Click to pin
+      m.addListener('click', (e) => {
+        mk.setPosition(e.latLng);
+        const geocoder = new window.google.maps.Geocoder();
+        geocoder.geocode({ location: e.latLng }, (results, status) => {
+          if (status === 'OK' && results[0]) {
+            setAddress(results[0].formatted_address);
+            if(inputRef.current) inputRef.current.value = results[0].formatted_address;
+          }
+        });
+      });
+
+      // Drag marker
+      mk.addListener('dragend', (e) => {
+        const geocoder = new window.google.maps.Geocoder();
+        geocoder.geocode({ location: e.latLng }, (results, status) => {
+          if (status === 'OK' && results[0]) {
+            setAddress(results[0].formatted_address);
+            if(inputRef.current) inputRef.current.value = results[0].formatted_address;
+          }
+        });
+      });
+
+      // If value already set, geocode it to show on map
+      if (value) {
+        const geocoder = new window.google.maps.Geocoder();
+        geocoder.geocode({ address: value + ', South Africa' }, (results, status) => {
+          if (status === 'OK' && results[0]) {
+            m.setCenter(results[0].geometry.location);
+            m.setZoom(14);
+            mk.setPosition(results[0].geometry.location);
+          }
+        });
+      }
+
+      setMap(m);
+      setMarker(mk);
+    });
+  }, []);
+
+  const confirm = () => { onChange(address); onClose(); };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e=>e.stopPropagation()} style={{width:680,maxHeight:'90vh'}}>
+        <div className="modal-header">
+          <h3>📍 Pin {label}</h3>
+          <button onClick={onClose} style={{background:'none',border:'none',color:'white',cursor:'pointer',fontSize:18}}>✕</button>
+        </div>
+        <div className="modal-body" style={{padding:0}}>
+          <div style={{padding:'12px 16px',borderBottom:'1px solid #eee'}}>
+            <input ref={inputRef} defaultValue={value}
+              placeholder="Search for an address…"
+              style={{width:'100%',padding:'8px 12px',fontSize:13,border:'1px solid #ddd',borderRadius:4,fontFamily:'inherit',boxSizing:'border-box'}} />
+          </div>
+          <div ref={mapRef} style={{width:'100%',height:380}} />
+          {address && (
+            <div style={{padding:'10px 16px',background:'#f0fdf4',borderTop:'1px solid #86efac',fontSize:13,color:'#059669'}}>
+              📍 <strong>Selected:</strong> {address}
+            </div>
+          )}
+        </div>
+        <div className="modal-footer">
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={confirm} disabled={!address}>✓ Confirm Location</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── New Load Modal ────────────────────────────────────────────
 function NewLoadModal({ onClose, onCreated }) {
   const { user } = useAuth();
@@ -109,6 +246,7 @@ function NewLoadModal({ onClose, onCreated }) {
   });
   const [saving, setSaving] = useState(false);
   const [lastClosingKm, setLastClosingKm] = useState(null);
+  const [mapPicker, setMapPicker] = useState(null); // 'loading' or 'offloading'
   const [kmValidation, setKmValidation] = useState(null);
 
   useEffect(() => {
@@ -337,15 +475,27 @@ function NewLoadModal({ onClose, onCreated }) {
           <div className="form-row">
             <div className="form-group">
               <label style={labelStyle}>Loading Address</label>
-              <input value={form.m_loading_address} onChange={e=>set('m_loading_address',e.target.value)}
-                placeholder="Full loading address…"
-                style={inputStyle} />
+              <div style={{display:'flex',gap:6}}>
+                <input value={form.m_loading_address} onChange={e=>set('m_loading_address',e.target.value)}
+                  placeholder="Type or pin on map…" style={{...inputStyle,flex:1}} />
+                <button type="button" onClick={()=>setMapPicker('loading')}
+                  title="Pin on map"
+                  style={{padding:'8px 10px',border:'1px solid #ddd',borderRadius:4,background:'white',cursor:'pointer',fontSize:16}}>
+                  📍
+                </button>
+              </div>
             </div>
             <div className="form-group">
               <label style={labelStyle}>Offloading Address</label>
-              <input value={form.m_offloading_address} onChange={e=>set('m_offloading_address',e.target.value)}
-                placeholder="Full offloading address…"
-                style={inputStyle} />
+              <div style={{display:'flex',gap:6}}>
+                <input value={form.m_offloading_address} onChange={e=>set('m_offloading_address',e.target.value)}
+                  placeholder="Type or pin on map…" style={{...inputStyle,flex:1}} />
+                <button type="button" onClick={()=>setMapPicker('offloading')}
+                  title="Pin on map"
+                  style={{padding:'8px 10px',border:'1px solid #ddd',borderRadius:4,background:'white',cursor:'pointer',fontSize:16}}>
+                  📍
+                </button>
+              </div>
             </div>
           </div>
 
@@ -385,6 +535,16 @@ function NewLoadModal({ onClose, onCreated }) {
           <button className="btn btn-primary" onClick={save} disabled={saving}>{saving?'Saving…':'Create Load'}</button>
         </div>
       </div>
+      {mapPicker==='loading' && (
+        <MapPicker label="Loading Address" value={form.m_loading_address}
+          onChange={addr=>set('m_loading_address',addr)}
+          onClose={()=>setMapPicker(null)} />
+      )}
+      {mapPicker==='offloading' && (
+        <MapPicker label="Offloading Address" value={form.m_offloading_address}
+          onChange={addr=>set('m_offloading_address',addr)}
+          onClose={()=>setMapPicker(null)} />
+      )}
     </div>
   );
 }
