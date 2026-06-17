@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 
 const API = import.meta.env.VITE_API_URL || '';
@@ -108,6 +107,119 @@ function PieChart({ data }) {
   );
 }
 
+// ── License Expiry Banner ─────────────────────────────────────
+function LicenseBanner({ vehicles }) {
+  const [expanded, setExpanded] = React.useState(false);
+  const today = new Date();
+  const thisMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+  const thisMonthEnd   = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+
+  // Vehicles expiring THIS calendar month (regardless of dropdown)
+  const expiring = vehicles
+    .filter(v => {
+      if (!v.vh_license_expiry) return false;
+      const d = new Date(v.vh_license_expiry);
+      return d >= thisMonthStart && d <= thisMonthEnd;
+    })
+    .sort((a, b) => new Date(a.vh_license_expiry) - new Date(b.vh_license_expiry));
+
+  // Also flag already expired
+  const expired = vehicles
+    .filter(v => v.vh_license_expiry && new Date(v.vh_license_expiry) < thisMonthStart)
+    .sort((a, b) => new Date(a.vh_license_expiry) - new Date(b.vh_license_expiry));
+
+  const total = expiring.length + expired.length;
+  if (total === 0) return null;
+
+  const fmtD = (d) => new Date(d).toLocaleDateString('en-ZA', { day:'2-digit', month:'short', year:'numeric' });
+
+  return (
+    <div style={{
+      background: total > 0 ? '#fff1f2' : '#f0fdf4',
+      border: `2px solid ${expired.length > 0 ? '#e53e3e' : '#f97316'}`,
+      borderRadius: 8, marginBottom: 4, overflow: 'hidden',
+    }}>
+      {/* Banner header — always visible */}
+      <div
+        onClick={() => setExpanded(e => !e)}
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '12px 16px', cursor: 'pointer',
+          background: expired.length > 0 ? '#e53e3e' : '#f97316',
+        }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 20 }}>🚨</span>
+          <div>
+            <span style={{ color: 'white', fontWeight: 700, fontSize: 14 }}>
+              {expired.length > 0
+                ? `${expired.length} vehicle${expired.length > 1 ? 's' : ''} with EXPIRED license${expired.length > 1 ? 's' : ''}`
+                : ''}
+              {expired.length > 0 && expiring.length > 0 ? ' · ' : ''}
+              {expiring.length > 0
+                ? `${expiring.length} vehicle license${expiring.length > 1 ? 's' : ''} expiring this month`
+                : ''}
+            </span>
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button
+            onClick={e => { e.stopPropagation(); onNavigate && onNavigate('vehicles-licenses'); }}
+            style={{ color: 'white', fontSize: 12, textDecoration: 'underline', opacity: 0.9, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
+            View all vehicles →
+          </button>
+          <span style={{ color: 'white', fontSize: 18, fontWeight: 700 }}>{expanded ? '▲' : '▼'}</span>
+        </div>
+      </div>
+
+      {/* Expanded list */}
+      {expanded && (
+        <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {expired.length > 0 && (
+            <>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#e53e3e', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>
+                Already Expired
+              </div>
+              {expired.map(v => (
+                <div key={v.vh_code} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  background: '#fee2e2', borderRadius: 4, padding: '6px 12px',
+                  border: '1px solid #fca5a5',
+                }}>
+                  <span style={{ fontWeight: 600, fontSize: 13, fontFamily: 'monospace' }}>{v.vh_code}</span>
+                  <span style={{ fontSize: 12, color: '#555' }}>{v.vh_type} · {v.vh_bus_unit || '—'}</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: '#e53e3e' }}>
+                    Expired: {fmtD(v.vh_license_expiry)}
+                  </span>
+                </div>
+              ))}
+            </>
+          )}
+          {expiring.length > 0 && (
+            <>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#f97316', textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: expired.length > 0 ? 8 : 0, marginBottom: 2 }}>
+                Expiring This Month
+              </div>
+              {expiring.map(v => (
+                <div key={v.vh_code} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  background: '#fff7ed', borderRadius: 4, padding: '6px 12px',
+                  border: '1px solid #fed7aa',
+                }}>
+                  <span style={{ fontWeight: 600, fontSize: 13, fontFamily: 'monospace' }}>{v.vh_code}</span>
+                  <span style={{ fontSize: 12, color: '#555' }}>{v.vh_type} · {v.vh_bus_unit || '—'}</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: '#f97316' }}>
+                    Expires: {fmtD(v.vh_license_expiry)}
+                  </span>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Status badge colors
 const STATUS_COLORS = {
   PRELOAD: '#94a3b8', EN_ROUTE: '#3b82f6', OFFLOADED: '#10b981',
@@ -116,9 +228,10 @@ const STATUS_COLORS = {
   PENDING_KM_APPROVAL: '#f97316', KM_CORRECTION_NEEDED: '#ef4444',
 };
 
-export default function Dashboard() {
+export default function Dashboard({ onNavigate }) {
   const [loads, setLoads] = useState([]);
   const [users, setUsers] = useState([]);
+  const [vehicles, setVehicles] = useState([]);
   const [loading, setLoading] = useState(true);
   const monthOptions = generateMonthOptions();
   const now = new Date();
@@ -136,9 +249,11 @@ export default function Dashboard() {
     Promise.all([
       req(`/loads?date_from=${from}&date_to=${to}&limit=2000`),
       req('/users').catch(()=>[]),
-    ]).then(([l, u]) => {
+      req('/vehicles').catch(()=>[]),
+    ]).then(([l, u, v]) => {
       setLoads(l.data || []);
       setUsers(Array.isArray(u) ? u : []);
+      setVehicles(Array.isArray(v) ? v : []);
     }).catch(console.error)
     .finally(() => setLoading(false));
   }, [selectedMonth]);
@@ -254,6 +369,9 @@ export default function Dashboard() {
         </select>
         <div style={{fontSize:12, color:'#aaa'}}>Live data — refreshes on page load</div>
       </div>
+
+      {/* License Expiry Banner */}
+      <LicenseBanner vehicles={vehicles} />
 
       {/* Top stats */}
       <div className="stats-grid">
