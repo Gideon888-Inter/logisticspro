@@ -280,7 +280,7 @@ router.post('/:id/request-order-no', async (req, res) => {
   }]);
 
   await supabase.from('lp_notifications').insert([{
-    n_role:    'OPERATIONS',
+    n_role:    'OPERATOR',
     n_type:    'ORDER_NO_CHANGE',
     n_title:   'Order Number Change Approval Required',
     n_message: `${req.user.username} requested order number change on load ${req.params.id}: "${load.m_order_no}" → "${order_no}"`,
