@@ -3,7 +3,7 @@ import { api } from '../lib/api';
 import { useAuth } from '../lib/AuthContext';
 
 const API = import.meta.env.VITE_API_URL || '';
-const MAPS_KEY = 'AIzaSyBezdBaV_ZJFlb2Eyd3DRNzqJSVpxlVjAo';
+const MAPS_KEY = import.meta.env.VITE_MAPS_KEY || '';
 
 // ── Google Maps loader (declared ONCE here — do not repeat below) ──
 let mapsLoaded = false;
@@ -280,7 +280,7 @@ function NewLoadModal({ onClose, onCreated }) {
   const [operators, setOperators] = useState([]);
   const [form, setForm] = useState({
     m_truck: '', m_driver_id: '', m_customer: '',
-    m_trailer_size: 'None', m_trailer1: '',
+    m_trailer_size: 'None', m_trailer1: '', m_trailer2: '',
     m_from: '', m_to: '', m_rate: 0,
     m_bus_unit: user?.bus_unit || 'IDC',
     m_opening_km: '', m_responsible_operator: '',
@@ -350,7 +350,8 @@ function NewLoadModal({ onClose, onCreated }) {
       if (k === 'm_trailer_size') {
         const matched = rates.find(r => r.rc_client_code === next.m_customer && r.rc_from === next.m_from && r.rc_to === next.m_to);
         if (matched) next.m_rate = v === '18m' ? (matched.rc_rate_18m || 0) : (matched.rc_rate_15m || matched.rc_rate_18m || 0);
-        if (v === 'None') next.m_trailer1 = '';
+        if (v === 'None') { next.m_trailer1 = ''; next.m_trailer2 = ''; }
+        if (v === '15m') next.m_trailer2 = '';
       }
       return next;
     });
@@ -359,6 +360,7 @@ function NewLoadModal({ onClose, onCreated }) {
   const save = async () => {
     if (!form.m_truck) return alert('Please select a truck');
     if (!form.m_customer) return alert('Please select a customer');
+    if (form.m_trailer_size === '18m' && !form.m_trailer2) return alert('Please select a second trailer for 18m loads');
     if (kmValidation && !kmValidation.valid) return alert(kmValidation.error);
     setSaving(true);
     try {
@@ -447,6 +449,19 @@ function NewLoadModal({ onClose, onCreated }) {
               </select>
             </div>
           </div>
+          {/* Second trailer — only for 18m */}
+          {form.m_trailer_size === '18m' && (
+          <div className="form-row">
+            <div className="form-group" />
+            <div className="form-group">
+              <label style={labelStyle}>Trailer 2 * <span style={{ color: '#00AEEF', fontWeight: 400, textTransform: 'none' }}>(18m requires 2 trailers)</span></label>
+              <select value={form.m_trailer2} onChange={e => set('m_trailer2', e.target.value)} style={inputStyle}>
+                <option value="">— Select second trailer —</option>
+                {trailers.filter(v => v.vh_code !== form.m_trailer1).map(v => <option key={v.vh_code} value={v.vh_code}>{v.vh_code} — {v.vh_make} {v.vh_model}</option>)}
+              </select>
+            </div>
+          </div>
+          )}
           <div className="form-row">
             <div className="form-group">
               <label style={labelStyle}>Responsible Operator</label>
