@@ -103,7 +103,7 @@ router.patch('/:id/request-delete', async (req, res) => {
 
   // Notify operations/managers
   await supabase.from('lp_notifications').insert([{
-    n_role: 'OPERATIONS',
+    n_role: 'OPERATOR',
     n_type: 'COST_DELETE_REQUEST',
     n_title: 'Cost Deletion Approval Required',
     n_message: `${req.user.username} requested deletion of ${cost.c_code} R ${Number(cost.c_amount).toFixed(2)} on load ${cost.c_load}. Reason: ${reason}`,
