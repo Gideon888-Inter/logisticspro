@@ -108,8 +108,8 @@ function PieChart({ data }) {
 }
 
 // ── License Expiry Banner ─────────────────────────────────────
-function LicenseBanner({ vehicles }) {
-  const [expanded, setExpanded] = React.useState(false);
+function LicenseBanner({ vehicles, onNavigate }) {
+  const [expanded, setExpanded] = useState(false);
   const today = new Date();
   const thisMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
   const thisMonthEnd   = new Date(today.getFullYear(), today.getMonth() + 1, 0);
@@ -371,7 +371,7 @@ export default function Dashboard({ onNavigate }) {
       </div>
 
       {/* License Expiry Banner */}
-      <LicenseBanner vehicles={vehicles} />
+      <LicenseBanner vehicles={vehicles} onNavigate={onNavigate} />
 
       {/* Top stats */}
       <div className="stats-grid">
