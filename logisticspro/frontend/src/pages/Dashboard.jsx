@@ -11,8 +11,20 @@ function fmtR(n) {
   return 'R ' + Number(n).toLocaleString('en-ZA', {minimumFractionDigits:0});
 }
 
-function monthName() {
-  return new Date().toLocaleDateString('en-ZA', { month:'long', year:'numeric' });
+function formatMonthLabel(year, month) {
+  return new Date(year, month - 1, 1).toLocaleDateString('en-ZA', { month: 'long', year: 'numeric' });
+}
+
+function generateMonthOptions() {
+  const options = [];
+  const now = new Date();
+  let y = 2024, m = 1;
+  while (y < now.getFullYear() || (y === now.getFullYear() && m <= now.getMonth() + 1)) {
+    options.push({ year: y, month: m, label: formatMonthLabel(y, m) });
+    m++;
+    if (m > 12) { m = 1; y++; }
+  }
+  return options.reverse();
 }
 
 // Simple bar chart
@@ -107,19 +119,28 @@ export default function Dashboard() {
   const [loads, setLoads] = useState([]);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const monthOptions = generateMonthOptions();
+  const now = new Date();
+  const [selectedMonth, setSelectedMonth] = useState(
+    `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`
+  );
 
   useEffect(() => {
-    const now = new Date();
-    const from = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
+    setLoading(true);
+    const [selYear, selMon] = selectedMonth.split('-');
+    const from = `${selYear}-${selMon}-01`;
+    // Calculate last day of selected month
+    const lastDay = new Date(Number(selYear), Number(selMon), 0).getDate();
+    const to = `${selYear}-${selMon}-${String(lastDay).padStart(2,'0')}`;
     Promise.all([
-      req(`/loads?date_from=${from}&limit=2000`),
+      req(`/loads?date_from=${from}&date_to=${to}&limit=2000`),
       req('/users').catch(()=>[]),
     ]).then(([l, u]) => {
       setLoads(l.data || []);
       setUsers(Array.isArray(u) ? u : []);
     }).catch(console.error)
     .finally(() => setLoading(false));
-  }, []);
+  }, [selectedMonth]);
 
   if (loading) return <div className="loading" style={{paddingTop:40}}>Loading dashboard…</div>;
 
@@ -222,14 +243,21 @@ export default function Dashboard() {
 
       {/* Month header */}
       <div style={{display:'flex', alignItems:'center', justifyContent:'space-between'}}>
-        <div style={{fontSize:22, fontWeight:700, color:'#005A8E'}}>{monthName()}</div>
+        <select
+          value={selectedMonth}
+          onChange={e => setSelectedMonth(e.target.value)}
+          style={{fontSize:18, fontWeight:700, color:'#005A8E', border:'1px solid #ddd', borderRadius:6, padding:'6px 12px', background:'white', cursor:'pointer', fontFamily:'inherit'}}>
+          {monthOptions.map(o => (
+            <option key={o.label} value={`${o.year}-${String(o.month).padStart(2,'0')}`}>{o.label}</option>
+          ))}
+        </select>
         <div style={{fontSize:12, color:'#aaa'}}>Live data — refreshes on page load</div>
       </div>
 
       {/* Top stats */}
       <div className="stats-grid">
-        {card('Total Loads', totalLoads, '#00AEEF', 'This month')}
-        {card('Total Revenue', fmtR(totalRevenue), '#005A8E', 'All loads this month')}
+        {card('Total Loads', totalLoads, '#00AEEF', 'Selected month')}
+        {card('Total Revenue', fmtR(totalRevenue), '#005A8E', 'All loads')}
         {card('Invoiced Revenue', fmtR(billedRevenue), '#059669', 'Billed to clients')}
         {card('Unbilled Revenue', fmtR(unbilledRevenue), '#f59e0b', 'Not yet invoiced')}
         {card('En Route', enRoute, '#3b82f6', 'Currently active')}
