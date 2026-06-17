@@ -140,12 +140,14 @@ export default function App() {
       <div style={{
         width: sidebarOpen ? 220 : 0, minWidth: sidebarOpen ? 220 : 0,
         background: '#005A8E', color: 'white', display: 'flex', flexDirection: 'column',
-        transition: 'width 0.2s, min-width 0.2s', overflow: 'hidden',
+        transition: 'width 0.2s, min-width 0.2s', overflow: 'hidden', flexShrink: 0,
       }}>
         {/* Logo */}
-        <div style={{ padding: '16px 12px 12px', borderBottom: '1px solid rgba(255,255,255,0.12)' }}>
-          <img src={LOGO} alt="Interland Distribution" style={{ width: '100%', maxHeight: 48, objectFit: 'contain' }} />
-        </div>
+        {sidebarOpen && (
+          <div style={{ padding: '16px 12px 12px', borderBottom: '1px solid rgba(255,255,255,0.12)', flexShrink: 0 }}>
+            <img src={LOGO} alt="Interland Distribution" style={{ width: '100%', maxHeight: 48, objectFit: 'contain' }} />
+          </div>
+        )}
 
         {/* Nav items */}
         <nav style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
