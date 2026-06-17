@@ -89,7 +89,7 @@ const PAGE_TITLES = {
 export default function App() {
   const { user, logout } = useAuth();
   const [page, setPage] = useState('');
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [expandedMenus, setExpandedMenus] = useState({});
 
   const navigate = (key) => {
