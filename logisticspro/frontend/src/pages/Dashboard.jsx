@@ -358,6 +358,9 @@ export default function Dashboard({ onNavigate }) {
   return (
     <div style={{display:'flex', flexDirection:'column', gap:20}}>
 
+      {/* License Expiry Banner */}
+      <LicenseBanner vehicles={vehicles} onNavigate={onNavigate} />
+
       {/* Month header */}
       <div style={{display:'flex', alignItems:'center', justifyContent:'space-between'}}>
         <select
@@ -370,9 +373,6 @@ export default function Dashboard({ onNavigate }) {
         </select>
         <div style={{fontSize:12, color:'#aaa'}}>Live data — refreshes on page load</div>
       </div>
-
-      {/* License Expiry Banner */}
-      <LicenseBanner vehicles={vehicles} onNavigate={onNavigate} />
 
       {/* Top stats */}
       <div className="stats-grid">
