@@ -92,11 +92,8 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [expandedMenus, setExpandedMenus] = useState({});
 
-  if (!user) return <Login />;
-
   const navigate = (key) => {
     setPage(key);
-    // Auto-expand parent if navigating to a sub-item
     MENU.forEach(item => {
       if (item.sub && item.sub.find(s => s.key === key)) {
         setExpandedMenus(prev => ({ ...prev, [item.key]: true }));
@@ -112,6 +109,8 @@ export default function App() {
     window.addEventListener('lp-navigate', handler);
     return () => window.removeEventListener('lp-navigate', handler);
   }, []);
+
+  if (!user) return <Login />;
 
   const toggleMenu = (key) => {
     setExpandedMenus(prev => ({ ...prev, [key]: !prev[key] }));
