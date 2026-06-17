@@ -48,7 +48,7 @@ router.post('/closing/:loadNo', async (req, res) => {
   // Get the load
   const { data: load, error: loadErr } = await supabase
     .from('lp_movement')
-    .select('*, lp_client_rates!inner(rc_kms)')
+    .select('*')
     .eq('m_load_no', loadNo)
     .single();
 
