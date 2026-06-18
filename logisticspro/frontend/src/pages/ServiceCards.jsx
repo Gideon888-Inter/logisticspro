@@ -560,9 +560,23 @@ export default function ServiceCards() {
   const [showNew, setShowNew]     = useState(false);
   const [openCard, setOpenCard]   = useState(null);
 
+  const [autoCreating, setAutoCreating] = useState(false);
+  const [autoResult, setAutoResult]     = useState(null);
+
+  const runAutoCreate = useCallback(async () => {
+    setAutoCreating(true);
+    try {
+      const result = await req('/service/auto-create', { method: 'POST' });
+      if (result.created > 0) setAutoResult(result);
+    } catch(e) { console.error('Auto-create error:', e); }
+    finally { setAutoCreating(false); }
+  }, []);
+
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
+      // Auto-create cards for due/overdue vehicles first (idempotent)
+      await runAutoCreate();
       const [cardsRes, vehRes, statsRes] = await Promise.all([
         req('/service'),
         req('/vehicles?active=all'),
@@ -573,7 +587,7 @@ export default function ServiceCards() {
       setStats(statsRes || {});
     } catch(e) { console.error(e); }
     finally { setLoading(false); }
-  }, []);
+  }, [runAutoCreate]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
@@ -617,6 +631,21 @@ export default function ServiceCards() {
           <div className="stat-value" style={{ color: '#059669' }}>{stats.complete ?? '—'}</div>
         </div>
       </div>
+
+      {/* Auto-created notification */}
+      {autoResult && autoResult.created > 0 && (
+        <div style={{
+          background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 8,
+          padding: '10px 16px', marginBottom: 12,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        }}>
+          <span style={{ fontSize: 13, color: '#059669', fontWeight: 600 }}>
+            🔧 {autoResult.created} service card{autoResult.created > 1 ? 's' : ''} automatically created for vehicles that are due or overdue.
+          </span>
+          <button onClick={() => setAutoResult(null)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: 18 }}>×</button>
+        </div>
+      )}
 
       {/* Filter bar */}
       <div className="filter-bar">
