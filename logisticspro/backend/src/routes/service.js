@@ -292,3 +292,150 @@ router.delete('/:no/checklist/:id', async (req, res) => {
 });
 
 module.exports = router;
+
+// ── POST /api/service/auto-create — create cards for all due/overdue vehicles ──
+// Called from the frontend Service page on load. Idempotent — skips vehicles
+// that already have an open (non-COMPLETE) service card.
+router.post('/auto-create', async (req, res) => {
+  try {
+    const WARN_KM = 5000;
+
+    // Get all active vehicles with enriched odometer/next-service from vehicles route
+    // (we call Supabase directly here for speed)
+    const { data: vehicles, error: vErr } = await supabase
+      .from('lp_vehicles')
+      .select('*')
+      .eq('vh_active', 'Y');
+    if (vErr) return res.status(500).json({ error: vErr.message });
+
+    // Get last load per vehicle for live odometer
+    const codes = vehicles.map(v => v.vh_code);
+    const { data: loads } = await supabase
+      .from('lp_movement')
+      .select('m_truck, m_closing_km, m_opening_km, created_at')
+      .in('m_truck', codes)
+      .neq('m_status', 'DELETED')
+      .order('created_at', { ascending: false });
+
+    const loadMap = {};
+    (loads || []).forEach(l => {
+      if (!loadMap[l.m_truck]) loadMap[l.m_truck] = l;
+    });
+
+    // Get last maintenance per vehicle
+    const { data: maints } = await supabase
+      .from('lp_maintenance')
+      .select('ma_vehicle, ma_km, ma_service_type, created_at')
+      .in('ma_vehicle', codes)
+      .order('created_at', { ascending: false });
+
+    const maintMap = {};
+    (maints || []).forEach(m => {
+      if (!maintMap[m.ma_vehicle]) maintMap[m.ma_vehicle] = { service: null, wheel: null };
+      const isWheel = /wheel|align/i.test(m.ma_service_type || '');
+      const entry = maintMap[m.ma_vehicle];
+      if (isWheel && !entry.wheel) entry.wheel = m;
+      else if (!isWheel && !entry.service) entry.service = m;
+    });
+
+    // Get existing OPEN service cards so we don't duplicate
+    const { data: openCards } = await supabase
+      .from('lp_service_cards')
+      .select('sc_vehicle, sc_trigger')
+      .neq('sc_status', 'COMPLETE');
+
+    const openByVehicle = {};
+    (openCards || []).forEach(c => {
+      if (!openByVehicle[c.sc_vehicle]) openByVehicle[c.sc_vehicle] = [];
+      openByVehicle[c.sc_vehicle].push(c.sc_trigger || '');
+    });
+
+    const created = [];
+    const skipped = [];
+    const SERVICE_INTERVAL = 40000;
+
+    for (const v of vehicles) {
+      const lastLoad = loadMap[v.vh_code];
+      const odo = lastLoad
+        ? (Number(lastLoad.m_closing_km) || Number(lastLoad.m_opening_km) || Number(v.vh_odometer) || 0)
+        : (Number(v.vh_odometer) || 0);
+
+      const lastMaint = maintMap[v.vh_code] || {};
+      const nextService = lastMaint.service
+        ? Number(lastMaint.service.ma_km) + SERVICE_INTERVAL
+        : (Number(v.vh_next_service) || 0);
+      const nextWheel = lastMaint.wheel
+        ? Number(lastMaint.wheel.ma_km) + SERVICE_INTERVAL
+        : (Number(v.vh_next_wheel) || 0);
+
+      const svcRem = nextService > 0 ? nextService - odo : null;
+      const whlRem = nextWheel > 0  ? nextWheel - odo   : null;
+
+      const existingTriggers = openByVehicle[v.vh_code] || [];
+
+      // Create service card if due/overdue and no open SERVICE card yet
+      if (svcRem !== null && svcRem <= WARN_KM) {
+        const alreadyOpen = existingTriggers.some(t => t.includes('SERVICE'));
+        if (!alreadyOpen) {
+          const sc_no = await generateServiceNo();
+          const trigger = svcRem <= 0
+            ? `Service OVERDUE by ${Math.abs(svcRem).toLocaleString('en-ZA')} km`
+            : `Service due: ${svcRem.toLocaleString('en-ZA')} km remaining`;
+
+          await supabase.from('lp_service_cards').insert([{
+            sc_no, sc_vehicle: v.vh_code, sc_status: 'PENDING_SERVICE',
+            sc_trigger: trigger, sc_odometer: odo,
+            sc_operator: req.user.username,
+            sc_date: new Date().toISOString().split('T')[0],
+          }]);
+          await supabase.from('lp_service_audit').insert([{
+            sa_service_no: sc_no, sa_action: 'AUTO_CREATED',
+            sa_detail: `Auto-created: ${trigger}`,
+            sa_operator: 'SYSTEM',
+          }]);
+          if (!openByVehicle[v.vh_code]) openByVehicle[v.vh_code] = [];
+          openByVehicle[v.vh_code].push(trigger);
+          created.push({ sc_no, vehicle: v.vh_code, type: 'SERVICE', trigger });
+        } else {
+          skipped.push({ vehicle: v.vh_code, type: 'SERVICE', reason: 'open card exists' });
+        }
+      }
+
+      // Create service card if wheel alignment due/overdue and no open ALIGNMENT card yet
+      if (whlRem !== null && whlRem <= WARN_KM) {
+        const alreadyOpen = existingTriggers.some(t => t.includes('Alignment') || t.includes('ALIGNMENT'));
+        if (!alreadyOpen) {
+          const sc_no = await generateServiceNo();
+          const trigger = whlRem <= 0
+            ? `Wheel Alignment OVERDUE by ${Math.abs(whlRem).toLocaleString('en-ZA')} km`
+            : `Wheel Alignment due: ${whlRem.toLocaleString('en-ZA')} km remaining`;
+
+          await supabase.from('lp_service_cards').insert([{
+            sc_no, sc_vehicle: v.vh_code, sc_status: 'PENDING_SERVICE',
+            sc_trigger: trigger, sc_odometer: odo,
+            sc_operator: req.user.username,
+            sc_date: new Date().toISOString().split('T')[0],
+          }]);
+          await supabase.from('lp_service_audit').insert([{
+            sa_service_no: sc_no, sa_action: 'AUTO_CREATED',
+            sa_detail: `Auto-created: ${trigger}`,
+            sa_operator: 'SYSTEM',
+          }]);
+          if (!openByVehicle[v.vh_code]) openByVehicle[v.vh_code] = [];
+          openByVehicle[v.vh_code].push(trigger);
+          created.push({ sc_no, vehicle: v.vh_code, type: 'ALIGNMENT', trigger });
+        } else {
+          skipped.push({ vehicle: v.vh_code, type: 'ALIGNMENT', reason: 'open card exists' });
+        }
+      }
+    }
+
+    res.json({
+      created: created.length,
+      skipped: skipped.length,
+      details: created,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
