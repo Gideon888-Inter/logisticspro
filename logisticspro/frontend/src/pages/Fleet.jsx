@@ -193,6 +193,8 @@ export default function Fleet({ focusServiceDue }) {
       vh_cof_date:       v.vh_cof_date || '',
       vh_license_expiry: v.vh_license_expiry || '',
       vh_active:         v.vh_active || 'Y',
+      vh_is_link:        v.vh_is_link || 'N',
+      vh_link_pair:      v.vh_link_pair || '',
     });
     setActiveTab('details');
     setAuditLog([]);
@@ -562,6 +564,60 @@ export default function Fleet({ focusServiceDue }) {
                         )}
                       </div>
                     </div>
+
+                    {editVehicle.vh_type === 'Trailer' && (
+                      <div style={{ marginTop: 14 }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: '#7c3aed',
+                          letterSpacing: '0.08em', textTransform: 'uppercase',
+                          marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+                          🔗 Link Configuration
+                          <span style={{ fontSize: 10, fontWeight: 400, color: '#aaa',
+                            textTransform: 'none', letterSpacing: 0 }}>
+                            — linked trailers auto-pair on 18m load cards
+                          </span>
+                        </div>
+                        <div className="form-row">
+                          <div className="form-group">
+                            <label>Is Link Trailer?</label>
+                            <select value={form.vh_is_link}
+                              onChange={e => {
+                                set('vh_is_link', e.target.value);
+                                if (e.target.value === 'N') set('vh_link_pair', '');
+                              }}>
+                              <option value="N">No — standalone trailer</option>
+                              <option value="Y">Yes — part of a linked pair</option>
+                            </select>
+                          </div>
+                          <div className="form-group">
+                            <label>
+                              Paired With{' '}
+                              {form.vh_is_link !== 'Y' && (
+                                <span style={{ color: '#bbb', fontWeight: 400 }}>(set Link to Yes first)</span>
+                              )}
+                            </label>
+                            <select
+                              value={form.vh_link_pair}
+                              onChange={e => set('vh_link_pair', e.target.value)}
+                              disabled={form.vh_is_link !== 'Y'}
+                            >
+                              <option value="">— Select paired trailer —</option>
+                              {data.filter(v => v.vh_type === 'Trailer' && v.vh_code !== editVehicle.vh_code)
+                                .map(v => (
+                                  <option key={v.vh_code} value={v.vh_code}>
+                                    {v.vh_code}{v.vh_make ? ` — ${v.vh_make} ${v.vh_model || ''}` : ''}
+                                  </option>
+                                ))
+                              }
+                            </select>
+                            {form.vh_is_link === 'Y' && form.vh_link_pair && (
+                              <div style={{ fontSize: 11, color: '#7c3aed', marginTop: 4 }}>
+                                🔗 When selected on an 18m load, <strong>{form.vh_link_pair}</strong> will auto-fill as Trailer 2.
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </>
               )}
