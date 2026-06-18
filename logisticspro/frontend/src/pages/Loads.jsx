@@ -470,12 +470,6 @@ function NewLoadModal({ onClose, onCreated }) {
                 {operators.map(o => <option key={o.u_id} value={o.u_username}>{o.u_name || o.u_username}{o.u_region ? ' (' + o.u_region + ')' : ''}</option>)}
               </select>
             </div>
-            <div className="form-group">
-              <label style={labelStyle}>Business Unit</label>
-              <select value={form.m_bus_unit} onChange={e => set('m_bus_unit', e.target.value)} style={inputStyle}>
-                <option value="IDC">IDC</option><option value="IDM">IDM</option><option value="MOGWASE">Mogwase</option>
-              </select>
-            </div>
           </div>
           <div className="form-row">
             <div className="form-group">
@@ -1111,7 +1105,7 @@ export default function Loads() {
   const [loads, setLoads] = useState([]);
   const [stats, setStats] = useState({});
   const [loading, setLoading] = useState(true);
-  const [filters, setFilters] = useState({ status: '', bus_unit: '', search: '' });
+  const [filters, setFilters] = useState({ status: '', search: '' });
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const LIMIT = 100;
@@ -1129,7 +1123,6 @@ export default function Loads() {
     try {
       const params = { page, limit: LIMIT };
       if (filters.status)   params.status   = filters.status;
-      if (filters.bus_unit) params.bus_unit  = filters.bus_unit;
       if (dateFrom)         params.date_from = dateFrom;
       if (dateTo)           params.date_to   = dateTo;
       if (filters.search)   params.search    = filters.search;
@@ -1147,7 +1140,7 @@ export default function Loads() {
   useEffect(() => {
     fetchLoads();
     fetchStats();
-  }, [filters.status, filters.bus_unit, page, dateFrom, dateTo, filters.search]);
+  }, [filters.status, page, dateFrom, dateTo, filters.search]);
 
   const toggleRow = (id) => setExpandedRow(e => e === id ? null : id);
 
