@@ -390,4 +390,91 @@ router.delete('/:no/checklist/:id', async (req, res) => {
   res.json({ success: true });
 });
 
+
+// ============================================================
+// POST /api/service/:no/reject — reject a pending service card
+// ============================================================
+router.post('/:no/reject', async (req, res) => {
+  const { reason } = req.body;
+  if (!reason?.trim()) return res.status(400).json({ error: 'Rejection reason is required' });
+
+  const { data, error } = await supabase
+    .from('lp_service_cards')
+    .update({
+      sc_status:          'REJECTED',
+      sc_rejected_reason: reason.trim(),
+      updated_at:         new Date().toISOString(),
+    })
+    .eq('sc_no', req.params.no)
+    .select()
+    .single();
+
+  if (error) return res.status(400).json({ error: error.message });
+
+  await writeAudit(req.params.no, 'REJECTED',
+    `Service rejected. Reason: "${reason.trim()}"`, req.user.username);
+
+  // Unblock vehicle (rejection means no service needed right now)
+  await supabase.from('lp_vehicles')
+    .update({ vh_in_service: 'N' })
+    .eq('vh_code', data.sc_vehicle);
+
+  res.json(data);
+});
+
+// ============================================================
+// POST /api/service/:no/complete — complete service with KMs
+// Updates vehicle odometer + unblocks it
+// ============================================================
+router.post('/:no/complete', async (req, res) => {
+  const { completion_km } = req.body;
+  const km = parseInt(completion_km, 10);
+  if (!km || isNaN(km) || km <= 0)
+    return res.status(400).json({ error: 'A valid completion odometer reading (km) is required' });
+
+  // Must be SERVICE_ACCEPTED or WAITING_FOR_PART to complete
+  const { data: existing } = await supabase
+    .from('lp_service_cards').select('*').eq('sc_no', req.params.no).single();
+  if (!existing) return res.status(404).json({ error: 'Service card not found' });
+  if (!['SERVICE_ACCEPTED', 'WAITING_FOR_PART'].includes(existing.sc_status))
+    return res.status(400).json({ error: 'Only accepted services can be completed' });
+
+  // Update the service card
+  const { data, error } = await supabase
+    .from('lp_service_cards')
+    .update({
+      sc_status:        'COMPLETE',
+      sc_completion_km: km,
+      updated_at:       new Date().toISOString(),
+    })
+    .eq('sc_no', req.params.no)
+    .select()
+    .single();
+
+  if (error) return res.status(400).json({ error: error.message });
+
+  // Update vehicle: new odometer + unblock + record maintenance
+  await supabase.from('lp_vehicles')
+    .update({ vh_odometer: km, vh_in_service: 'N' })
+    .eq('vh_code', data.sc_vehicle);
+
+  // Write maintenance record so next-service interval recalculates correctly
+  const isAlignment = /ALIGNMENT|WHEEL/i.test(existing.sc_trigger || '');
+  await supabase.from('lp_maintenance').insert([{
+    ma_vehicle:      data.sc_vehicle,
+    ma_date:         new Date().toISOString().split('T')[0],
+    ma_service_type: isAlignment ? 'Wheel Alignment' : 'Full Service',
+    ma_km:           km,
+    ma_next_service: km + 40000,
+    ma_status:       'COMPLETE',
+    ma_operator:     req.user.username,
+  }]);
+
+  await writeAudit(req.params.no, 'COMPLETED',
+    `Service completed at ${km.toLocaleString('en-ZA')} km. Vehicle ${data.sc_vehicle} odometer updated and unblocked.`,
+    req.user.username);
+
+  res.json(data);
+});
+
 module.exports = router;
