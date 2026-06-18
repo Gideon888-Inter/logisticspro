@@ -282,6 +282,7 @@ function NewLoadModal({ onClose, onCreated }) {
     m_truck: '', m_driver_id: '', m_customer: '',
     m_trailer_size: 'None', m_trailer1: '', m_trailer2: '',
     m_from: '', m_to: '', m_rate: 0,
+    m_bus_unit: user?.bus_unit || 'IDC',
     m_opening_km: '', m_responsible_operator: '',
     m_loading_address: '', m_offloading_address: '',
   });
@@ -443,9 +444,22 @@ function NewLoadModal({ onClose, onCreated }) {
             </div>
             <div className="form-group">
               <label style={labelStyle}>Trailer {form.m_trailer_size === 'None' ? '(not required)' : '*'}</label>
-              <select value={form.m_trailer1} onChange={e => set('m_trailer1', e.target.value)} style={inputStyle} disabled={form.m_trailer_size === 'None'}>
+              <select value={form.m_trailer1} onChange={e => {
+                    const selected = trailers.find(v => v.vh_code === e.target.value);
+                    set('m_trailer1', e.target.value);
+                    // Auto-fill Trailer 2 if this is a link trailer and size is 18m
+                    if (form.m_trailer_size === '18m' && selected?.vh_is_link === 'Y' && selected?.vh_link_pair) {
+                      set('m_trailer2', selected.vh_link_pair);
+                    } else if (form.m_trailer_size === '18m') {
+                      set('m_trailer2', '');
+                    }
+                  }} style={inputStyle} disabled={form.m_trailer_size === 'None'}>
                 <option value="">— Select trailer —</option>
-                {trailers.map(v => <option key={v.vh_code} value={v.vh_code}>{v.vh_code} — {v.vh_make} {v.vh_model}</option>)}
+                {trailers.map(v => (
+                  <option key={v.vh_code} value={v.vh_code}>
+                    {v.vh_code} — {v.vh_make} {v.vh_model}{v.vh_is_link === 'Y' && v.vh_link_pair ? ' 🔗' : ''}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
@@ -454,11 +468,35 @@ function NewLoadModal({ onClose, onCreated }) {
           <div className="form-row">
             <div className="form-group" />
             <div className="form-group">
-              <label style={labelStyle}>Trailer 2 * <span style={{ color: '#00AEEF', fontWeight: 400, textTransform: 'none' }}>(18m requires 2 trailers)</span></label>
-              <select value={form.m_trailer2} onChange={e => set('m_trailer2', e.target.value)} style={inputStyle}>
-                <option value="">— Select second trailer —</option>
-                {trailers.filter(v => v.vh_code !== form.m_trailer1).map(v => <option key={v.vh_code} value={v.vh_code}>{v.vh_code} — {v.vh_make} {v.vh_model}</option>)}
-              </select>
+              {(() => {
+                const t1 = trailers.find(v => v.vh_code === form.m_trailer1);
+                const isLinked = t1?.vh_is_link === 'Y' && t1?.vh_link_pair;
+                return (
+                  <>
+                    <label style={labelStyle}>
+                      Trailer 2 *{' '}
+                      {isLinked
+                        ? <span style={{ color: '#7c3aed', fontWeight: 600 }}>🔗 Auto-linked with {form.m_trailer1}</span>
+                        : <span style={{ color: '#00AEEF', fontWeight: 400, textTransform: 'none' }}>(18m requires 2 trailers)</span>
+                      }
+                    </label>
+                    <select value={form.m_trailer2} onChange={e => set('m_trailer2', e.target.value)}
+                      style={{ ...inputStyle, background: isLinked ? '#f5f3ff' : undefined,
+                        border: isLinked ? '1px solid #7c3aed66' : undefined }}
+                      disabled={!!isLinked}>
+                      <option value="">— Select second trailer —</option>
+                      {trailers.filter(v => v.vh_code !== form.m_trailer1).map(v => (
+                        <option key={v.vh_code} value={v.vh_code}>{v.vh_code} — {v.vh_make} {v.vh_model}</option>
+                      ))}
+                    </select>
+                    {isLinked && (
+                      <div style={{ fontSize: 11, color: '#7c3aed', marginTop: 4 }}>
+                        🔗 Locked — this trailer always travels with {form.m_trailer1}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           </div>
           )}
@@ -804,6 +842,7 @@ function ExpandedRow({ load, onRefresh, onCostUpdate }) {
               {orderNoMsg && <div style={{ fontSize: 11, color: orderNoMsg.includes('⏳') ? '#d97706' : '#059669', marginTop: 2 }}>{orderNoMsg}</div>}
             </div>
             {cell('Invoice', load.m_invoice)}
+            {cell('Unit', load.m_bus_unit)}
             {load.m_loading_address && cell('Loading Address', load.m_loading_address)}
             {load.m_offloading_address && cell('Offloading Address', load.m_offloading_address)}
           </div>
