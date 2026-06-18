@@ -44,7 +44,7 @@ export default function Drivers() {
     setSaving(true);
     try {
       const payload = { ...form };
-      if (editId) await api.updateDriver ? await api.updateDriver(editId, payload) : await fetch(`${import.meta.env.VITE_API_URL||''}/api/drivers/${editId}`,{method:'PATCH',headers:{'Content-Type':'application/json','Authorization':'Bearer '+localStorage.getItem('lp_token')},body:JSON.stringify(payload)});
+      if (editId) await api.updateDriver(editId, payload);  // FIX: was conditional raw fetch fallback
       else await api.createDriver(payload);
       setShowModal(false); load();
     } catch(e){ alert(e.message); }
