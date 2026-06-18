@@ -156,6 +156,7 @@ export default function Fleet({ focusServiceDue }) {
   const [activeFilter, setActiveFilter] = useState('Y');
   const [sortCol, setSortCol] = useState('vh_code');
   const [sortDir, setSortDir] = useState('asc');
+  const [quickFilter, setQuickFilter] = useState('all');  // all | service_due | align_due | cof_expired | license_expired
 
   // Modal state
   const [showModal, setShowModal]   = useState(false);
@@ -242,6 +243,17 @@ export default function Fleet({ focusServiceDue }) {
   const filtered = data
     .filter(v => {
       const s = search.toLowerCase();
+      const odo = Number(v.vh_odometer) || 0;
+      const svcRem = v.vh_next_service ? (Number(v.vh_next_service) - odo) : null;
+      const whlRem = v.vh_next_wheel   ? (Number(v.vh_next_wheel)   - odo) : null;
+      const today  = new Date(); today.setHours(0,0,0,0);
+      const monthEnd = new Date(today.getFullYear(), today.getMonth()+1, 0);
+      if (quickFilter === 'service_due'     && !(svcRem !== null && svcRem <= SERVICE_WARN_KM)) return false;
+      if (quickFilter === 'align_due'       && !(whlRem !== null && whlRem <= SERVICE_WARN_KM)) return false;
+      if (quickFilter === 'cof_expired'     && !(v.vh_cof_date && new Date(v.vh_cof_date) < today)) return false;
+      if (quickFilter === 'cof_this_month'  && !(v.vh_cof_date && new Date(v.vh_cof_date) >= today && new Date(v.vh_cof_date) <= monthEnd)) return false;
+      if (quickFilter === 'lic_expired'     && !(v.vh_license_expiry && new Date(v.vh_license_expiry) < today)) return false;
+      if (quickFilter === 'lic_this_month'  && !(v.vh_license_expiry && new Date(v.vh_license_expiry) >= today && new Date(v.vh_license_expiry) <= monthEnd)) return false;
       return (!s || v.vh_code?.toLowerCase().includes(s) || v.vh_make?.toLowerCase().includes(s) ||
               v.vh_registration?.toLowerCase().includes(s) || v.vh_model?.toLowerCase().includes(s))
         && (!typeFilter || v.vh_type === typeFilter)
@@ -290,7 +302,50 @@ export default function Fleet({ focusServiceDue }) {
         <div className="stat-card"><div className="stat-label">Active</div><div className="stat-value" style={{color:'#059669'}}>{active}</div></div>
       </div>
 
-      {/* Filter bar */}
+      {/* Quick-filter tabs — computed counts */}
+      {(() => {
+        const today = new Date(); today.setHours(0,0,0,0);
+        const monthEnd = new Date(today.getFullYear(), today.getMonth()+1, 0);
+        const counts = {
+          all:            data.length,
+          service_due:    data.filter(v => { const r = v.vh_next_service ? Number(v.vh_next_service)-(Number(v.vh_odometer)||0) : null; return r !== null && r <= SERVICE_WARN_KM; }).length,
+          align_due:      data.filter(v => { const r = v.vh_next_wheel   ? Number(v.vh_next_wheel)-(Number(v.vh_odometer)||0) : null; return r !== null && r <= SERVICE_WARN_KM; }).length,
+          cof_expired:    data.filter(v => v.vh_cof_date && new Date(v.vh_cof_date) < today).length,
+          cof_this_month: data.filter(v => v.vh_cof_date && new Date(v.vh_cof_date) >= today && new Date(v.vh_cof_date) <= monthEnd).length,
+          lic_expired:    data.filter(v => v.vh_license_expiry && new Date(v.vh_license_expiry) < today).length,
+          lic_this_month: data.filter(v => v.vh_license_expiry && new Date(v.vh_license_expiry) >= today && new Date(v.vh_license_expiry) <= monthEnd).length,
+        };
+        const tabs = [
+          { key: 'all',            label: 'All Vehicles',        color: '#005A8E' },
+          { key: 'service_due',    label: '🔧 Service Due',      color: '#d97706' },
+          { key: 'align_due',      label: '🔧 Alignment Due',    color: '#7c3aed' },
+          { key: 'cof_expired',    label: '🔴 COF Expired',      color: '#e53e3e' },
+          { key: 'cof_this_month', label: '🟠 COF This Month',   color: '#c05621' },
+          { key: 'lic_expired',    label: '🔴 Lic Expired',      color: '#e53e3e' },
+          { key: 'lic_this_month', label: '🟠 Lic This Month',   color: '#c05621' },
+        ];
+        return (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+            {tabs.map(t => {
+              const active = quickFilter === t.key;
+              return (
+                <button key={t.key} onClick={() => setQuickFilter(t.key)} style={{
+                  padding: '5px 12px', fontSize: 11, fontWeight: active ? 700 : 500,
+                  borderRadius: 20, cursor: 'pointer',
+                  border: active ? `2px solid ${t.color}` : '2px solid #e2e8f0',
+                  background: active ? t.color : 'white',
+                  color: active ? 'white' : '#555',
+                  transition: 'all 0.15s',
+                }}>
+                  {t.label} ({counts[t.key]})
+                </button>
+              );
+            })}
+          </div>
+        );
+      })()}
+
+      {/* Search / type / active filters */}
       <div className="filter-bar">
         <input placeholder="Search code, make, registration…" value={search} onChange={e => setSearch(e.target.value)} />
         <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
