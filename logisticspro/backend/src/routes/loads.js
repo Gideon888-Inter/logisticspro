@@ -144,17 +144,26 @@ router.post('/:id/comments', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     // Auto-generate load number: A + 6 digits, sequential
-    const { data: last, error: lastErr } = await supabase
+    // Must check ALL loads — old loads were plain integers (e.g. 139154),
+    // new loads use A-prefix (e.g. A100001). We take the highest numeric
+    // value across both formats so we never collide or skip backwards.
+    const { data: allLast } = await supabase
       .from('lp_movement')
       .select('m_load_no')
-      .like('m_load_no', 'A%')
-      .order('m_load_no', { ascending: false })
-      .limit(1);
+      .order('created_at', { ascending: false })
+      .limit(200);   // enough history to find the true max
 
     let nextNum = 100001;
-    if (!lastErr && last && last.length > 0) {
-      const lastNum = parseInt(last[0].m_load_no.replace('A', ''), 10);
-      if (!isNaN(lastNum)) nextNum = lastNum + 1;
+    if (allLast && allLast.length > 0) {
+      let maxSeen = 0;
+      for (const row of allLast) {
+        const raw = (row.m_load_no || '').replace(/^A/i, '');
+        const n = parseInt(raw, 10);
+        if (!isNaN(n) && n > maxSeen) maxSeen = n;
+      }
+      if (maxSeen >= nextNum) nextNum = maxSeen + 1;
+      // If old plain numbers are larger (e.g. 139154 > 100001),
+      // jump past them so we stay sequential
     }
     const m_load_no = 'A' + String(nextNum).padStart(6, '0');
 
