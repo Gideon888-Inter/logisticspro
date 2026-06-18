@@ -123,6 +123,18 @@ export default function App() {
       case 'rates-list':          return <Rates />;
       case 'clients':             return <Clients />;
       case 'users':               return <Users />;
+      case 'drivers-leave':
+      case 'rates-routes':
+      case 'schedule': {
+        const labels = { 'drivers-leave': 'Driver Leave', 'rates-routes': 'Routes', 'schedule': 'Report Schedule' };
+        return (
+          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'50vh', gap:12 }}>
+            <div style={{ fontSize:48 }}>🚧</div>
+            <div style={{ fontSize:20, fontWeight:700, color:'#005A8E' }}>{labels[page]}</div>
+            <div style={{ fontSize:14, color:'#aaa' }}>This page is coming soon.</div>
+          </div>
+        );
+      }
       default:                    return <Dashboard onNavigate={navigate} />;
     }
   };
