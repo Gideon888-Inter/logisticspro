@@ -307,8 +307,9 @@ function NewLoadModal({ onClose, onCreated }) {
     }).catch(console.error);
   }, []);
 
-  const horses = vehicles.filter(v => v.vh_type === 'Horse');
-  const trailers = vehicles.filter(v => v.vh_type === 'Trailer');
+  // Only active vehicles available for new load cards
+  const horses = vehicles.filter(v => v.vh_type === 'Horse' && v.vh_active !== 'N');
+  const trailers = vehicles.filter(v => v.vh_type === 'Trailer' && v.vh_active !== 'N');
   const clientRates = rates.filter(r => r.rc_client_code === form.m_customer);
   const fromOptions = [...new Set(clientRates.map(r => r.rc_from))].sort();
   const toOptions = [...new Set(clientRates.filter(r => r.rc_from === form.m_from).map(r => r.rc_to))].sort();
