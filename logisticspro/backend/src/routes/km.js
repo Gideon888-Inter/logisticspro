@@ -9,7 +9,6 @@ const DEAD_KM_THRESHOLD = 500;
 // GET last closing KM for a truck
 router.get('/last-closing/:truck', async (req, res) => {
   const { truck } = req.params;
-  // Get last completed load with a closing KM for this truck
   const { data, error } = await supabase
     .from('lp_movement')
     .select('m_load_no, m_closing_km, m_date')
@@ -26,7 +25,6 @@ router.get('/last-closing/:truck', async (req, res) => {
     return res.json({ last_closing_km: data[0].m_closing_km, load_no: data[0].m_load_no });
   }
 
-  // No previous load — get from vehicle odometer
   const { data: veh } = await supabase
     .from('lp_vehicles')
     .select('vh_odometer')
@@ -45,7 +43,6 @@ router.post('/closing/:loadNo', async (req, res) => {
   const { loadNo } = req.params;
   const { closing_km } = req.body;
 
-  // Get the load
   const { data: load, error: loadErr } = await supabase
     .from('lp_movement')
     .select('*')
@@ -57,7 +54,6 @@ router.post('/closing/:loadNo', async (req, res) => {
   const opening = Number(load.m_opening_km || 0);
   const closing = Number(closing_km);
 
-  // Validation 1: closing cannot be less than opening
   if (closing < opening) {
     return res.status(400).json({
       error: `Closing KM (${closing.toLocaleString()}) cannot be less than opening KM (${opening.toLocaleString()})`,
@@ -65,7 +61,6 @@ router.post('/closing/:loadNo', async (req, res) => {
     });
   }
 
-  // Get route KM from rate card
   const { data: rateRow } = await supabase
     .from('lp_client_rates')
     .select('rc_kms')
@@ -77,7 +72,6 @@ router.post('/closing/:loadNo', async (req, res) => {
   const routeKm = rateRow?.rc_kms || 0;
   const maxAllowed = opening + routeKm + DEAD_KM_THRESHOLD;
 
-  // Validation 2: closing cannot exceed opening + route km + 500
   if (routeKm > 0 && closing > maxAllowed) {
     return res.status(400).json({
       error: `Closing KM (${closing.toLocaleString()}) exceeds maximum allowed (${maxAllowed.toLocaleString()} = opening ${opening.toLocaleString()} + route ${routeKm.toLocaleString()} km + 500 km tolerance)`,
@@ -89,7 +83,6 @@ router.post('/closing/:loadNo', async (req, res) => {
 
   const actual_km = closing - opening;
 
-  // Update the load with closing KM
   const { data: updated, error: updateErr } = await supabase
     .from('lp_movement')
     .update({
@@ -104,13 +97,11 @@ router.post('/closing/:loadNo', async (req, res) => {
 
   if (updateErr) return res.status(400).json({ error: updateErr.message });
 
-  // Auto-update vehicle odometer
   await supabase
     .from('lp_vehicles')
     .update({ vh_odometer: closing })
     .eq('vh_code', load.m_truck);
 
-  // Add audit comment
   await supabase.from('lp_comments').insert([{
     c_load: loadNo,
     c_comment: `Load offloaded. Opening KM: ${opening.toLocaleString()} | Closing KM: ${closing.toLocaleString()} | Distance: ${actual_km.toLocaleString()} km`,
@@ -120,11 +111,10 @@ router.post('/closing/:loadNo', async (req, res) => {
   res.json({ ...updated, actual_km, route_km: routeKm });
 });
 
-// POST validate opening KM on new load (check for dead KM anomaly)
+// POST validate opening KM on new load
 router.post('/validate-opening', async (req, res) => {
   const { truck, opening_km } = req.body;
 
-  // Get last closing KM
   const { data: last } = await supabase
     .from('lp_movement')
     .select('m_load_no, m_closing_km')
@@ -190,12 +180,10 @@ router.patch('/anomalies/:id', async (req, res) => {
   }).eq('id', id);
 
   if (action === 'approve') {
-    // Move load to PRELOAD
     await supabase.from('lp_movement')
       .update({ m_status: 'PRELOAD', updated_at: new Date().toISOString() })
       .eq('m_load_no', anomaly.a_load_no);
 
-    // Notify the operator
     await supabase.from('lp_notifications').insert([{
       n_user: anomaly.a_operator,
       n_type: 'ANOMALY_APPROVED',
@@ -210,12 +198,10 @@ router.patch('/anomalies/:id', async (req, res) => {
       c_logged_by: req.user.username
     }]);
   } else {
-    // Move load back to needs correction
     await supabase.from('lp_movement')
       .update({ m_status: 'KM_CORRECTION_NEEDED', updated_at: new Date().toISOString() })
       .eq('m_load_no', anomaly.a_load_no);
 
-    // Notify operator of rejection
     await supabase.from('lp_notifications').insert([{
       n_user: anomaly.a_operator,
       n_type: 'ANOMALY_REJECTED',
@@ -266,17 +252,18 @@ router.get('/notifications', async (req, res) => {
   res.json(data || []);
 });
 
-// PATCH mark notification as read
-router.patch('/notifications/:id/read', async (req, res) => {
-  await supabase.from('lp_notifications').update({ n_read: 'Y' }).eq('id', req.params.id);
-  res.json({ success: true });
-});
-
-// PATCH mark all notifications as read
+// ── IMPORTANT: specific routes MUST come before parameterised routes ──────────
+// PATCH mark ALL notifications as read — must be before /:id/read
 router.patch('/notifications/read-all', async (req, res) => {
   await supabase.from('lp_notifications')
     .update({ n_read: 'Y' })
     .or(`n_user.eq.${req.user.username},n_role.eq.${req.user.role}`);
+  res.json({ success: true });
+});
+
+// PATCH mark single notification as read
+router.patch('/notifications/:id/read', async (req, res) => {
+  await supabase.from('lp_notifications').update({ n_read: 'Y' }).eq('id', req.params.id);
   res.json({ success: true });
 });
 
