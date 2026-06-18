@@ -4,8 +4,7 @@ import Login from './pages/Login';
 import Loads from './pages/Loads';
 import Dashboard from './pages/Dashboard';
 import Approvals from './pages/Approvals';
-import Vehicles from './pages/Vehicles';
-import VehicleLicenses from './pages/VehicleLicenses';
+import Fleet from './pages/Fleet';
 import Drivers from './pages/Drivers';
 import Clients from './pages/Clients';
 import Rates from './pages/Rates';
@@ -51,12 +50,7 @@ const MENU = [
     ]
   },
   { key: 'approvals',  label: 'Approvals',       icon: '✅' },
-  { key: 'vehicles',   label: 'Vehicles',         icon: '🚚',
-    sub: [
-      { key: 'vehicles-list',     label: 'Fleet List' },
-      { key: 'vehicles-licenses', label: 'License Expiry' },
-    ]
-  },
+  { key: 'vehicles', label: 'Fleet', icon: '🚚' },
   { key: 'drivers',    label: 'Drivers',           icon: '👤',
     sub: [
       { key: 'drivers-list',  label: 'Driver List' },
@@ -77,8 +71,7 @@ const MENU = [
 const PAGE_TITLES = {
   '': 'Overview',
   movement: 'Loads',
-  'vehicles-list': 'Vehicles',
-  'vehicles-licenses': 'License Expiry',
+  'vehicles': 'Fleet',
   'drivers-list': 'Drivers', 'drivers-leave': 'Driver Leave',
   clients: 'Clients', 'workshop-jobcards': 'Job Cards',
   'workshop-maintenance': 'Maintenance', 'workshop-inventory': 'Inventory',
@@ -121,8 +114,8 @@ export default function App() {
       case '':                    return <Dashboard onNavigate={navigate} />;
       case 'movement':            return <Loads />;
       case 'approvals':           return <Approvals />;
-      case 'vehicles-list':       return <Vehicles />;
-      case 'vehicles-licenses':   return <VehicleLicenses />;
+      case 'vehicles':            return <Fleet />;
+
       case 'drivers-list':        return <Drivers />;
       case 'workshop-maintenance':return <Maintenance />;
       case 'workshop-inventory':  return <Inventory />;
