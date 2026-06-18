@@ -37,28 +37,45 @@ export const api = {
   addComment:   (id, comment) => request(`/loads/${id}/comments`, { method: 'POST', body: JSON.stringify({ comment }) }),
 
   // Vehicles
-  getVehicles:  (params = {}) => request('/vehicles?' + new URLSearchParams(params)),
-  createVehicle:(body)        => request('/vehicles', { method: 'POST', body: JSON.stringify(body) }),
-  updateVehicle:(code, body)  => request(`/vehicles/${code}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  getVehicles:   (params = {}) => request('/vehicles?' + new URLSearchParams(params)),
+  createVehicle: (body)        => request('/vehicles', { method: 'POST', body: JSON.stringify(body) }),
+  updateVehicle: (code, body)  => request(`/vehicles/${code}`, { method: 'PATCH', body: JSON.stringify(body) }),
 
   // Drivers
   getDrivers:   (params = {}) => request('/drivers?' + new URLSearchParams(params)),
   createDriver: (body)        => request('/drivers', { method: 'POST', body: JSON.stringify(body) }),
+  updateDriver: (id, body)    => request(`/drivers/${id}`, { method: 'PATCH', body: JSON.stringify(body) }), // FIX: was missing
 
   // Customers
-  getCustomers: ()            => request('/customers'),
-  createCustomer:(body)       => request('/customers', { method: 'POST', body: JSON.stringify(body) }),
+  getCustomers:   ()           => request('/customers'),
+  createCustomer: (body)       => request('/customers', { method: 'POST', body: JSON.stringify(body) }),
+  updateCustomer: (code, body) => request(`/customers/${code}`, { method: 'PATCH', body: JSON.stringify(body) }), // FIX: was missing
 
   // Maintenance
-  getMaintenance:(params = {})=> request('/maintenance?' + new URLSearchParams(params)),
-  createMaintenance:(body)    => request('/maintenance', { method: 'POST', body: JSON.stringify(body) }),
+  getMaintenance:   (params = {}) => request('/maintenance?' + new URLSearchParams(params)),
+  createMaintenance:(body)        => request('/maintenance', { method: 'POST', body: JSON.stringify(body) }),
 
   // Inventory
-  getInventory: ()            => request('/inventory'),
-  createPart:   (body)        => request('/inventory', { method: 'POST', body: JSON.stringify(body) }),
-  updatePart:   (id, body)    => request(`/inventory/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  getInventory: ()           => request('/inventory'),
+  createPart:   (body)       => request('/inventory', { method: 'POST', body: JSON.stringify(body) }),
+  updatePart:   (id, body)   => request(`/inventory/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
 
   // Routes
-  getRoutes:    ()            => request('/routes'),
-  createRoute:  (body)        => request('/routes', { method: 'POST', body: JSON.stringify(body) }),
+  getRoutes:   () => request('/routes'),
+  createRoute: (body) => request('/routes', { method: 'POST', body: JSON.stringify(body) }),
+
+  // Client Rates
+  getClientRates:   (params = {}) => request('/rates/client-rates?' + new URLSearchParams(params)),
+  createClientRates:(body)        => request('/rates/client-rates', { method: 'POST', body: JSON.stringify(body) }),
+  updateClientRate: (id, body)    => request(`/rates/client-rates/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  deleteClientRate: (id)          => request(`/rates/client-rates/${id}`, { method: 'DELETE' }),
+
+  // Users
+  getUsers:   ()           => request('/users'),
+  updateUser: (id, body)   => request(`/users/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+
+  // Notifications (via km router)
+  getNotifications:       ()   => request('/km/notifications'),
+  markNotificationRead:   (id) => request(`/km/notifications/${id}/read`, { method: 'PATCH' }),
+  markAllNotificationsRead:()  => request('/km/notifications/read-all', { method: 'PATCH' }),
 };
