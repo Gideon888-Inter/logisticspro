@@ -4,8 +4,8 @@ import { api } from '../lib/api';
 const EMPTY = { c_code:'', c_name:'', c_send_pod:'Y', c_send_invoice:'Y', c_active:'Y' };
 
 function exportCSV(data) {
-  const headers = ['Code','Name','Send POD','Send Invoice','Rates Last Updated At','Active Loads','Approval Loads'];
-  const rows = data.map(c=>[c.c_code,c.c_name,c.c_send_pod==='Y'?'YES':'NO',c.c_send_invoice==='Y'?'YES':'NO','','0','0']);
+  const headers = ['Code','Name','Send POD','Send Invoice','Active'];
+  const rows = data.map(c=>[c.c_code,c.c_name,c.c_send_pod==='Y'?'YES':'NO',c.c_send_invoice==='Y'?'YES':'NO',c.c_active==='Y'?'Active':'Inactive']);
   const csv=[headers,...rows].map(r=>r.map(x=>`"${x}"`).join(',')).join('\n');
   const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);a.download='clients_export.csv';a.click();
 }
@@ -41,7 +41,8 @@ export default function Clients() {
     if(!form.c_code.trim()||!form.c_name.trim()) return alert('Code and Name are required');
     setSaving(true);
     try {
-      if(editId) await fetch(`${import.meta.env.VITE_API_URL||''}/api/customers/${editId}`,{method:'PATCH',headers:{'Content-Type':'application/json','Authorization':'Bearer '+localStorage.getItem('lp_token')},body:JSON.stringify(form)});
+      // FIX: replaced raw fetch with api.updateCustomer
+      if(editId) await api.updateCustomer(editId, form);
       else await api.createCustomer(form);
       setShowModal(false); load();
     } catch(e){alert(e.message);}
