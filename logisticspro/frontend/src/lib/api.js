@@ -20,58 +20,126 @@ async function request(path, options = {}) {
 }
 
 export const api = {
-  // Auth
-  login:          (body) => request('/auth/login', { method: 'POST', body: JSON.stringify(body) }),
-  changePassword: (body) => request('/auth/change-password', { method: 'POST', body: JSON.stringify(body) }),
-  forgotPassword: (body) => request('/auth/forgot-password', { method: 'POST', body: JSON.stringify(body) }),
-  getMe:          ()     => request('/auth/me'),
 
-  // Loads
-  getLoads:     (params = {}) => request('/loads?' + new URLSearchParams(params)),
-  getLoad:      (id)          => request(`/loads/${id}`),
-  getLoadStats: (params = {}) => request('/loads/stats/summary?' + new URLSearchParams(params)),
-  createLoad:   (body)        => request('/loads', { method: 'POST', body: JSON.stringify(body) }),
-  updateLoad:   (id, body)    => request(`/loads/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
-  deleteLoad:   (id)          => request(`/loads/${id}`, { method: 'DELETE' }),
-  getComments:  (id)          => request(`/loads/${id}/comments`),
-  addComment:   (id, comment) => request(`/loads/${id}/comments`, { method: 'POST', body: JSON.stringify({ comment }) }),
+  // ── Auth ────────────────────────────────────────────────────
+  login:           (body) => request('/auth/login', { method: 'POST', body: JSON.stringify(body) }),
+  register:        (body) => request('/auth/register', { method: 'POST', body: JSON.stringify(body) }),
+  changePassword:  (body) => request('/auth/change-password', { method: 'POST', body: JSON.stringify(body) }),
+  forgotPassword:  (body) => request('/auth/forgot-password', { method: 'POST', body: JSON.stringify(body) }),
+  getMe:           ()     => request('/auth/me'),
+  getPendingUsers: ()     => request('/auth/pending-users'),
+  approvePendingUser: (id, body) => request(`/auth/pending-users/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
 
-  // Vehicles
-  getVehicles:  (params = {}) => request('/vehicles?' + new URLSearchParams(params)),
-  createVehicle:(body)        => request('/vehicles', { method: 'POST', body: JSON.stringify(body) }),
-  updateVehicle:(code, body)  => request(`/vehicles/${code}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  // ── Loads ───────────────────────────────────────────────────
+  getLoads:            (params = {}) => request('/loads?' + new URLSearchParams(params)),
+  getLoad:             (id)          => request(`/loads/${id}`),
+  getLoadStats:        (params = {}) => request('/loads/stats/summary?' + new URLSearchParams(params)),
+  getPendingOrderNos:  ()            => request('/loads/pending-order-nos'),
+  getPendingOpsActions:()            => request('/loads/pending-ops-actions'),
+  createLoad:          (body)        => request('/loads', { method: 'POST', body: JSON.stringify(body) }),
+  updateLoad:          (id, body)    => request(`/loads/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  deleteLoad:          (id)          => request(`/loads/${id}`, { method: 'DELETE' }),
+  getComments:         (id)          => request(`/loads/${id}/comments`),
+  addComment:          (id, comment) => request(`/loads/${id}/comments`, { method: 'POST', body: JSON.stringify({ comment }) }),
+  requestOrderNo:      (id)          => request(`/loads/${id}/request-order-no`, { method: 'POST' }),
+  approveOrderNo:      (id, body)    => request(`/loads/${id}/approve-order-no`, { method: 'PATCH', body: JSON.stringify(body) }),
+  updateOpsAction:     (id, body)    => request(`/loads/ops-actions/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
 
-  // Drivers
-  getDrivers:   (params = {}) => request('/drivers?' + new URLSearchParams(params)),
-  createDriver: (body)        => request('/drivers', { method: 'POST', body: JSON.stringify(body) }),
+  // ── Vehicles ────────────────────────────────────────────────
+  getVehicles:         (params = {}) => request('/vehicles?' + new URLSearchParams(params)),
+  getVehicle:          (code)        => request(`/vehicles/${code}`),
+  getVehicleAudit:     (code)        => request(`/vehicles/${code}/audit`),
+  getVehicleMaintenance:(code)       => request(`/vehicles/${code}/maintenance`),
+  createVehicle:       (body)        => request('/vehicles', { method: 'POST', body: JSON.stringify(body) }),
+  updateVehicle:       (code, body)  => request(`/vehicles/${code}`, { method: 'PATCH', body: JSON.stringify(body) }),
 
-  // Customers
-  getCustomers: ()            => request('/customers'),
-  createCustomer:(body)       => request('/customers', { method: 'POST', body: JSON.stringify(body) }),
+  // ── Drivers ─────────────────────────────────────────────────
+  getDrivers:          (params = {}) => request('/drivers?' + new URLSearchParams(params)),
+  getDriver:           (id)          => request(`/drivers/${id}`),
+  createDriver:        (body)        => request('/drivers', { method: 'POST', body: JSON.stringify(body) }),
+  updateDriver:        (id, body)    => request(`/drivers/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
 
-  // Maintenance
-  getMaintenance:(params = {})=> request('/maintenance?' + new URLSearchParams(params)),
-  createMaintenance:(body)    => request('/maintenance', { method: 'POST', body: JSON.stringify(body) }),
+  // ── Customers ───────────────────────────────────────────────
+  getCustomers:        ()            => request('/customers'),
+  getCustomer:         (code)        => request(`/customers/${code}`),
+  createCustomer:      (body)        => request('/customers', { method: 'POST', body: JSON.stringify(body) }),
+  updateCustomer:      (code, body)  => request(`/customers/${code}`, { method: 'PATCH', body: JSON.stringify(body) }),
 
-  // Service Cards
-  getServiceCards: (params = {}) => request('/service?' + new URLSearchParams(params)),
-  getServiceCard:  (no)          => request(`/service/${no}`),
-  createServiceCard:(body)       => request('/service', { method: 'POST', body: JSON.stringify(body) }),
-  updateServiceCard:(no, body)   => request(`/service/${no}`, { method: 'PATCH', body: JSON.stringify(body) }),
-  getServiceAudit: (no)          => request(`/service/${no}/audit`),
-  getServiceChecklist:(no)       => request(`/service/${no}/checklist`),
-  addChecklistItem:(no, body)    => request(`/service/${no}/checklist`, { method: 'POST', body: JSON.stringify(body) }),
-  toggleChecklistItem:(no, id, body) => request(`/service/${no}/checklist/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
-  removeChecklistItem:(no, id)   => request(`/service/${no}/checklist/${id}`, { method: 'DELETE' }),
-  getServiceComments:(no)        => request(`/service/${no}/comments`),
-  addServiceComment:(no, body)   => request(`/service/${no}/comments`, { method: 'POST', body: JSON.stringify(body) }),
+  // ── Maintenance ─────────────────────────────────────────────
+  getMaintenance:      (params = {}) => request('/maintenance?' + new URLSearchParams(params)),
+  createMaintenance:   (body)        => request('/maintenance', { method: 'POST', body: JSON.stringify(body) }),
+  updateMaintenance:   (id, body)    => request(`/maintenance/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
 
-  // Inventory
-  getInventory: ()            => request('/inventory'),
-  createPart:   (body)        => request('/inventory', { method: 'POST', body: JSON.stringify(body) }),
-  updatePart:   (id, body)    => request(`/inventory/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  // ── Inventory ───────────────────────────────────────────────
+  getInventory:        ()            => request('/inventory'),
+  getLowStockParts:    ()            => request('/inventory/low-stock'),
+  createPart:          (body)        => request('/inventory', { method: 'POST', body: JSON.stringify(body) }),
+  updatePart:          (id, body)    => request(`/inventory/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
 
-  // Routes
-  getRoutes:    ()            => request('/routes'),
-  createRoute:  (body)        => request('/routes', { method: 'POST', body: JSON.stringify(body) }),
+  // ── Routes ──────────────────────────────────────────────────
+  getRoutes:           ()            => request('/routes'),
+  createRoute:         (body)        => request('/routes', { method: 'POST', body: JSON.stringify(body) }),
+  updateRoute:         (id, body)    => request(`/routes/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+
+  // ── Client Rates ────────────────────────────────────────────
+  getRates:            (params = {}) => request('/rates?' + new URLSearchParams(params)),
+  createRate:          (body)        => request('/rates', { method: 'POST', body: JSON.stringify(body) }),
+  updateRate:          (id, body)    => request(`/rates/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  deleteRate:          (id)          => request(`/rates/${id}`, { method: 'DELETE' }),
+
+  // ── Users ───────────────────────────────────────────────────
+  getUsers:            ()            => request('/users'),
+  updateUser:          (id, body)    => request(`/users/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+
+  // ── Costs ───────────────────────────────────────────────────
+  getCosts:            (params = {}) => request('/costs?' + new URLSearchParams(params)),
+  getPendingCostDeletions: ()        => request('/costs/pending-deletions'),
+  addCost:             (body)        => request('/costs', { method: 'POST', body: JSON.stringify(body) }),
+  deleteCost:          (id)          => request(`/costs/${id}`, { method: 'DELETE' }),
+  requestCostDeletion: (id)          => request(`/costs/${id}/request-delete`, { method: 'PATCH' }),
+  approveCostDeletion: (id)          => request(`/costs/${id}/approve-delete`, { method: 'PATCH' }),
+
+  // ── KM ──────────────────────────────────────────────────────
+  getLastClosingKm:    (truck)       => request(`/km/last-closing/${truck}`),
+  submitKmClosing:     (loadNo, body)=> request(`/km/closing/${loadNo}`, { method: 'POST', body: JSON.stringify(body) }),
+  validateKmOpening:   (body)        => request('/km/validate-opening', { method: 'POST', body: JSON.stringify(body) }),
+  getKmAnomalies:      ()            => request('/km/anomalies'),
+  createKmAnomaly:     (body)        => request('/km/anomalies', { method: 'POST', body: JSON.stringify(body) }),
+  resolveKmAnomaly:    (id, body)    => request(`/km/anomalies/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  getKmNotifications:  ()            => request('/km/notifications'),
+  createKmNotification:(body)        => request('/km/notifications', { method: 'POST', body: JSON.stringify(body) }),
+  markAllNotificationsRead: ()       => request('/km/notifications/read-all', { method: 'PATCH' }),
+  markNotificationRead:(id)          => request(`/km/notifications/${id}/read`, { method: 'PATCH' }),
+
+  // ── Service Cards ───────────────────────────────────────────
+  getServiceCards:     (params = {}) => request('/service?' + new URLSearchParams(params)),
+  getServiceStats:     ()            => request('/service/stats'),
+  getServiceCard:      (no)          => request(`/service/${no}`),
+  getServiceAudit:     (no)          => request(`/service/${no}/audit`),
+  getServiceChecklist: (no)          => request(`/service/${no}/checklist`),
+  getServiceComments:  (no)          => request(`/service/${no}/comments`),
+  createServiceCard:   (body)        => request('/service', { method: 'POST', body: JSON.stringify(body) }),
+  autoCreateServiceCard:(body)       => request('/service/auto-create', { method: 'POST', body: JSON.stringify(body) }),
+  updateServiceCard:   (no, body)    => request(`/service/${no}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  addServiceComment:   (no, body)    => request(`/service/${no}/comments`, { method: 'POST', body: JSON.stringify(body) }),
+  addChecklistItem:    (no, body)    => request(`/service/${no}/checklist`, { method: 'POST', body: JSON.stringify(body) }),
+  toggleChecklistItem: (no, id, body)=> request(`/service/${no}/checklist/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  removeChecklistItem: (no, id)      => request(`/service/${no}/checklist/${id}`, { method: 'DELETE' }),
+  rejectServiceCard:   (no, body)    => request(`/service/${no}/reject`, { method: 'POST', body: JSON.stringify(body) }),
+  completeServiceCard: (no, body)    => request(`/service/${no}/complete`, { method: 'POST', body: JSON.stringify(body) }),
+
+  // ── PODs ────────────────────────────────────────────────────
+  getPendingPODs:      (params = {}) => request('/pods/pending?' + new URLSearchParams(params)),
+  getReceivedPODs:     (params = {}) => request('/pods/received?' + new URLSearchParams(params)),
+  getPODsForLoad:      (loadNo)      => request(`/pods/${loadNo}`),
+  uploadPOD:           (loadNo, body)=> request(`/pods/${loadNo}/upload`, { method: 'POST', body: JSON.stringify(body) }),
+  deletePODFile:       (fileId)      => request(`/pods/file/${fileId}`, { method: 'DELETE' }),
+
+  // ── Invoices ────────────────────────────────────────────────
+  getInvoiceDrafts:    ()            => request('/invoices/drafts'),
+  getInvoices:         (params = {}) => request('/invoices?' + new URLSearchParams(params)),
+  getInvoice:          (id)          => request(`/invoices/${id}`),
+  createInvoice:       (body)        => request('/invoices', { method: 'POST', body: JSON.stringify(body) }),
+  approveInvoice:      (id, body)    => request(`/invoices/${id}/approve`, { method: 'POST', body: JSON.stringify(body) }),
+  createCreditNote:    (id, body)    => request(`/invoices/${id}/credit-note`, { method: 'POST', body: JSON.stringify(body) }),
 };
