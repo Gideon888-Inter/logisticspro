@@ -201,12 +201,13 @@ router.patch('/ops-actions/:id', requireRole(ROLES.ADMIN, ROLES.OPERATOR), async
       }]);
     } else if (opsAction.oa_action_type === 'DELETE_COST') {
       await supabase.from('lp_costs').delete().eq('c_cost_no', payload.cost_id);
-    } else if (opsAction.oa_action_type === 'SET_ORDER_NO') {
+      } else if (opsAction.oa_action_type === 'SET_ORDER_NO' ||
+               opsAction.oa_action_type === 'CHANGE_ORDER_NO') {
       await supabase.from('lp_movement')
         .update({ m_order_no: payload.order_no, updated_at: new Date().toISOString() })
         .eq('m_load_no', opsAction.oa_load_no);
     }
-
+    
     await supabase.from('lp_comments').insert([{
       c_load:      opsAction.oa_load_no,
       c_comment:   `Ops Assistant action approved by ${req.user.username}: ${opsAction.oa_action_type} — ${JSON.stringify(payload)}`,
