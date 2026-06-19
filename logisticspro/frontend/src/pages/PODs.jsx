@@ -84,7 +84,7 @@ export default function PODs() {
     setError('');
     setSuccess('');
     try {
-            await api.markPODReceived(loadNo);
+      await api.markPODReceived(loadNo);
       setSuccess(`POD for ${loadNo} marked as received.`);
       loadData();
     } catch (e) {
