@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '../lib/api';
 
-const EMPTY = { d_id:'', d_nickname:'', d_name:'', d_cell:'', d_type:'Interland', d_pdp_expiry:'', d_receipt:'N', d_start_date:'', d_training_date:'', d_active:'Y', d_bus_unit:'IDC' };
+const EMPTY = { d_id:'', d_nickname:'', d_name:'', d_cell:'', d_type:'Interland', d_pdp_expiry:'', d_receipt:'N', d_start_date:'', d_training_date:'', d_active:'Y' };
 
 function exportCSV(data) {
   const headers = ['Nickname','Name','Cell Number','Type','PDP Expiry','Has Receipt','Start Date','Training Date'];
@@ -127,11 +127,6 @@ export default function Drivers() {
                 <div className="form-group"><label>Driver Type</label>
                   <select value={form.d_type||'Interland'} onChange={e=>set('d_type',e.target.value)}>
                     <option value="Interland">Interland</option><option value="TRILLIUM">Trillium</option><option value="Subcontractor">Subcontractor</option>
-                  </select>
-                </div>
-                <div className="form-group"><label>Business Unit</label>
-                  <select value={form.d_bus_unit} onChange={e=>set('d_bus_unit',e.target.value)}>
-                    <option value="IDC">IDC</option><option value="IDM">IDM</option><option value="MOGWASE">Mogwase</option>
                   </select>
                 </div>
               </div>
