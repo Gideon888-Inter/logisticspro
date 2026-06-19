@@ -3,7 +3,7 @@ import { useAuth } from './lib/AuthContext';
 import {
   canViewLoads, canViewFleet, canViewWorkshop, canViewRates,
   canManageClients, canManageDrivers, canManageUsers,
-  canManageInvoices, canViewApprovals,
+  canManageInvoices, canViewApprovals, canViewPODs,
 } from './lib/roles';
 import Login from './pages/Login';
 import Loads from './pages/Loads';
@@ -15,6 +15,7 @@ import Clients from './pages/Clients';
 import Rates from './pages/Rates';
 import Users from './pages/Users';
 import Invoices from './pages/Invoices';
+import PODs from './pages/PODs';
 import { Maintenance, Inventory, Routes } from './pages/Entities';
 import ServiceCards from './pages/ServiceCards';
 
@@ -83,6 +84,8 @@ function buildMenu(user) {
     menu.push({ key: 'clients', label: 'Clients', icon: '🏢' });
   if (canManageInvoices(user))
     menu.push({ key: 'invoices', label: 'Invoices', icon: '🧾' });
+  if (canViewPODs(user))
+    menu.push({ key: 'pods', label: 'PODs', icon: '📄' });
   if (canManageUsers(user))
     menu.push({ key: 'users', label: 'Users', icon: '👥' });
   return menu;
@@ -96,7 +99,7 @@ const PAGE_TITLES = {
   clients: 'Clients', 'workshop-service': 'Service Cards',
   'workshop-maintenance': 'Maintenance', 'workshop-inventory': 'Inventory',
   approvals: 'Approvals', 'rates-list': 'Client Rates', 'rates-routes': 'Routes',
-  users: 'Users', invoices: 'Invoices',
+  users: 'Users', invoices: 'Invoices', pods: 'Proof of Delivery',
 };
 
 export default function App() {
@@ -152,6 +155,7 @@ export default function App() {
       case 'clients':             return canManageClients(user) ? <Clients /> : <AccessDenied />;
       case 'users':               return canManageUsers(user) ? <Users /> : <AccessDenied />;
       case 'invoices':            return canManageInvoices(user) ? <Invoices /> : <AccessDenied />;
+      case 'pods':                return canViewPODs(user) ? <PODs /> : <AccessDenied />;
       case 'drivers-leave':
       case 'rates-routes': {
         const labels = { 'drivers-leave': 'Driver Leave', 'rates-routes': 'Routes' };
