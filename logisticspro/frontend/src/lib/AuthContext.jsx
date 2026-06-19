@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback } from 'react';
-import { api } from '../api';
+import { api } from './api';
 
 const AuthContext = createContext(null);
 
@@ -12,7 +12,7 @@ export function AuthProvider({ children }) {
     const { token, user } = await api.login({ username, password });
     localStorage.setItem('lp_token', token);
     localStorage.setItem('lp_user', JSON.stringify(user));
-    setUser({...user}); // spread to ensure new object reference triggers re-render
+    setUser({...user});
     return user;
   }, []);
 
