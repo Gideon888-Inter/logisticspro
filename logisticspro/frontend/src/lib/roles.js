@@ -150,6 +150,12 @@ export function canManageInvoices(user) {
   return [ROLES.ADMIN, ROLES.MANAGER, ROLES.ACCOUNTING].includes(user?.role);
 }
 
+export function canViewPODs(user) {
+  // Everyone who can see loads can see PODs — uploading is controlled separately in the page
+  return [ROLES.ADMIN, ROLES.MANAGER, ROLES.OPERATOR, ROLES.OPS_ASSISTANT,
+          ROLES.CONTROL_ROOM, ROLES.ACCOUNTING, ROLES.WORKSHOP].includes(user?.role);
+}
+
 export function canCreateCreditNote(user) {
   return [ROLES.ADMIN, ROLES.MANAGER].includes(user?.role);
 }
