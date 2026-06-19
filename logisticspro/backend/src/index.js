@@ -12,6 +12,7 @@ const usersRouter = require('./routes/users');
 const costsRouter = require('./routes/costs');
 const kmRouter = require('./routes/km');
 const serviceRouter = require('./routes/service');
+const podsRouter    = require('./routes/pods');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -35,11 +36,12 @@ app.use('/api/customers',   customersRouter);
 app.use('/api/maintenance', maintenanceRouter);
 app.use('/api/inventory',   inventoryRouter);
 app.use('/api/routes',      routesRouter);
-app.use('/api/rates/client-rates', clientRatesRouter);
+app.use('/api/rates',       clientRatesRouter);
 app.use('/api/users',       usersRouter);
 app.use('/api/costs',       costsRouter);
 app.use('/api/km',          kmRouter);
 app.use('/api/service',      serviceRouter);
+app.use('/api/pods',         podsRouter);
 
 // ── Health check ──────────────────────────────────────────────
 app.get('/health', (_, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
