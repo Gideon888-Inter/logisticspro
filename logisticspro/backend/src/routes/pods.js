@@ -5,22 +5,23 @@ const { authMiddleware, requireRole, ROLES, CAN_VIEW_LOADS, CAN_ADD_COSTS } = re
 const router = express.Router();
 router.use(authMiddleware);
 
-const BUCKET = 'pods';
+// Base SharePoint PODs folder URL — set in Render environment variables
+const SHAREPOINT_BASE = process.env.SHAREPOINT_PODS_URL || '';
 
-// Roles that can upload PODs (same as who can add costs to a load)
-const CAN_UPLOAD_POD = CAN_ADD_COSTS;   // ADMIN, OPERATOR, OPS_ASSISTANT, CONTROL_ROOM
+// Roles that can mark a POD as received
+const CAN_MARK_POD = CAN_ADD_COSTS; // ADMIN, OPERATOR, OPS_ASSISTANT, CONTROL_ROOM
 
-// ── Helper: build the storage path for a load ────────────────
-function storagePath(loadNo, fileName) {
-  // Sanitise filename — strip anything that isn't alphanumeric, dash, dot, underscore
-  const safe = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
-  return `${loadNo}/${Date.now()}_${safe}`;
+// ── Helper: build SharePoint folder link for a load ──────────
+function sharepointLink(loadNo) {
+  if (!SHAREPOINT_BASE) return null;
+  // Appends the load number as a subfolder path parameter
+  return `${SHAREPOINT_BASE}&id=${encodeURIComponent(loadNo)}`;
 }
 
 
 // ============================================================
 // GET /api/pods/pending
-// Loads currently sitting in WAIT_POD_SCAN — need a POD uploaded.
+// Loads currently sitting in WAIT_POD_SCAN — need a POD.
 // ============================================================
 router.get('/pending', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
   const { bus_unit } = req.query;
@@ -35,32 +36,28 @@ router.get('/pending', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
 
   const { data, error } = await q;
   if (error) return res.status(500).json({ error: error.message });
-  res.json(data || []);
+
+  // Attach SharePoint link to each load
+  const result = (data || []).map(load => ({
+    ...load,
+    sharepoint_url: sharepointLink(load.m_load_no),
+  }));
+
+  res.json(result);
 });
 
 
 // ============================================================
 // GET /api/pods/received
-// Loads that have at least one POD file uploaded, across all statuses.
+// Loads that have been marked as POD received (m_pod_received = true).
 // ============================================================
 router.get('/received', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
   const { bus_unit, search } = req.query;
 
-  // Get all loads that have pod files, joining to movement for load details
-  const { data: podFiles, error: pfErr } = await supabase
-    .from('lp_pod_files')
-    .select('pf_load_no')
-    .order('created_at', { ascending: false });
-
-  if (pfErr) return res.status(500).json({ error: pfErr.message });
-
-  const loadNos = [...new Set((podFiles || []).map(p => p.pf_load_no))];
-  if (loadNos.length === 0) return res.json([]);
-
   let q = supabase
     .from('lp_movement')
     .select('m_load_no, m_date, m_customer, m_truck, m_from, m_to, m_rate, m_status, m_order_no, m_bus_unit')
-    .in('m_load_no', loadNos)
+    .eq('m_pod_received', true)
     .neq('m_status', 'DELETED')
     .order('m_date', { ascending: false });
 
@@ -69,36 +66,11 @@ router.get('/received', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
 
   const { data, error } = await q;
   if (error) return res.status(500).json({ error: error.message });
-  res.json(data || []);
-});
 
-
-// ============================================================
-// GET /api/pods/:loadNo
-// All POD files for a specific load, with signed download URLs.
-// ============================================================
-router.get('/:loadNo', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
-  const { loadNo } = req.params;
-
-  const { data: files, error } = await supabase
-    .from('lp_pod_files')
-    .select('*')
-    .eq('pf_load_no', loadNo)
-    .order('created_at', { ascending: true });
-
-  if (error) return res.status(500).json({ error: error.message });
-  if (!files || files.length === 0) return res.json([]);
-
-  // Generate a signed URL for each file (valid for 1 hour)
-  const result = await Promise.all(files.map(async (f) => {
-    const { data: signed, error: signErr } = await supabase.storage
-      .from(BUCKET)
-      .createSignedUrl(f.pf_file_path, 3600);
-
-    return {
-      ...f,
-      signed_url: signErr ? null : signed?.signedUrl,
-    };
+  // Attach SharePoint link to each load
+  const result = (data || []).map(load => ({
+    ...load,
+    sharepoint_url: sharepointLink(load.m_load_no),
   }));
 
   res.json(result);
@@ -106,32 +78,15 @@ router.get('/:loadNo', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
 
 
 // ============================================================
-// POST /api/pods/:loadNo/upload
-// Upload a POD file for a load.
-// Body: multipart/form-data with fields:
-//   file       — the binary file
-//   file_name  — original filename
-//   mime_type  — e.g. application/pdf
-//   note       — optional note
-//
-// After the first upload, the load status advances from
-// WAIT_POD_SCAN -> WAIT_APPROVAL automatically (Operator reviews POD).
+// POST /api/pods/:loadNo/mark-received
+// Mark a POD as received — records in the database and advances
+// the load status from WAIT_POD_SCAN -> WAIT_APPROVAL.
+// No file is uploaded. The POD lives in SharePoint.
 // ============================================================
-router.post('/:loadNo/upload', requireRole(...CAN_UPLOAD_POD), async (req, res) => {
+router.post('/:loadNo/mark-received', requireRole(...CAN_MARK_POD), async (req, res) => {
   const { loadNo } = req.params;
-  const { file_base64, file_name, mime_type, note } = req.body;
 
   try {
-    if (!file_base64 || !file_name || !mime_type) {
-      return res.status(400).json({ error: 'file_base64, file_name, and mime_type are required' });
-    }
-
-    // Allowed types
-    const ALLOWED = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-    if (!ALLOWED.includes(mime_type.toLowerCase())) {
-      return res.status(400).json({ error: 'Only PDF, JPEG, PNG, and WebP files are accepted' });
-    }
-
     // Verify load exists
     const { data: load, error: loadErr } = await supabase
       .from('lp_movement')
@@ -141,46 +96,27 @@ router.post('/:loadNo/upload', requireRole(...CAN_UPLOAD_POD), async (req, res) 
 
     if (loadErr || !load) return res.status(404).json({ error: 'Load not found' });
 
-    // Convert base64 to buffer
-    const buffer = Buffer.from(file_base64, 'base64');
-    const path = storagePath(loadNo, file_name);
+    // Mark POD received
+    const { error: updateErr } = await supabase
+      .from('lp_movement')
+      .update({
+        m_pod_received:    true,
+        m_pod_received_by: req.user.username,
+        m_pod_received_at: new Date().toISOString(),
+        updated_at:        new Date().toISOString(),
+      })
+      .eq('m_load_no', loadNo);
 
-    // Upload to Supabase Storage
-    const { error: uploadErr } = await supabase.storage
-      .from(BUCKET)
-      .upload(path, buffer, { contentType: mime_type, upsert: false });
-
-    if (uploadErr) {
-      return res.status(500).json({ error: `Storage upload failed: ${uploadErr.message}` });
-    }
-
-    // Record in database
-    const { data: podFile, error: dbErr } = await supabase
-      .from('lp_pod_files')
-      .insert([{
-        pf_load_no:     loadNo,
-        pf_file_path:   path,
-        pf_file_name:   file_name,
-        pf_file_size:   buffer.length,
-        pf_mime_type:   mime_type,
-        pf_uploaded_by: req.user.username,
-        pf_note:        note || null,
-      }])
-      .select()
-      .single();
-
-    if (dbErr) {
-      return res.status(500).json({ error: `Database error: ${dbErr.message}` });
-    }
+    if (updateErr) return res.status(500).json({ error: updateErr.message });
 
     // Audit comment
     await supabase.from('lp_comments').insert([{
       c_load:      loadNo,
-      c_comment:   `POD uploaded: ${file_name} by ${req.user.username}`,
+      c_comment:   `POD marked as received in SharePoint by ${req.user.username}`,
       c_logged_by: req.user.username,
     }]);
 
-    // Auto-advance: WAIT_POD_SCAN -> WAIT_APPROVAL (Operator reviews uploaded POD)
+    // Auto-advance: WAIT_POD_SCAN -> WAIT_APPROVAL
     if (load.m_status === 'WAIT_POD_SCAN') {
       await supabase.from('lp_movement')
         .update({ m_status: 'WAIT_APPROVAL', updated_at: new Date().toISOString() })
@@ -188,53 +124,21 @@ router.post('/:loadNo/upload', requireRole(...CAN_UPLOAD_POD), async (req, res) 
 
       await supabase.from('lp_comments').insert([{
         c_load:      loadNo,
-        c_comment:   `Status advanced to WAIT_APPROVAL — Operator to review uploaded POD`,
+        c_comment:   `Status advanced to WAIT_APPROVAL — Operator to review POD in SharePoint`,
         c_logged_by: 'SYSTEM',
       }]);
     }
 
-    res.status(201).json({ ...podFile, status_advanced: load.m_status === 'WAIT_POD_SCAN' });
+    res.json({
+      success: true,
+      sharepoint_url: sharepointLink(loadNo),
+      status_advanced: load.m_status === 'WAIT_POD_SCAN',
+    });
 
   } catch (err) {
-    console.error('[POD UPLOAD ERROR]', err);
-    res.status(500).json({ error: err.message || 'Unexpected error during upload' });
+    console.error('[POD MARK-RECEIVED ERROR]', err);
+    res.status(500).json({ error: err.message || 'Unexpected error' });
   }
-});
-
-
-// ============================================================
-// DELETE /api/pods/file/:fileId
-// Remove a POD file (Operator/Admin only — irreversible).
-// ============================================================
-router.delete('/file/:fileId', requireRole(ROLES.ADMIN, ROLES.OPERATOR), async (req, res) => {
-  const { fileId } = req.params;
-
-  const { data: file, error: fetchErr } = await supabase
-    .from('lp_pod_files')
-    .select('*')
-    .eq('id', fileId)
-    .single();
-
-  if (fetchErr || !file) return res.status(404).json({ error: 'File not found' });
-
-  // Remove from storage
-  const { error: storageErr } = await supabase.storage
-    .from(BUCKET)
-    .remove([file.pf_file_path]);
-
-  if (storageErr) return res.status(500).json({ error: `Storage delete failed: ${storageErr.message}` });
-
-  // Remove database record
-  await supabase.from('lp_pod_files').delete().eq('id', fileId);
-
-  // Audit comment
-  await supabase.from('lp_comments').insert([{
-    c_load:      file.pf_load_no,
-    c_comment:   `POD file deleted: ${file.pf_file_name} by ${req.user.username}`,
-    c_logged_by: req.user.username,
-  }]);
-
-  res.json({ success: true });
 });
 
 
