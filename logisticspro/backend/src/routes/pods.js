@@ -13,9 +13,10 @@ const CAN_MARK_POD = CAN_ADD_COSTS; // ADMIN, OPERATOR, OPS_ASSISTANT, CONTROL_R
 
 // ── Helper: build SharePoint folder link for a load ──────────
 function sharepointLink(loadNo) {
+function sharepointLink(loadNo) {
   if (!SHAREPOINT_BASE) return null;
-  // Appends the load number as a subfolder path parameter
-  return `${SHAREPOINT_BASE}&id=${encodeURIComponent(loadNo)}`;
+  // SharePoint folders are named with 'A' prefix (e.g. A134159)
+  return `${SHAREPOINT_BASE}&id=${encodeURIComponent('A' + loadNo)}`;
 }
 
 
