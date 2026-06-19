@@ -11,8 +11,9 @@ const clientRatesRouter = require('./routes/clientRates');
 const usersRouter = require('./routes/users');
 const costsRouter = require('./routes/costs');
 const kmRouter = require('./routes/km');
-const serviceRouter = require('./routes/service');
-const podsRouter    = require('./routes/pods');
+const serviceRouter  = require('./routes/service');
+const podsRouter     = require('./routes/pods');
+const invoicesRouter = require('./routes/invoices');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -42,6 +43,7 @@ app.use('/api/costs',       costsRouter);
 app.use('/api/km',          kmRouter);
 app.use('/api/service',      serviceRouter);
 app.use('/api/pods',         podsRouter);
+app.use('/api/invoices',    invoicesRouter);
 
 // ── Health check ──────────────────────────────────────────────
 app.get('/health', (_, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));
