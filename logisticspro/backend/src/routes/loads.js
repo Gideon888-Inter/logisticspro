@@ -337,13 +337,22 @@ router.post('/:id/comments', requireRole(...CAN_VIEW_LOADS), async (req, res) =>
       m_date:                  new Date().toISOString().split('T')[0],
     };
 
-    const { data, error } = await supabase
+let { data, error } = await supabase
       .from('lp_movement')
       .insert([load])
       .select()
       .single();
 
+    // If duplicate load number, generate a new one and try once more
+    if (error && error.code === '23505') {
+      m_load_no = await generateLoadNo();
+      load.m_load_no = m_load_no;
+      ({ data, error } = await supabase
+        .from('lp_movement').insert([load]).select().single());
+    }
+
     if (error) return res.status(400).json({ error: error.message });
+
 
     await supabase.from('lp_comments').insert([{
       c_load:      data.m_load_no,
