@@ -283,7 +283,15 @@ router.patch('/:no', async (req, res) => {
   const updates = { ...req.body, updated_at: new Date().toISOString() };
   const newStatus = updates.sc_status;
 
+  // Guard: do not allow editing a completed service card
+  const { data: existing } = await supabase
+    .from('lp_service_cards').select('sc_status').eq('sc_no', req.params.no).single();
+  if (existing?.sc_status === 'COMPLETE') {
+    return res.status(400).json({ error: 'This service card is complete and cannot be edited. Create a new card if further work is needed.' });
+  }
+
   const { data, error } = await supabase
+
     .from('lp_service_cards')
     .update(updates)
     .eq('sc_no', req.params.no)
