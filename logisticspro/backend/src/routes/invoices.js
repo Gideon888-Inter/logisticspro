@@ -41,12 +41,22 @@ router.get('/drafts', requireRole(...CAN_MANAGE_INVOICES), async (req, res) => {
   try {
     const { data: loads, error: loadErr } = await supabase
       .from('lp_movement')
-      .select('m_load_no, m_date, m_customer, m_from, m_to, m_rate, m_load_total, m_order_no, m_bus_unit, lp_customers(c_name)')
+      .select('m_load_no, m_date, m_customer, m_from, m_to, m_rate, m_load_total, m_order_no, m_bus_unit')
       .eq('m_status', 'WAIT_INVOICE_NO')
       .order('m_date', { ascending: false });
 
     if (loadErr) return res.status(500).json({ error: loadErr.message });
     if (!loads || loads.length === 0) return res.json([]);
+
+    // Fetch customer names separately
+    const customerCodes = [...new Set(loads.map(l => l.m_customer).filter(Boolean))];
+    const { data: customers } = await supabase
+      .from('lp_customers')
+      .select('c_code, c_name')
+      .in('c_code', customerCodes);
+
+    const custMap = {};
+    (customers || []).forEach(c => { custMap[c.c_code] = c.c_name; });
 
     // Attach any existing invoice for each load
     const loadNos = loads.map(l => l.m_load_no);
@@ -61,6 +71,7 @@ router.get('/drafts', requireRole(...CAN_MANAGE_INVOICES), async (req, res) => {
 
     const result = loads.map(l => ({
       ...l,
+      lp_customers: { c_name: custMap[l.m_customer] || l.m_customer },
       existing_invoice: invMap[l.m_load_no] || null,
     }));
 
@@ -80,14 +91,29 @@ router.get('/', requireRole(...CAN_MANAGE_INVOICES), async (req, res) => {
     const { status } = req.query;
     let q = supabase
       .from('lp_invoices')
-      .select('*, lp_customers(c_name), lp_credit_notes(cn_number, cn_amount_incl)')
+      .select('*, lp_credit_notes(cn_number, cn_amount_incl)')
       .order('created_at', { ascending: false });
 
     if (status) q = q.eq('inv_status', status);
 
-    const { data, error } = await q;
+    const { data: invoices, error } = await q;
     if (error) return res.status(500).json({ error: error.message });
-    res.json(data || []);
+
+    // Fetch customer names separately
+    const codes = [...new Set((invoices || []).map(i => i.inv_customer).filter(Boolean))];
+    let custMap = {};
+    if (codes.length > 0) {
+      const { data: customers } = await supabase
+        .from('lp_customers').select('c_code, c_name').in('c_code', codes);
+      (customers || []).forEach(c => { custMap[c.c_code] = c.c_name; });
+    }
+
+    const result = (invoices || []).map(inv => ({
+      ...inv,
+      lp_customers: { c_name: custMap[inv.inv_customer] || inv.inv_customer },
+    }));
+
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -100,13 +126,22 @@ router.get('/', requireRole(...CAN_MANAGE_INVOICES), async (req, res) => {
 // ============================================================
 router.get('/:id', requireRole(...CAN_MANAGE_INVOICES), async (req, res) => {
   try {
-    const { data, error } = await supabase
+    const { data: inv, error } = await supabase
       .from('lp_invoices')
-      .select('*, lp_customers(c_name), lp_credit_notes(*)')
+      .select('*, lp_credit_notes(*)')
       .eq('id', req.params.id)
       .single();
     if (error) return res.status(404).json({ error: 'Invoice not found' });
-    res.json(data);
+
+    // Fetch customer name separately
+    let c_name = inv.inv_customer;
+    if (inv.inv_customer) {
+      const { data: cust } = await supabase
+        .from('lp_customers').select('c_name').eq('c_code', inv.inv_customer).single();
+      if (cust) c_name = cust.c_name;
+    }
+
+    res.json({ ...inv, lp_customers: { c_name } });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
