@@ -282,7 +282,6 @@ function NewLoadModal({ onClose, onCreated }) {
     m_truck: '', m_driver_id: '', m_customer: '',
     m_trailer_size: 'None', m_trailer1: '', m_trailer2: '',
     m_from: '', m_to: '', m_rate: 0,
-    m_bus_unit: user?.bus_unit || 'IDC',
     m_opening_km: '', m_responsible_operator: '',
     m_loading_address: '', m_offloading_address: '',
   });
@@ -842,7 +841,6 @@ function ExpandedRow({ load, onRefresh, onCostUpdate }) {
               {orderNoMsg && <div style={{ fontSize: 11, color: orderNoMsg.includes('⏳') ? '#d97706' : '#059669', marginTop: 2 }}>{orderNoMsg}</div>}
             </div>
             {cell('Invoice', load.m_invoice)}
-            {cell('Unit', load.m_bus_unit)}
             {load.m_loading_address && cell('Loading Address', load.m_loading_address)}
             {load.m_offloading_address && cell('Offloading Address', load.m_offloading_address)}
           </div>
