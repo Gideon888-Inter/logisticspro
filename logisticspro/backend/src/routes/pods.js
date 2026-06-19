@@ -1,12 +1,12 @@
 const express = require('express');
 const supabase = require('../supabase');
-const { authMiddleware, requireRole, ROLES, CAN_VIEW_LOADS, CAN_ADD_COSTS } = require('../middleware/auth');
+const { authMiddleware, requireRole, CAN_VIEW_LOADS, CAN_ADD_COSTS } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(authMiddleware);
 
-// Base SharePoint PODs folder URL — set in Render environment variables
-const SHAREPOINT_BASE = process.env.SHAREPOINT_PODS_URL || '';
+import { Maintenance, Inventory, Routes } from './pages/Entities';
+
 
 // Roles that can mark a POD as received
 const CAN_MARK_POD = CAN_ADD_COSTS; // ADMIN, OPERATOR, OPS_ASSISTANT, CONTROL_ROOM
