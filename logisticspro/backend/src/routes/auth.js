@@ -361,14 +361,13 @@ router.post('/forgot-password', async (req, res) => {
     })
     .eq('u_username', username);
 
-  console.log(`[PASSWORD RESET] User: ${username}, Temp password: ${tempPassword}`);
+ console.log(`[PASSWORD RESET] User: ${username}, Temp password: ${tempPassword}`);
 
   res.json({
-    success:       true,
-    message:       'Temporary password generated',
-    temp_password: tempPassword,
-    note:          'You will be prompted to change this on first login',
+    success: true,
+    message: 'A temporary password has been set. Please contact your administrator to retrieve it.',
   });
+
 });
 
 
