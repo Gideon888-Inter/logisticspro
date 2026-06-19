@@ -13,7 +13,6 @@ const CAN_MARK_POD = CAN_ADD_COSTS; // ADMIN, OPERATOR, OPS_ASSISTANT, CONTROL_R
 
 // ── Helper: build SharePoint folder link for a load ──────────
 function sharepointLink(loadNo) {
-function sharepointLink(loadNo) {
   if (!SHAREPOINT_BASE) return null;
   // SharePoint folders are named with 'A' prefix (e.g. A134159)
   return `${SHAREPOINT_BASE}&id=${encodeURIComponent('A' + loadNo)}`;
@@ -38,7 +37,6 @@ router.get('/pending', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
   const { data, error } = await q;
   if (error) return res.status(500).json({ error: error.message });
 
-  // Attach SharePoint link to each load
   const result = (data || []).map(load => ({
     ...load,
     sharepoint_url: sharepointLink(load.m_load_no),
@@ -68,7 +66,6 @@ router.get('/received', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
   const { data, error } = await q;
   if (error) return res.status(500).json({ error: error.message });
 
-  // Attach SharePoint link to each load
   const result = (data || []).map(load => ({
     ...load,
     sharepoint_url: sharepointLink(load.m_load_no),
@@ -88,7 +85,6 @@ router.post('/:loadNo/mark-received', requireRole(...CAN_MARK_POD), async (req, 
   const { loadNo } = req.params;
 
   try {
-    // Verify load exists
     const { data: load, error: loadErr } = await supabase
       .from('lp_movement')
       .select('m_status, m_load_no')
@@ -97,7 +93,6 @@ router.post('/:loadNo/mark-received', requireRole(...CAN_MARK_POD), async (req, 
 
     if (loadErr || !load) return res.status(404).json({ error: 'Load not found' });
 
-    // Mark POD received
     const { error: updateErr } = await supabase
       .from('lp_movement')
       .update({
@@ -110,14 +105,12 @@ router.post('/:loadNo/mark-received', requireRole(...CAN_MARK_POD), async (req, 
 
     if (updateErr) return res.status(500).json({ error: updateErr.message });
 
-    // Audit comment
     await supabase.from('lp_comments').insert([{
       c_load:      loadNo,
       c_comment:   `POD marked as received in SharePoint by ${req.user.username}`,
       c_logged_by: req.user.username,
     }]);
 
-    // Auto-advance: WAIT_POD_SCAN -> WAIT_APPROVAL
     if (load.m_status === 'WAIT_POD_SCAN') {
       await supabase.from('lp_movement')
         .update({ m_status: 'WAIT_APPROVAL', updated_at: new Date().toISOString() })
