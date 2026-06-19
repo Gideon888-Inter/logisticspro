@@ -84,8 +84,13 @@ function UploadModal({ load, onClose, onDone }) {
         const { file, note } = files[i];
         setProgress(`Uploading ${i + 1} of ${files.length}: ${file.name}`);
         const base64 = await toBase64(file);
-        const result = await req(`/pods/${load.m_load_no}/upload`, {
+
+        // Use raw fetch so we can read the exact error from the backend
+        const token = localStorage.getItem('lp_token');
+        const API = import.meta.env.VITE_API_URL || '';
+        const res = await fetch(`${API}/api/pods/${load.m_load_no}/upload`, {
           method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
           body: JSON.stringify({
             file_base64: base64,
             file_name:   file.name,
@@ -93,7 +98,8 @@ function UploadModal({ load, onClose, onDone }) {
             note:        note || undefined,
           }),
         });
-        if (result.error) throw new Error(result.error);
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);
       }
       onDone();
     } catch (e) {
