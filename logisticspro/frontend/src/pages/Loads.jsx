@@ -42,8 +42,9 @@ const STATUS_BADGE = {
   EN_ROUTE:              'badge-blue',
   OFFLOADED:             'badge-green',
   WAIT_ORDER_NO:         'badge-amber',
-  WAIT_APPROVAL:         'badge-amber',
-  WAIT_POD_SCAN:         'badge-gray',
+  WAIT_POD_SCAN:         'badge-amber',
+  WAIT_APPROVAL:         'badge-blue',
+  WAIT_RATE_CHECK:       'badge-orange',
   WAIT_INVOICE_NO:       'badge-orange',
   LOAD_INVOICED:         'badge-green',
   WAIT_PROCESSING:       'badge-gray',
@@ -56,27 +57,28 @@ const STATUS_BADGE = {
 // from the workflow buttons but INCLUDED in the filter dropdown
 const ALL_STATUSES = [
   'PRELOAD', 'EN_ROUTE', 'OFFLOADED',
-  'WAIT_ORDER_NO', 'WAIT_APPROVAL', 'WAIT_POD_SCAN',
-  'WAIT_INVOICE_NO', 'LOAD_INVOICED', 'REJECTED',
+  'WAIT_ORDER_NO', 'WAIT_POD_SCAN', 'WAIT_APPROVAL',
+  'WAIT_RATE_CHECK', 'WAIT_INVOICE_NO', 'LOAD_INVOICED', 'REJECTED',
   'PENDING_KM_APPROVAL', 'KM_CORRECTION_NEEDED',
 ];
 
 // The valid manual workflow sequence (no KM system statuses here)
 const WORKFLOW_STEPS = [
   'PRELOAD', 'EN_ROUTE', 'OFFLOADED',
-  'WAIT_ORDER_NO', 'WAIT_APPROVAL', 'WAIT_POD_SCAN',
-  'WAIT_INVOICE_NO', 'LOAD_INVOICED',
+  'WAIT_ORDER_NO', 'WAIT_POD_SCAN', 'WAIT_APPROVAL',
+  'WAIT_RATE_CHECK', 'WAIT_INVOICE_NO', 'LOAD_INVOICED',
 ];
 
-// Who can advance each step
+// Who can manually advance each step
 const STEP_ROLES = {
-  PRELOAD:         ['OPERATIONS', 'MANAGER', 'ADMIN'],       // → EN_ROUTE
-  EN_ROUTE:        ['OPERATOR', 'OPERATIONS', 'MANAGER', 'ADMIN'], // → OFFLOADED (via KM)
-  OFFLOADED:       ['OPERATOR', 'OPERATIONS', 'MANAGER', 'ADMIN'], // → WAIT_ORDER_NO
-  WAIT_ORDER_NO:   ['OPERATIONS', 'MANAGER', 'ADMIN'],       // → WAIT_APPROVAL
-  WAIT_APPROVAL:   ['MANAGER', 'ADMIN'],                     // → WAIT_POD_SCAN
-  WAIT_POD_SCAN:   [],                                       // system only
-  WAIT_INVOICE_NO: ['ACCOUNTING', 'MANAGER', 'ADMIN'],       // → LOAD_INVOICED
+  PRELOAD:          ['OPERATOR', 'ADMIN'],
+  EN_ROUTE:         ['OPERATOR', 'ADMIN'],              // via KM offload
+  OFFLOADED:        ['OPERATOR', 'ADMIN'],              // → WAIT_ORDER_NO
+  WAIT_ORDER_NO:    ['OPERATOR', 'ADMIN'],              // → WAIT_POD_SCAN
+  WAIT_POD_SCAN:    [],                                 // system only (POD upload)
+  WAIT_APPROVAL:    ['OPERATOR', 'ADMIN'],              // Operator reviews POD → WAIT_RATE_CHECK
+  WAIT_RATE_CHECK:  ['MANAGER', 'ADMIN'],               // Admin/Manager confirms rate → WAIT_INVOICE_NO
+  WAIT_INVOICE_NO:  [],                                 // system only (invoice flow)
 };
 
 const COST_TYPES = ['Loadshift', 'Fine', 'Labour', 'Extra Stop', 'Other'];
@@ -772,13 +774,14 @@ function ExpandedRow({ load, onRefresh, onCostUpdate }) {
 
   // Friendly next-step button labels
   const NEXT_LABELS = {
-    PRELOAD:         '✓ Approve — Send En Route',
-    EN_ROUTE:        '✓ Mark as Offloaded',
-    OFFLOADED:       '✓ Move to Awaiting Order No',
-    WAIT_ORDER_NO:   '✓ Send for Approval',
-    WAIT_APPROVAL:   '✓ Approve Load',
-    WAIT_POD_SCAN:   '✓ Mark POD Received',
-    WAIT_INVOICE_NO: '✓ Mark as Invoiced',
+    PRELOAD:          '✓ Approve — Send En Route',
+    EN_ROUTE:         '✓ Mark as Offloaded',
+    OFFLOADED:        '✓ Move to Awaiting PO Number',
+    WAIT_ORDER_NO:    '✓ PO Received — Awaiting POD',
+    WAIT_POD_SCAN:    '— Awaiting POD Upload',
+    WAIT_APPROVAL:    '✓ POD Approved — Send for Rate Check',
+    WAIT_RATE_CHECK:  '✓ Rate Confirmed — Ready to Invoice',
+    WAIT_INVOICE_NO:  '— Awaiting Invoice (Accounting)',
   };
 
   const cell = (label, value) => (
