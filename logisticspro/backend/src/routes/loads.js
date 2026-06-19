@@ -201,13 +201,12 @@ router.patch('/ops-actions/:id', requireRole(ROLES.ADMIN, ROLES.OPERATOR), async
       }]);
     } else if (opsAction.oa_action_type === 'DELETE_COST') {
       await supabase.from('lp_costs').delete().eq('c_cost_no', payload.cost_id);
-      } else if (opsAction.oa_action_type === 'SET_ORDER_NO' ||
-               opsAction.oa_action_type === 'CHANGE_ORDER_NO') {
+    } else if (opsAction.oa_action_type === 'SET_ORDER_NO') {
       await supabase.from('lp_movement')
         .update({ m_order_no: payload.order_no, updated_at: new Date().toISOString() })
         .eq('m_load_no', opsAction.oa_load_no);
     }
-    
+
     await supabase.from('lp_comments').insert([{
       c_load:      opsAction.oa_load_no,
       c_comment:   `Ops Assistant action approved by ${req.user.username}: ${opsAction.oa_action_type} — ${JSON.stringify(payload)}`,
@@ -291,29 +290,13 @@ router.post('/:id/comments', requireRole(...CAN_VIEW_LOADS), async (req, res) =>
 // ============================================================
 // POST /api/loads — create new load
 // ============================================================
-// Generate unique load number with retry on collision
-    async function generateLoadNo() {
-      const { data: allLast } = await supabase
-        .from('lp_movement')
-        .select('m_load_no')
-        .order('created_at', { ascending: false })
-        .limit(200);
-      let nextNum = 100001;
-      if (allLast?.length > 0) {
-        let maxSeen = 0;
-        for (const row of allLast) {
-          const raw = (row.m_load_no || '').replace(/^A/i, '');
-          const n = parseInt(raw, 10);
-          if (!isNaN(n) && n > maxSeen) maxSeen = n;
-        }
-        if (maxSeen >= nextNum) nextNum = maxSeen + 1;
-      }
-      return 'A' + String(nextNum).padStart(6, '0');
-    }
-
-    // Try once, retry once if there is a duplicate key collision
-    let m_load_no = await generateLoadNo();
-
+router.post('/', requireRole(...CAN_CREATE_LOAD), async (req, res) => {
+  try {
+    const { data: allLast } = await supabase
+      .from('lp_movement')
+      .select('m_load_no')
+      .order('created_at', { ascending: false })
+      .limit(200);
 
     let nextNum = 100001;
     if (allLast?.length > 0) {
@@ -337,22 +320,13 @@ router.post('/:id/comments', requireRole(...CAN_VIEW_LOADS), async (req, res) =>
       m_date:                  new Date().toISOString().split('T')[0],
     };
 
-let { data, error } = await supabase
+    const { data, error } = await supabase
       .from('lp_movement')
       .insert([load])
       .select()
       .single();
 
-    // If duplicate load number, generate a new one and try once more
-    if (error && error.code === '23505') {
-      m_load_no = await generateLoadNo();
-      load.m_load_no = m_load_no;
-      ({ data, error } = await supabase
-        .from('lp_movement').insert([load]).select().single());
-    }
-
     if (error) return res.status(400).json({ error: error.message });
-
 
     await supabase.from('lp_comments').insert([{
       c_load:      data.m_load_no,
