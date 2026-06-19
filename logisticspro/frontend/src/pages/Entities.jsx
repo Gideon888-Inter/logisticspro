@@ -35,21 +35,20 @@ export function Vehicles() {
       </div>
       <div className="table-wrap">
         <table>
-          <thead><tr><th>Code</th><th>Type</th><th>Unit</th><th>Odometer</th><th>Next service</th><th>Last location</th><th>Status</th></tr></thead>
+          <thead><tr><th>Code</th><th>Type</th><th>Odometer</th><th>Next service</th><th>Last location</th><th>Status</th></tr></thead>
           <tbody>
-            {loading && <tr><td colSpan={7}><div className="loading">Loading…</div></td></tr>}
+            {loading && <tr><td colSpan={6}><div className="loading">Loading…</div></td></tr>}
             {!loading && filtered.map(v => (
               <tr key={v.vh_code}>
                 <td className="mono">{v.vh_code}</td>
                 <td>{v.vh_type}</td>
-                <td>{v.vh_bus_unit}</td>
                 <td className="mono">{v.vh_odometer?.toLocaleString()} km</td>
                 <td className="mono">{v.vh_next_service?.toLocaleString()} km</td>
                 <td>{v.vh_last_location || '—'}</td>
                 <td><span className={`badge ${v.vh_status === 'EN_ROUTE' ? 'badge-blue' : v.vh_status === 'OFFLOADED' ? 'badge-green' : 'badge-gray'}`}>{v.vh_status || 'AVAILABLE'}</span></td>
               </tr>
             ))}
-            {!loading && filtered.length === 0 && <tr><td colSpan={7}><div className="empty-state">No vehicles found</div></td></tr>}
+            {!loading && filtered.length === 0 && <tr><td colSpan={6}><div className="empty-state">No vehicles found</div></td></tr>}
           </tbody>
         </table>
       </div>
@@ -62,7 +61,6 @@ export function Drivers() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [unit, setUnit] = useState('');
 
   useEffect(() => {
     api.getDrivers().then(setData).catch(console.error).finally(() => setLoading(false));
@@ -70,8 +68,7 @@ export function Drivers() {
 
   const filtered = data.filter(d => {
     const s = search.toLowerCase();
-    return (!s || d.d_nickname?.toLowerCase().includes(s) || d.d_id?.toLowerCase().includes(s))
-      && (!unit || d.d_bus_unit === unit);
+    return (!s || d.d_nickname?.toLowerCase().includes(s) || d.d_id?.toLowerCase().includes(s));
   });
 
   return (
@@ -79,30 +76,24 @@ export function Drivers() {
       <div className="stats-grid">
         <div className="stat-card"><div className="stat-label">Total drivers</div><div className="stat-value">{data.length}</div></div>
         <div className="stat-card"><div className="stat-label">Active</div><div className="stat-value" style={{ color: 'var(--green)' }}>{data.filter(d => d.d_active === 'Y').length}</div></div>
-        <div className="stat-card"><div className="stat-label">IDC unit</div><div className="stat-value">{data.filter(d => d.d_bus_unit === 'IDC').length}</div></div>
-        <div className="stat-card"><div className="stat-label">IDM unit</div><div className="stat-value">{data.filter(d => d.d_bus_unit === 'IDM').length}</div></div>
       </div>
       <div className="filter-bar">
         <input placeholder="Search driver name or ID…" value={search} onChange={e => setSearch(e.target.value)} />
-        <select value={unit} onChange={e => setUnit(e.target.value)}>
-          <option value="">All units</option><option value="IDC">IDC</option><option value="IDM">IDM</option><option value="MOGWASE">Mogwase</option>
-        </select>
       </div>
       <div className="table-wrap">
         <table>
-          <thead><tr><th>ID</th><th>Name</th><th>Cell</th><th>Unit</th><th>Active</th></tr></thead>
+          <thead><tr><th>ID</th><th>Name</th><th>Cell</th><th>Active</th></tr></thead>
           <tbody>
-            {loading && <tr><td colSpan={5}><div className="loading">Loading…</div></td></tr>}
+            {loading && <tr><td colSpan={4}><div className="loading">Loading…</div></td></tr>}
             {!loading && filtered.map(d => (
               <tr key={d.d_id}>
                 <td className="mono">{d.d_id}</td>
                 <td>{d.d_nickname}</td>
                 <td className="mono">{d.d_cell || '—'}</td>
-                <td>{d.d_bus_unit}</td>
                 <td><span className={`badge ${d.d_active === 'Y' ? 'badge-green' : 'badge-red'}`}>{d.d_active === 'Y' ? 'Active' : 'Inactive'}</span></td>
               </tr>
             ))}
-            {!loading && filtered.length === 0 && <tr><td colSpan={5}><div className="empty-state">No drivers found</div></td></tr>}
+            {!loading && filtered.length === 0 && <tr><td colSpan={4}><div className="empty-state">No drivers found</div></td></tr>}
           </tbody>
         </table>
       </div>
