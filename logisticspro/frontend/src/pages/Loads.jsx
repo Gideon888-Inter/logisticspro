@@ -1030,7 +1030,7 @@ function ExpandedRow({ load, onRefresh, onCostUpdate }) {
               <div style={{ fontSize: 12, fontWeight: 600, color: '#005A8E', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
                 Audit Trail & Comments
               </div>
-              <div style={{ maxHeight: 240, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+              <div style={{ maxHeight: 240, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 8 }}>
                 {comments.length === 0 && <div style={{ fontSize: 12, color: '#aaa' }}>No activity yet</div>}
                 {comments.map(c => {
                   const isSystem =
@@ -1044,33 +1044,29 @@ function ExpandedRow({ load, onRefresh, onCostUpdate }) {
 
                   return (
                     <div key={c.id} style={{
-                      background: isSystem ? '#f0f7ff' : 'white',
-                      border: `1px solid ${isSystem ? '#bfdbfe' : '#e8f4fd'}`,
+                      display: 'flex', alignItems: 'baseline', gap: 8,
+                      padding: '4px 8px',
+                      borderRadius: 3,
+                      background: isSystem ? '#f5f9ff' : 'white',
                       borderLeft: `3px solid ${isSystem ? '#3b82f6' : '#00AEEF'}`,
-                      borderRadius: 4, padding: '8px 10px',
                     }}>
-                      {/* FIX: Layout is now: timestamp → user → activity */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                        <span style={{ fontSize: 11, color: '#aaa', fontFamily: 'monospace' }}>
-                          🕐 {fmtDateTime(c.c_time)}
+                      <span style={{ fontSize: 11, color: '#999', fontFamily: 'monospace', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                        {fmtDateTime(c.c_time)}
+                      </span>
+                      <span style={{
+                        fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0,
+                        color: isSystem ? '#1e40af' : '#005A8E',
+                      }}>
+                        {c.c_logged_by}
+                      </span>
+                      {isSystem && (
+                        <span style={{ fontSize: 10, color: '#9ca3af', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                          SYSTEM
                         </span>
-                        <span style={{
-                          fontSize: 11, fontWeight: 600,
-                          background: isSystem ? '#dbeafe' : '#e8f4fd',
-                          color: isSystem ? '#1e40af' : '#005A8E',
-                          borderRadius: 3, padding: '1px 6px',
-                        }}>
-                          👤 {c.c_logged_by}
-                        </span>
-                        {isSystem && (
-                          <span style={{ fontSize: 10, color: '#6b7280', background: '#f3f4f6', borderRadius: 3, padding: '1px 5px' }}>
-                            SYSTEM
-                          </span>
-                        )}
-                      </div>
-                      <div style={{ fontSize: 13, color: '#333', lineHeight: 1.4 }}>
+                      )}
+                      <span style={{ fontSize: 12, color: '#333', lineHeight: 1.4 }}>
                         {c.c_comment}
-                      </div>
+                      </span>
                     </div>
                   );
                 })}
