@@ -131,9 +131,7 @@ export const api = {
   // ── PODs ────────────────────────────────────────────────────
   getPendingPODs:      (params = {}) => request('/pods/pending?' + new URLSearchParams(params)),
   getReceivedPODs:     (params = {}) => request('/pods/received?' + new URLSearchParams(params)),
-  getPODsForLoad:      (loadNo)      => request(`/pods/${loadNo}`),
-  uploadPOD:           (loadNo, body)=> request(`/pods/${loadNo}/upload`, { method: 'POST', body: JSON.stringify(body) }),
-  deletePODFile:       (fileId)      => request(`/pods/file/${fileId}`, { method: 'DELETE' }),
+  markPODReceived:     (loadNo)      => request(`/pods/${loadNo}/mark-received`, { method: 'POST' }),
 
   // ── Invoices ────────────────────────────────────────────────
   getInvoiceDrafts:    ()            => request('/invoices/drafts'),
