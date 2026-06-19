@@ -18,11 +18,25 @@ const invoicesRouter = require('./routes/invoices');
 const app = express();
 app.set('trust proxy', 1);
 
+// ── Allowed origins ───────────────────────────────────────────
+const ALLOWED_ORIGINS = [
+  'https://logisticspro.pages.dev',           // Production
+  process.env.FRONTEND_URL,                    // Override via env if needed
+  'http://localhost:5173',                     // Local dev (Vite default)
+  'http://localhost:4173',                     // Local dev (Vite preview)
+].filter(Boolean);
+
 // ── Middleware ────────────────────────────────────────────────
 app.use(cors({
-  origin: '*',
-  methods: ['GET','POST','PATCH','PUT','DELETE','OPTIONS'],
-  allowedHeaders: ['Content-Type','Authorization'],
+  origin: (origin, callback) => {
+    // Allow requests with no origin (e.g. mobile apps, curl, Render health checks)
+    if (!origin) return callback(null, true);
+    if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+    callback(new Error(`CORS: origin ${origin} not allowed`));
+  },
+  methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
 }));
 app.options('*', cors());
 app.use(express.json({ limit: '20mb' }));
@@ -41,8 +55,8 @@ app.use('/api/rates',       clientRatesRouter);
 app.use('/api/users',       usersRouter);
 app.use('/api/costs',       costsRouter);
 app.use('/api/km',          kmRouter);
-app.use('/api/service',      serviceRouter);
-app.use('/api/pods',         podsRouter);
+app.use('/api/service',     serviceRouter);
+app.use('/api/pods',        podsRouter);
 app.use('/api/invoices',    invoicesRouter);
 
 // ── Health check ──────────────────────────────────────────────
