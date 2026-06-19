@@ -13,11 +13,11 @@ const CAN_MARK_POD = CAN_ADD_COSTS; // ADMIN, OPERATOR, OPS_ASSISTANT, CONTROL_R
 
 // ── Helper: build SharePoint folder link for a load ──────────
 function sharepointLink(loadNo) {
-  if (!SHAREPOINT_BASE) return null;
-  // SharePoint folders are named with 'A' prefix (e.g. A134159)
-  return `${SHAREPOINT_BASE}&id=${encodeURIComponent('A' + loadNo)}`;
+  // Deep link directly to the subfolder for this load in SharePoint
+  const folderPath = `/sites/Interland/Shared Documents/Interland Distribution/PODS New/A${loadNo}`;
+  const listUrl = 'https://llamahosted.sharepoint.com/sites/Interland/Shared Documents';
+  return `https://llamahosted-my.sharepoint.com/shared?id=${encodeURIComponent(folderPath)}&listurl=${encodeURIComponent(listUrl)}`;
 }
-
 
 // ============================================================
 // GET /api/pods/pending
