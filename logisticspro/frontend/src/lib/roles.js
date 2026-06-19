@@ -166,8 +166,5 @@ export function canViewApprovals(user) {
 
 export function canAddCosts(user) {
   return [ROLES.ADMIN, ROLES.OPERATOR, ROLES.OPS_ASSISTANT, ROLES.CONTROL_ROOM].includes(user?.role);
-}
-export function canViewPODs(user) {
-  return [ROLES.ADMIN, ROLES.MANAGER, ROLES.OPERATOR, ROLES.OPS_ASSISTANT,
-          ROLES.CONTROL_ROOM, ROLES.ACCOUNTING, ROLES.WORKSHOP].includes(user?.role);
+
 }
