@@ -16,14 +16,14 @@ const req = (path, opts = {}) =>
 
 const EMPTY = {
   u_username: '', u_password: '', u_name: '', u_email: '',
-  u_role: ROLES.OPERATOR, u_bus_unit: 'IDC', u_active: 'Y', u_region: '',
+  u_role: ROLES.OPERATOR, u_active: 'Y', u_region: '',
 };
 
 function exportCSV(data) {
-  const headers = ['Username', 'Name', 'Email', 'Role', 'Business Unit', 'Region', 'Active'];
+  const headers = ['Username', 'Name', 'Email', 'Role', 'Region', 'Active'];
   const rows = data.map(u => [
     u.u_username, u.u_name || '', u.u_email || '',
-    ROLE_LABELS[u.u_role] || u.u_role, u.u_bus_unit || '', u.u_region || '',
+    ROLE_LABELS[u.u_role] || u.u_role, u.u_region || '',
     u.u_active === 'Y' ? 'Yes' : 'No',
   ]);
   const csv = [headers, ...rows].map(r => r.map(x => `"${x}"`).join(',')).join('\n');
@@ -306,16 +306,6 @@ export default function Users() {
                       </select>
                     </div>
                     <div className="form-group">
-                      <label>Business Unit</label>
-                      <select value={form.u_bus_unit} onChange={e => set('u_bus_unit', e.target.value)}>
-                        <option value="IDC">IDC</option>
-                        <option value="IDM">IDM</option>
-                        <option value="MOGWASE">Mogwase</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div className="form-row">
-                    <div className="form-group">
                       <label>Region</label>
                       <select value={form.u_region || ''} onChange={e => set('u_region', e.target.value)}>
                         <option value="">— No region —</option>
@@ -324,6 +314,8 @@ export default function Users() {
                         <option value="Other">Other</option>
                       </select>
                     </div>
+                  </div>
+                  <div className="form-row">
                     <div className="form-group">
                       <label>Active</label>
                       <select value={form.u_active} onChange={e => set('u_active', e.target.value)}>
