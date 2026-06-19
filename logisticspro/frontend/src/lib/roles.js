@@ -1,241 +1,171 @@
-const express = require('express');
-const supabase = require('../supabase');
-const { authMiddleware, requireRole, ROLES, CAN_VIEW_LOADS, CAN_ADD_COSTS } = require('../middleware/auth');
+// ── Single source of truth for role permissions on the frontend ──
+// Mirror of backend/src/middleware/auth.js — keep in sync.
 
-const router = express.Router();
-router.use(authMiddleware);
+export const ROLES = {
+  ADMIN:         'ADMIN',
+  MANAGER:       'MANAGER',
+  OPERATOR:      'OPERATOR',
+  OPS_ASSISTANT: 'OPS_ASSISTANT',
+  CONTROL_ROOM:  'CONTROL_ROOM',
+  ACCOUNTING:    'ACCOUNTING',
+  WORKSHOP:      'WORKSHOP',
+  READONLY:      'READONLY',
+};
 
-const BUCKET = 'pods';
+// ── Role label for display ────────────────────────────────────
+export const ROLE_LABELS = {
+  ADMIN:         'Admin',
+  MANAGER:       'Manager',
+  OPERATOR:      'Operator',
+  OPS_ASSISTANT: 'Ops Assistant',
+  CONTROL_ROOM:  'Control Room',
+  ACCOUNTING:    'Administrator',   // Display name per brief
+  WORKSHOP:      'Workshop',
+  READONLY:      'Read Only',
+};
 
-// Roles that can upload PODs (same as who can add costs to a load)
-const CAN_UPLOAD_POD = CAN_ADD_COSTS;   // ADMIN, OPERATOR, OPS_ASSISTANT, CONTROL_ROOM
+export const ROLE_BADGE_COLORS = {
+  ADMIN:         'badge-red',
+  MANAGER:       'badge-amber',
+  OPERATOR:      'badge-blue',
+  OPS_ASSISTANT: 'badge-blue',
+  CONTROL_ROOM:  'badge-gray',
+  ACCOUNTING:    'badge-green',
+  WORKSHOP:      'badge-gray',
+  READONLY:      'badge-gray',
+};
 
-// ── Helper: build the storage path for a load ────────────────
-function storagePath(loadNo, fileName) {
-  // Sanitise filename — strip anything that isn't alphanumeric, dash, dot, underscore
-  const safe = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
-  return `${loadNo}/${Date.now()}_${safe}`;
+// ── Permission helpers (pass the user object from useAuth) ────
+
+export function canViewLoads(user) {
+  return [ROLES.ADMIN, ROLES.MANAGER, ROLES.OPERATOR, ROLES.OPS_ASSISTANT,
+          ROLES.CONTROL_ROOM, ROLES.ACCOUNTING, ROLES.WORKSHOP].includes(user?.role);
 }
 
+export function canCreateLoad(user) {
+  return [ROLES.ADMIN, ROLES.OPERATOR, ROLES.OPS_ASSISTANT, ROLES.CONTROL_ROOM].includes(user?.role);
+}
 
-// ============================================================
-// GET /api/pods/pending
-// Loads currently sitting in WAIT_POD_SCAN — need a POD uploaded.
-// ============================================================
-router.get('/pending', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
-  const { bus_unit } = req.query;
+export function canEditLoad(user) {
+  // Editing load fields (rate, customer, route) — not just status
+  return [ROLES.ADMIN, ROLES.OPERATOR, ROLES.OPS_ASSISTANT].includes(user?.role);
+}
 
-  let q = supabase
-    .from('lp_movement')
-    .select('m_load_no, m_date, m_customer, m_truck, m_from, m_to, m_rate, m_order_no, m_bus_unit')
-    .eq('m_status', 'WAIT_POD_SCAN')
-    .order('m_date', { ascending: false });
+export function canDeleteLoad(user) {
+  return [ROLES.OPERATOR, ROLES.ADMIN].includes(user?.role);
+}
 
-  if (bus_unit) q = q.eq('m_bus_unit', bus_unit);
+export function canRejectLoad(user) {
+  return [ROLES.ADMIN, ROLES.OPERATOR, ROLES.ACCOUNTING].includes(user?.role);
+}
 
-  const { data, error } = await q;
-  if (error) return res.status(500).json({ error: error.message });
-  res.json(data || []);
-});
+// Status transition rules
+export function canAdvanceStatus(user, currentStatus, newStatus) {
+  const role = user?.role;
 
+  // Workshop and Read Only — never
+  if ([ROLES.WORKSHOP, ROLES.READONLY, ROLES.MANAGER].includes(role)) return false;
 
-// ============================================================
-// GET /api/pods/received
-// Loads that have at least one POD file uploaded, across all statuses.
-// ============================================================
-router.get('/received', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
-  const { bus_unit, search } = req.query;
+  // Accounting — only WAIT_INVOICE_NO → LOAD_INVOICED (via invoice approval)
+  if (role === ROLES.ACCOUNTING) return false;
 
-  // Get all loads that have pod files, joining to movement for load details
-  const { data: podFiles, error: pfErr } = await supabase
-    .from('lp_pod_files')
-    .select('pf_load_no')
-    .order('created_at', { ascending: false });
-
-  if (pfErr) return res.status(500).json({ error: pfErr.message });
-
-  const loadNos = [...new Set((podFiles || []).map(p => p.pf_load_no))];
-  if (loadNos.length === 0) return res.json([]);
-
-  let q = supabase
-    .from('lp_movement')
-    .select('m_load_no, m_date, m_customer, m_truck, m_from, m_to, m_rate, m_status, m_order_no, m_bus_unit')
-    .in('m_load_no', loadNos)
-    .neq('m_status', 'DELETED')
-    .order('m_date', { ascending: false });
-
-  if (bus_unit) q = q.eq('m_bus_unit', bus_unit);
-  if (search)   q = q.or(`m_load_no.ilike.%${search}%,m_customer.ilike.%${search}%,m_truck.ilike.%${search}%`);
-
-  const { data, error } = await q;
-  if (error) return res.status(500).json({ error: error.message });
-  res.json(data || []);
-});
-
-
-// ============================================================
-// GET /api/pods/:loadNo
-// All POD files for a specific load, with signed download URLs.
-// ============================================================
-router.get('/:loadNo', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
-  const { loadNo } = req.params;
-
-  const { data: files, error } = await supabase
-    .from('lp_pod_files')
-    .select('*')
-    .eq('pf_load_no', loadNo)
-    .order('created_at', { ascending: true });
-
-  if (error) return res.status(500).json({ error: error.message });
-  if (!files || files.length === 0) return res.json([]);
-
-  // Generate a signed URL for each file (valid for 1 hour)
-  const result = await Promise.all(files.map(async (f) => {
-    const { data: signed, error: signErr } = await supabase.storage
-      .from(BUCKET)
-      .createSignedUrl(f.pf_file_path, 3600);
-
-    return {
-      ...f,
-      signed_url: signErr ? null : signed?.signedUrl,
-    };
-  }));
-
-  res.json(result);
-});
-
-
-// ============================================================
-// POST /api/pods/:loadNo/upload
-// Upload a POD file for a load.
-// Body: multipart/form-data with fields:
-//   file       — the binary file
-//   file_name  — original filename
-//   mime_type  — e.g. application/pdf
-//   note       — optional note
-//
-// After the first upload, the load status advances from
-// WAIT_POD_SCAN -> WAIT_APPROVAL automatically (Operator reviews POD).
-// ============================================================
-router.post('/:loadNo/upload', requireRole(...CAN_UPLOAD_POD), async (req, res) => {
-  const { loadNo } = req.params;
-  const { file_base64, file_name, mime_type, note } = req.body;
-
-  try {
-    if (!file_base64 || !file_name || !mime_type) {
-      return res.status(400).json({ error: 'file_base64, file_name, and mime_type are required' });
-    }
-
-    // Allowed types
-    const ALLOWED = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-    if (!ALLOWED.includes(mime_type.toLowerCase())) {
-      return res.status(400).json({ error: 'Only PDF, JPEG, PNG, and WebP files are accepted' });
-    }
-
-    // Verify load exists
-    const { data: load, error: loadErr } = await supabase
-      .from('lp_movement')
-      .select('m_status, m_load_no')
-      .eq('m_load_no', loadNo)
-      .single();
-
-    if (loadErr || !load) return res.status(404).json({ error: 'Load not found' });
-
-    // Convert base64 to buffer
-    const buffer = Buffer.from(file_base64, 'base64');
-    const path = storagePath(loadNo, file_name);
-
-    // Upload to Supabase Storage
-    const { error: uploadErr } = await supabase.storage
-      .from(BUCKET)
-      .upload(path, buffer, { contentType: mime_type, upsert: false });
-
-    if (uploadErr) {
-      return res.status(500).json({ error: `Storage upload failed: ${uploadErr.message}` });
-    }
-
-    // Record in database
-    const { data: podFile, error: dbErr } = await supabase
-      .from('lp_pod_files')
-      .insert([{
-        pf_load_no:     loadNo,
-        pf_file_path:   path,
-        pf_file_name:   file_name,
-        pf_file_size:   buffer.length,
-        pf_mime_type:   mime_type,
-        pf_uploaded_by: req.user.username,
-        pf_note:        note || null,
-      }])
-      .select()
-      .single();
-
-    if (dbErr) {
-      return res.status(500).json({ error: `Database error: ${dbErr.message}` });
-    }
-
-    // Audit comment
-    await supabase.from('lp_comments').insert([{
-      c_load:      loadNo,
-      c_comment:   `POD uploaded: ${file_name} by ${req.user.username}`,
-      c_logged_by: req.user.username,
-    }]);
-
-    // Auto-advance: WAIT_POD_SCAN -> WAIT_APPROVAL (Operator reviews uploaded POD)
-    if (load.m_status === 'WAIT_POD_SCAN') {
-      await supabase.from('lp_movement')
-        .update({ m_status: 'WAIT_APPROVAL', updated_at: new Date().toISOString() })
-        .eq('m_load_no', loadNo);
-
-      await supabase.from('lp_comments').insert([{
-        c_load:      loadNo,
-        c_comment:   `Status advanced to WAIT_APPROVAL — Operator to review uploaded POD`,
-        c_logged_by: 'SYSTEM',
-      }]);
-    }
-
-    res.status(201).json({ ...podFile, status_advanced: load.m_status === 'WAIT_POD_SCAN' });
-
-  } catch (err) {
-    console.error('[POD UPLOAD ERROR]', err);
-    res.status(500).json({ error: err.message || 'Unexpected error during upload' });
+  // Control Room — up to OFFLOADED only, cannot reject
+  if (role === ROLES.CONTROL_ROOM) {
+    if (newStatus === 'REJECTED') return false;
+    return ['EN_ROUTE', 'OFFLOADED'].includes(newStatus);
   }
-});
 
+  // Ops Assistant — can submit all transitions (will be queued for approval)
+  if (role === ROLES.OPS_ASSISTANT) return true;
 
-// ============================================================
-// DELETE /api/pods/file/:fileId
-// Remove a POD file (Operator/Admin only — irreversible).
-// ============================================================
-router.delete('/file/:fileId', requireRole(ROLES.ADMIN, ROLES.OPERATOR), async (req, res) => {
-  const { fileId } = req.params;
+  // Operator / Admin — full control
+  return [ROLES.OPERATOR, ROLES.ADMIN].includes(role);
+}
 
-  const { data: file, error: fetchErr } = await supabase
-    .from('lp_pod_files')
-    .select('*')
-    .eq('id', fileId)
-    .single();
+export function isOpsAssistant(user) {
+  return user?.role === ROLES.OPS_ASSISTANT;
+}
 
-  if (fetchErr || !file) return res.status(404).json({ error: 'File not found' });
+// What the next logical status is (for the "advance" button label)
+export const STATUS_NEXT = {
+  PRELOAD:          'EN_ROUTE',
+  EN_ROUTE:         'OFFLOADED',
+  OFFLOADED:        'WAIT_ORDER_NO',
+  WAIT_ORDER_NO:    'WAIT_POD_SCAN',    // POD scan before approval
+  WAIT_POD_SCAN:    'WAIT_APPROVAL',    // system-driven by POD upload
+  WAIT_APPROVAL:    'WAIT_RATE_CHECK',  // Operator approves POD
+  WAIT_RATE_CHECK:  'WAIT_INVOICE_NO',  // Admin/Manager confirms rate
+  WAIT_INVOICE_NO:  'LOAD_INVOICED',    // via invoice approval (Accounting)
+};
 
-  // Remove from storage
-  const { error: storageErr } = await supabase.storage
-    .from(BUCKET)
-    .remove([file.pf_file_path]);
+export const STATUS_LABELS = {
+  PRELOAD:               'Pre-load',
+  EN_ROUTE:              'En Route',
+  OFFLOADED:             'Offloaded',
+  WAIT_ORDER_NO:         'Awaiting PO Number',
+  WAIT_POD_SCAN:         'Awaiting POD Upload',
+  WAIT_APPROVAL:         'POD Review — Operator',
+  WAIT_RATE_CHECK:       'Rate Check — Admin',
+  WAIT_INVOICE_NO:       'Awaiting Invoice No.',
+  LOAD_INVOICED:         'Invoiced',
+  REJECTED:              'Rejected',
+  DELETED:               'Deleted',
+  PENDING_KM_APPROVAL:   'Pending KM Approval',
+  KM_CORRECTION_NEEDED:  'KM Correction Needed',
+};
 
-  if (storageErr) return res.status(500).json({ error: `Storage delete failed: ${storageErr.message}` });
+// ── Menu / page access ────────────────────────────────────────
 
-  // Remove database record
-  await supabase.from('lp_pod_files').delete().eq('id', fileId);
+export function canViewFleet(user) {
+  return [ROLES.ADMIN, ROLES.MANAGER, ROLES.OPERATOR, ROLES.OPS_ASSISTANT].includes(user?.role);
+}
 
-  // Audit comment
-  await supabase.from('lp_comments').insert([{
-    c_load:      file.pf_load_no,
-    c_comment:   `POD file deleted: ${file.pf_file_name} by ${req.user.username}`,
-    c_logged_by: req.user.username,
-  }]);
+export function canEditFleet(user) {
+  return [ROLES.ADMIN, ROLES.OPERATOR, ROLES.OPS_ASSISTANT].includes(user?.role);
+}
 
-  res.json({ success: true });
-});
+export function canViewWorkshop(user) {
+  return [ROLES.ADMIN, ROLES.MANAGER, ROLES.OPERATOR, ROLES.OPS_ASSISTANT, ROLES.WORKSHOP].includes(user?.role);
+}
 
+export function canEditWorkshop(user) {
+  return [ROLES.ADMIN, ROLES.WORKSHOP].includes(user?.role);
+}
 
-module.exports = router;
+export function canViewRates(user) {
+  return [ROLES.ADMIN, ROLES.MANAGER].includes(user?.role);
+}
+
+export function canManageClients(user) {
+  return [ROLES.ADMIN, ROLES.MANAGER, ROLES.OPERATOR, ROLES.OPS_ASSISTANT].includes(user?.role);
+}
+
+export function canManageDrivers(user) {
+  return [ROLES.ADMIN, ROLES.MANAGER, ROLES.OPERATOR, ROLES.OPS_ASSISTANT].includes(user?.role);
+}
+
+export function canManageUsers(user) {
+  return [ROLES.ADMIN, ROLES.MANAGER].includes(user?.role);
+}
+
+export function canManageInvoices(user) {
+  return [ROLES.ADMIN, ROLES.MANAGER, ROLES.ACCOUNTING].includes(user?.role);
+}
+
+export function canViewPODs(user) {
+  // Everyone who can see loads can see PODs — uploading is controlled separately in the page
+  return [ROLES.ADMIN, ROLES.MANAGER, ROLES.OPERATOR, ROLES.OPS_ASSISTANT,
+          ROLES.CONTROL_ROOM, ROLES.ACCOUNTING, ROLES.WORKSHOP].includes(user?.role);
+}
+
+export function canCreateCreditNote(user) {
+  return [ROLES.ADMIN, ROLES.MANAGER].includes(user?.role);
+}
+
+export function canViewApprovals(user) {
+  return [ROLES.ADMIN, ROLES.MANAGER, ROLES.OPERATOR, ROLES.ACCOUNTING].includes(user?.role);
+}
+
+export function canAddCosts(user) {
+  return [ROLES.ADMIN, ROLES.OPERATOR, ROLES.OPS_ASSISTANT, ROLES.CONTROL_ROOM].includes(user?.role);
+}
