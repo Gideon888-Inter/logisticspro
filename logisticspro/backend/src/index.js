@@ -35,7 +35,7 @@ app.use('/api/customers',   customersRouter);
 app.use('/api/maintenance', maintenanceRouter);
 app.use('/api/inventory',   inventoryRouter);
 app.use('/api/routes',      routesRouter);
-app.use('/api/rates',       clientRatesRouter);
+app.use('/api/rates/client-rates', clientRatesRouter);
 app.use('/api/users',       usersRouter);
 app.use('/api/costs',       costsRouter);
 app.use('/api/km',          kmRouter);
