@@ -160,7 +160,7 @@ router.post('/', requireRole(...CAN_MANAGE_INVOICES), async (req, res) => {
     // Fetch load details
     const { data: load, error: loadErr } = await supabase
       .from('lp_movement')
-      .select('*, lp_customers(c_name)')
+      .select('*')
       .eq('m_load_no', load_no)
       .single();
 
