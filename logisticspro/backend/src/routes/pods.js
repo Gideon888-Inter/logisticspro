@@ -158,7 +158,7 @@ router.post('/:loadNo/upload', requireRole(...CAN_UPLOAD_POD), async (req, res) 
       upsert: false,
     });
 
-  if (uploadErr) return res.status(500).json({ error: `Storage upload failed: ${uploadErr.message}` });
+  if (uploadErr) return res.status(500).json({ error: `Storage upload failed: ${uploadErr.message}. Make sure the "pods" bucket exists in Supabase Storage.` });
 
   // Record in database
   const { data: podFile, error: dbErr } = await supabase
@@ -175,7 +175,7 @@ router.post('/:loadNo/upload', requireRole(...CAN_UPLOAD_POD), async (req, res) 
     .select()
     .single();
 
-  if (dbErr) return res.status(500).json({ error: dbErr.message });
+  if (dbErr) return res.status(500).json({ error: `Database error: ${dbErr.message}. Make sure migration_002_pod_storage.sql has been run in Supabase.` });
 
   // Audit comment on the load
   await supabase.from('lp_comments').insert([{
