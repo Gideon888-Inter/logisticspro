@@ -187,7 +187,7 @@ function LicenseBanner({ vehicles, onNavigate }) {
                   border: '1px solid #fca5a5',
                 }}>
                   <span style={{ fontWeight: 600, fontSize: 13, fontFamily: 'monospace' }}>{v.vh_code}</span>
-                  <span style={{ fontSize: 12, color: '#555' }}>{v.vh_type} · {v.vh_bus_unit || '—'}</span>
+                  <span style={{ fontSize: 12, color: '#555' }}>{v.vh_type}</span>
                   <span style={{ fontSize: 12, fontWeight: 700, color: '#e53e3e' }}>
                     Expired: {fmtD(v.vh_license_expiry)}
                   </span>
@@ -207,7 +207,7 @@ function LicenseBanner({ vehicles, onNavigate }) {
                   border: '1px solid #fed7aa',
                 }}>
                   <span style={{ fontWeight: 600, fontSize: 13, fontFamily: 'monospace' }}>{v.vh_code}</span>
-                  <span style={{ fontSize: 12, color: '#555' }}>{v.vh_type} · {v.vh_bus_unit || '—'}</span>
+                  <span style={{ fontSize: 12, color: '#555' }}>{v.vh_type}</span>
                   <span style={{ fontSize: 12, fontWeight: 700, color: '#f97316' }}>
                     Expires: {fmtD(v.vh_license_expiry)}
                   </span>
