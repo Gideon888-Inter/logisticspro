@@ -364,11 +364,18 @@ router.patch('/:id', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
     if (role === ROLES.WORKSHOP || role === ROLES.READONLY)
       return res.status(403).json({ error: 'You do not have permission to change load status' });
 
-    // Manager — read only on loads
-    if (role === ROLES.MANAGER)
-      return res.status(403).json({ error: 'Managers cannot change load status' });
+    // Manager: can approve WAIT_RATE_CHECK or reject
+    if (role === ROLES.MANAGER) {
+      if (currentStatus === 'WAIT_RATE_CHECK' && newStatus === 'WAIT_INVOICE_NO') {
+        // allowed -- manager confirms rate is correct
+      } else if (newStatus === 'REJECTED') {
+        // allowed -- manager can reject
+      } else {
+        return res.status(403).json({ error: 'Managers can only confirm the rate check or reject a load' });
+      }
+    }
 
-    // Control Room — max status is OFFLOADED, cannot reject
+    // Control Room: max status is OFFLOADED, cannot reject
     if (role === ROLES.CONTROL_ROOM) {
       const allowedForCR = ['EN_ROUTE', 'OFFLOADED'];
       if (!allowedForCR.includes(newStatus))
@@ -377,10 +384,14 @@ router.patch('/:id', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
         return res.status(403).json({ error: 'Control Room cannot reject loads' });
     }
 
-    // Accounting — can only set WAIT_INVOICE_NO → LOAD_INVOICED, or REJECT
+    // Accounting: cannot change status manually -- invoice flow only
     if (role === ROLES.ACCOUNTING) {
-      if (!['LOAD_INVOICED', 'REJECTED'].includes(newStatus))
-        return res.status(403).json({ error: 'Accounting can only approve loads for invoicing or reject them' });
+      return res.status(403).json({ error: 'Accounting cannot change load status manually. Use the Invoices page.' });
+    }
+
+    // Block manual set to LOAD_INVOICED for everyone -- invoice flow only
+    if (newStatus === 'LOAD_INVOICED') {
+      return res.status(403).json({ error: 'LOAD_INVOICED is set by the invoice approval flow. Use the Invoices page.' });
     }
 
     // Ops Assistant — queue the status change for Operator approval
