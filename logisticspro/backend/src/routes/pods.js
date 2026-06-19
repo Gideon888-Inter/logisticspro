@@ -115,7 +115,7 @@ router.get('/:loadNo', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
 //   note       — optional note
 //
 // After the first upload, the load status advances from
-// WAIT_POD_SCAN → WAIT_INVOICE_NO automatically.
+// WAIT_POD_SCAN -> WAIT_APPROVAL automatically (Operator reviews POD).
 // ============================================================
 router.post('/:loadNo/upload', requireRole(...CAN_UPLOAD_POD), async (req, res) => {
   const { loadNo } = req.params;
@@ -180,15 +180,15 @@ router.post('/:loadNo/upload', requireRole(...CAN_UPLOAD_POD), async (req, res) 
       c_logged_by: req.user.username,
     }]);
 
-    // Auto-advance load status from WAIT_POD_SCAN → WAIT_INVOICE_NO
+    // Auto-advance: WAIT_POD_SCAN -> WAIT_APPROVAL (Operator reviews uploaded POD)
     if (load.m_status === 'WAIT_POD_SCAN') {
       await supabase.from('lp_movement')
-        .update({ m_status: 'WAIT_INVOICE_NO', updated_at: new Date().toISOString() })
+        .update({ m_status: 'WAIT_APPROVAL', updated_at: new Date().toISOString() })
         .eq('m_load_no', loadNo);
 
       await supabase.from('lp_comments').insert([{
         c_load:      loadNo,
-        c_comment:   `Status auto-advanced to WAIT_INVOICE_NO after POD upload`,
+        c_comment:   `Status advanced to WAIT_APPROVAL — Operator to review uploaded POD`,
         c_logged_by: 'SYSTEM',
       }]);
     }
