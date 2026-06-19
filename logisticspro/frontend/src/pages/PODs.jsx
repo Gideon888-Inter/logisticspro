@@ -274,13 +274,19 @@ export default function PODs() {
     setError('');
     try {
       const [pend, recv] = await Promise.all([
-        req('/pods/pending').catch(() => []),
-        req(`/pods/received${search ? '?search=' + encodeURIComponent(search) : ''}`).catch(() => []),
+        req('/pods/pending'),
+        req(`/pods/received${search ? '?search=' + encodeURIComponent(search) : ''}`),
       ]);
+      // Surface any backend error messages
+      if (pend?.error)  { setError('Pending: ' + pend.error);  setLoading(false); return; }
+      if (recv?.error)  { setError('Received: ' + recv.error); setLoading(false); return; }
       setPending(Array.isArray(pend) ? pend : []);
       setReceived(Array.isArray(recv) ? recv : []);
-    } catch (e) { setError(e.message); }
-    finally { setLoading(false); }
+    } catch (e) {
+      setError('Could not load PODs: ' + e.message);
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => { loadData(); }, []);
