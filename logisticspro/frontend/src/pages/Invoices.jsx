@@ -32,15 +32,21 @@ export default function Invoices() {
 
   const loadData = async () => {
     setLoading(true);
+    setError('');
     try {
       const [draftsRes, invRes] = await Promise.all([
-        req('/invoices/drafts').catch(() => []),
-        req(`/invoices${statusFilter ? '?status=' + statusFilter : ''}`).catch(() => []),
+        req('/invoices/drafts'),
+        req(`/invoices${statusFilter ? '?status=' + statusFilter : ''}`),
       ]);
+      if (draftsRes?.error) { setError('Could not load drafts: ' + draftsRes.error); setLoading(false); return; }
+      if (invRes?.error)    { setError('Could not load invoices: ' + invRes.error);  setLoading(false); return; }
       setDraftsReady(Array.isArray(draftsRes) ? draftsRes : []);
       setInvoices(Array.isArray(invRes) ? invRes : []);
-    } catch (e) { console.error(e); }
-    finally { setLoading(false); }
+    } catch (e) {
+      setError('Failed to load invoice data: ' + e.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { loadData(); }, [statusFilter]);
