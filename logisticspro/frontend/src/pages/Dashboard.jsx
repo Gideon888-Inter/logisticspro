@@ -108,6 +108,115 @@ function PieChart({ data }) {
   );
 }
 
+// ── PDP Expiry Banner ─────────────────────────────────────────
+function PdpBanner({ drivers, onNavigate }) {
+  const [expanded, setExpanded] = useState(false);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const thisMonthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+  const next30 = new Date(today); next30.setDate(today.getDate() + 30);
+
+  const expired = drivers
+    .filter(d => d.d_pdp_expiry && new Date(d.d_pdp_expiry) < today && d.d_active === 'Y')
+    .sort((a, b) => new Date(a.d_pdp_expiry) - new Date(b.d_pdp_expiry));
+
+  const expiring = drivers
+    .filter(d => {
+      if (!d.d_pdp_expiry || d.d_active !== 'Y') return false;
+      const dt = new Date(d.d_pdp_expiry);
+      return dt >= today && dt <= next30;
+    })
+    .sort((a, b) => new Date(a.d_pdp_expiry) - new Date(b.d_pdp_expiry));
+
+  const total = expired.length + expiring.length;
+  if (total === 0) return null;
+
+  const fmtD = (d) => new Date(d).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' });
+
+  return (
+    <div style={{
+      background: expired.length > 0 ? '#fff1f2' : '#fff7ed',
+      border: `2px solid ${expired.length > 0 ? '#e53e3e' : '#f97316'}`,
+      borderRadius: 8, marginBottom: 4, overflow: 'hidden',
+    }}>
+      <div
+        onClick={() => setExpanded(e => !e)}
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '12px 16px', cursor: 'pointer',
+          background: expired.length > 0 ? '#e53e3e' : '#f97316',
+        }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 20 }}>📋</span>
+          <div>
+            <span style={{ color: 'white', fontWeight: 700, fontSize: 14 }}>
+              {expired.length > 0
+                ? `${expired.length} driver${expired.length > 1 ? 's' : ''} with EXPIRED PDP`
+                : ''}
+              {expired.length > 0 && expiring.length > 0 ? ' · ' : ''}
+              {expiring.length > 0
+                ? `${expiring.length} driver PDP${expiring.length > 1 ? 's' : ''} expiring within 30 days`
+                : ''}
+            </span>
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button
+            onClick={e => { e.stopPropagation(); onNavigate && onNavigate('drivers-list'); }}
+            style={{ color: 'white', fontSize: 12, textDecoration: 'underline', opacity: 0.9, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
+            View all drivers →
+          </button>
+          <span style={{ color: 'white', fontSize: 18, fontWeight: 700 }}>{expanded ? '▲' : '▼'}</span>
+        </div>
+      </div>
+
+      {expanded && (
+        <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {expired.length > 0 && (
+            <>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#e53e3e', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>
+                Already Expired
+              </div>
+              {expired.map(d => (
+                <div key={d.d_id} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  background: '#fee2e2', borderRadius: 4, padding: '6px 12px',
+                  border: '1px solid #fca5a5',
+                }}>
+                  <span style={{ fontWeight: 600, fontSize: 13, fontFamily: 'monospace' }}>{d.d_id}</span>
+                  <span style={{ fontSize: 12, color: '#555' }}>{d.d_nickname}</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: '#e53e3e' }}>
+                    Expired: {fmtD(d.d_pdp_expiry)}
+                  </span>
+                </div>
+              ))}
+            </>
+          )}
+          {expiring.length > 0 && (
+            <>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#f97316', textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: expired.length > 0 ? 8 : 0, marginBottom: 2 }}>
+                Expiring Within 30 Days
+              </div>
+              {expiring.map(d => (
+                <div key={d.d_id} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  background: '#fff7ed', borderRadius: 4, padding: '6px 12px',
+                  border: '1px solid #fed7aa',
+                }}>
+                  <span style={{ fontWeight: 600, fontSize: 13, fontFamily: 'monospace' }}>{d.d_id}</span>
+                  <span style={{ fontSize: 12, color: '#555' }}>{d.d_nickname}</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: '#f97316' }}>
+                    Expires: {fmtD(d.d_pdp_expiry)}
+                  </span>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── License Expiry Banner ─────────────────────────────────────
 function LicenseBanner({ vehicles, onNavigate }) {
   const [expanded, setExpanded] = useState(false);
@@ -359,6 +468,7 @@ export default function Dashboard({ onNavigate }) {
   const [loads, setLoads] = useState([]);
   const [users, setUsers] = useState([]);
   const [vehicles, setVehicles] = useState([]);
+  const [drivers, setDrivers] = useState([]);
   const [loading, setLoading] = useState(true);
   const monthOptions = generateMonthOptions();
   const now = new Date();
@@ -377,10 +487,12 @@ export default function Dashboard({ onNavigate }) {
       req(`/loads?date_from=${from}&date_to=${to}&limit=2000`),
       req('/users').catch(()=>[]),
       req('/vehicles').catch(()=>[]),
-    ]).then(([l, u, v]) => {
+      req('/drivers').catch(()=>[]),
+    ]).then(([l, u, v, dr]) => {
       setLoads(l.data || []);
       setUsers(Array.isArray(u) ? u : []);
       setVehicles(Array.isArray(v) ? v : []);
+      setDrivers(Array.isArray(dr) ? dr : []);
     }).catch(console.error)
     .finally(() => setLoading(false));
   }, [selectedMonth]);
@@ -487,6 +599,7 @@ export default function Dashboard({ onNavigate }) {
       {/* License Expiry Banner */}
       <LicenseBanner vehicles={vehicles} onNavigate={onNavigate} />
       <ServiceBanner vehicles={vehicles} onNavigate={onNavigate} />
+      <PdpBanner drivers={drivers} onNavigate={onNavigate} />
 
       {/* Month header */}
       <div style={{display:'flex', alignItems:'center', justifyContent:'space-between'}}>
