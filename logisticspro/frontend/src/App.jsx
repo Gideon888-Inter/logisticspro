@@ -5,6 +5,7 @@ import {
   canViewLoads, canViewFleet, canViewWorkshop, canViewRates,
   canManageClients, canManageDrivers, canManageUsers,
   canManageInvoices, canViewApprovals, canViewPODs,
+  ROLES,
 } from './lib/roles';
 import Login from './pages/Login';
 import Loads from './pages/Loads';
@@ -48,9 +49,9 @@ const LogoutIcon = () => (
 
 // Build menu dynamically based on user role
 function buildMenu(user) {
-  const menu = [
-    { key: '', label: 'Home', icon: '🏠', show: true },
-  ];
+  const menu = [];
+  if (user?.role === ROLES.READONLY) return menu; // No menu items for read-only users
+  menu.push({ key: '', label: 'Home', icon: '🏠' });
   if (canViewLoads(user))
     menu.push({ key: 'movement', label: 'Loads', icon: '🚛' });
   if (canViewWorkshop(user))
@@ -101,6 +102,17 @@ const PAGE_TITLES = {
   users: 'Users', invoices: 'Invoices', pods: 'Proof of Delivery',
 };
 
+const ReadOnlyHome = () => (
+  <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'60vh', gap:16, textAlign:'center' }}>
+    <div style={{ fontSize:56 }}>👁️</div>
+    <div style={{ fontSize:22, fontWeight:700, color:'#005A8E' }}>Read-Only Access</div>
+    <div style={{ fontSize:14, color:'#666', maxWidth:340, lineHeight:1.6 }}>
+      Your account has read-only access. You can view information but cannot make any changes.
+      Please contact your administrator if you need additional permissions.
+    </div>
+  </div>
+);
+
 export default function App() {
   const { user, logout } = useAuth();
   const [page, setPage] = useState('');
@@ -108,7 +120,6 @@ export default function App() {
   const [expandedMenus, setExpandedMenus] = useState({});
   const MENU = user ? buildMenu(user) : [];
 
-  // FIX: use already-built MENU instead of rebuilding it on every navigation
   const navigate = (key) => {
     setPage(key);
     MENU.forEach(item => {
@@ -142,6 +153,9 @@ export default function App() {
   );
 
   const renderPage = () => {
+    // Read-only users see only the read-only home screen
+    if (user?.role === ROLES.READONLY) return <ReadOnlyHome />;
+
     switch (page) {
       case '':                    return <Dashboard onNavigate={navigate} />;
       case 'movement':            return canViewLoads(user) ? <Loads /> : <AccessDenied />;
@@ -251,19 +265,20 @@ export default function App() {
           display: 'flex', alignItems: 'center', padding: '0 20px', gap: 12,
           boxShadow: '0 1px 4px rgba(0,0,0,0.06)', flexShrink: 0,
         }}>
-          <button onClick={() => setSidebarOpen(o => !o)} style={{
-            background: 'none', border: 'none', cursor: 'pointer', color: '#005A8E',
-            display: 'flex', alignItems: 'center', padding: 4,
-          }}>
-            {sidebarOpen ? <CloseIcon /> : <MenuIcon />}
-          </button>
+          {/* Only show menu toggle if user has menu items */}
+          {MENU.length > 0 && (
+            <button onClick={() => setSidebarOpen(o => !o)} style={{
+              background: 'none', border: 'none', cursor: 'pointer', color: '#005A8E',
+              display: 'flex', alignItems: 'center', padding: 4,
+            }}>
+              {sidebarOpen ? <CloseIcon /> : <MenuIcon />}
+            </button>
+          )}
           <span style={{ fontWeight: 600, fontSize: 16, color: '#1a202c' }}>
-            {PAGE_TITLES[page] || 'Overview'}
+            {user?.role === ROLES.READONLY ? 'LogisticsPro' : (PAGE_TITLES[page] || 'Overview')}
           </span>
           <div style={{ flex: 1 }} />
-          <span style={{ fontSize: 13, color: '#555' }}>
-            🔔
-          </span>
+          <span style={{ fontSize: 13, color: '#555' }}>🔔</span>
           <span style={{ fontSize: 13, color: '#555' }}>
             {user?.name || user?.username}
           </span>
@@ -277,4 +292,3 @@ export default function App() {
     </div>
   );
 }
-
