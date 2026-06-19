@@ -3,6 +3,40 @@ import { api } from '../lib/api';
 
 const EMPTY = { d_id:'', d_nickname:'', d_name:'', d_cell:'', d_type:'Interland', d_pdp_expiry:'', d_receipt:'N', d_start_date:'', d_training_date:'', d_active:'Y' };
 
+// ── Date status helper (mirrors Fleet.jsx) ─────────────────────
+function getPdpStatus(dateStr) {
+  if (!dateStr) return 'none';
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const d = new Date(dateStr);
+  if (d < today) return 'expired';
+  const in30 = new Date(today); in30.setDate(today.getDate() + 30);
+  if (d <= in30) return 'soon';
+  const in90 = new Date(today); in90.setDate(today.getDate() + 90);
+  if (d <= in90) return 'warning';
+  return 'ok';
+}
+
+const PDP_STYLE = {
+  expired: { color: '#e53e3e', icon: '🔴', label: 'EXPIRED' },
+  soon:    { color: '#c05621', icon: '🟠', label: '≤ 30 days' },
+  warning: { color: '#d97706', icon: '🟡', label: '≤ 90 days' },
+  ok:      { color: '#059669', icon: '🟢', label: '' },
+  none:    { color: '#aaa',    icon: '⚪', label: 'NOT SET' },
+};
+
+function PdpCell({ value }) {
+  const s = getPdpStatus(value);
+  const cfg = PDP_STYLE[s];
+  const fmtDate = (d) => new Date(d).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' });
+  return (
+    <td style={{ whiteSpace: 'nowrap' }}>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: cfg.color, fontWeight: s !== 'ok' && s !== 'none' ? 700 : 400, fontSize: 12 }}>
+        {cfg.icon} {value ? fmtDate(value) : '—'}
+      </span>
+    </td>
+  );
+}
+
 function exportCSV(data) {
   const headers = ['Nickname','Name','Cell Number','Type','PDP Expiry','Has Receipt','Start Date','Training Date'];
   const rows = data.map(d => [d.d_nickname||'', d.d_name||d.d_nickname||'', d.d_cell||'', d.d_type||'Interland', d.d_pdp_expiry||'', d.d_receipt==='Y'?'YES':'NO', d.d_start_date||'', d.d_training_date||'']);
@@ -16,6 +50,7 @@ export default function Drivers() {
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
   const [activeFilter, setActiveFilter] = useState('Y');
+  const [quickFilter, setQuickFilter] = useState('all'); // all | pdp_expired | pdp_30 | pdp_90
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState(EMPTY);
   const [saving, setSaving] = useState(false);
@@ -28,8 +63,33 @@ export default function Drivers() {
   };
   useEffect(() => { load(); }, []);
 
+  // ── Quick-filter counts ───────────────────────────────────────
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const in30  = new Date(today); in30.setDate(today.getDate() + 30);
+  const in90  = new Date(today); in90.setDate(today.getDate() + 90);
+
+  const qCounts = {
+    all:         data.length,
+    pdp_expired: data.filter(d => d.d_pdp_expiry && new Date(d.d_pdp_expiry) < today).length,
+    pdp_30:      data.filter(d => { if (!d.d_pdp_expiry) return false; const dt = new Date(d.d_pdp_expiry); return dt >= today && dt <= in30; }).length,
+    pdp_90:      data.filter(d => { if (!d.d_pdp_expiry) return false; const dt = new Date(d.d_pdp_expiry); return dt > in30 && dt <= in90; }).length,
+    pdp_none:    data.filter(d => !d.d_pdp_expiry).length,
+  };
+
+  const qTabs = [
+    { key: 'all',         label: 'All Drivers',         color: '#005A8E' },
+    { key: 'pdp_expired', label: '🔴 PDP Expired',      color: '#e53e3e' },
+    { key: 'pdp_30',      label: '🟠 PDP ≤ 30 Days',    color: '#c05621' },
+    { key: 'pdp_90',      label: '🟡 PDP ≤ 90 Days',    color: '#d97706' },
+    { key: 'pdp_none',    label: '⚪ No PDP Date',       color: '#888'    },
+  ];
+
   const filtered = data.filter(d => {
     const s = search.toLowerCase();
+    if (quickFilter === 'pdp_expired' && !(d.d_pdp_expiry && new Date(d.d_pdp_expiry) < today)) return false;
+    if (quickFilter === 'pdp_30') { if (!d.d_pdp_expiry) return false; const dt = new Date(d.d_pdp_expiry); if (!(dt >= today && dt <= in30)) return false; }
+    if (quickFilter === 'pdp_90') { if (!d.d_pdp_expiry) return false; const dt = new Date(d.d_pdp_expiry); if (!(dt > in30 && dt <= in90)) return false; }
+    if (quickFilter === 'pdp_none' && d.d_pdp_expiry) return false;
     return (!s || d.d_nickname?.toLowerCase().includes(s) || d.d_id?.toLowerCase().includes(s) || (d.d_name||'').toLowerCase().includes(s))
       && (!typeFilter || (d.d_type||'Interland') === typeFilter)
       && (!activeFilter || d.d_active === activeFilter);
@@ -44,28 +104,43 @@ export default function Drivers() {
     setSaving(true);
     try {
       const payload = { ...form };
-      if (editId) await api.updateDriver(editId, payload);  // FIX: was conditional raw fetch fallback
+      if (editId) await api.updateDriver(editId, payload);
       else await api.createDriver(payload);
       setShowModal(false); load();
     } catch(e){ alert(e.message); }
     finally { setSaving(false); }
   };
 
-  const today = new Date().toISOString().split('T')[0];
-
   return (
     <div>
+      {/* Stats */}
       <div className="stats-grid">
         <div className="stat-card"><div className="stat-label">Total Drivers</div><div className="stat-value">{data.length}</div></div>
         <div className="stat-card"><div className="stat-label">Active</div><div className="stat-value" style={{color:'#00AEEF'}}>{data.filter(d=>d.d_active==='Y').length}</div></div>
-        <div className="stat-card"><div className="stat-label">Interland</div><div className="stat-value" style={{color:'#00AEEF'}}>{data.filter(d=>!d.d_type||d.d_type==='Interland').length}</div></div>
-        <div className="stat-card"><div className="stat-label">PDP Expiring (90 days)</div>
-          <div className="stat-value" style={{color:'#e53e3e'}}>
-            {data.filter(d=>{if(!d.d_pdp_expiry)return false; const days=(new Date(d.d_pdp_expiry)-new Date())/86400000; return days>=0&&days<=90;}).length}
-          </div>
-        </div>
+        <div className="stat-card"><div className="stat-label">PDP Expired</div><div className="stat-value" style={{color:'#e53e3e'}}>{qCounts.pdp_expired}</div></div>
+        <div className="stat-card"><div className="stat-label">PDP Expiring (90 days)</div><div className="stat-value" style={{color:'#d97706'}}>{qCounts.pdp_30 + qCounts.pdp_90}</div></div>
       </div>
 
+      {/* Quick-filter tabs */}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+        {qTabs.map(t => {
+          const isActive = quickFilter === t.key;
+          return (
+            <button key={t.key} onClick={() => setQuickFilter(t.key)} style={{
+              padding: '5px 12px', fontSize: 11, fontWeight: isActive ? 700 : 500,
+              borderRadius: 20, cursor: 'pointer',
+              border: isActive ? `2px solid ${t.color}` : '2px solid #e2e8f0',
+              background: isActive ? t.color : 'white',
+              color: isActive ? 'white' : '#555',
+              transition: 'all 0.15s',
+            }}>
+              {t.label} ({qCounts[t.key]})
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Search / type / active filters */}
       <div className="filter-bar">
         <input placeholder="Search nickname, name, ID…" value={search} onChange={e=>setSearch(e.target.value)} />
         <select value={typeFilter} onChange={e=>setTypeFilter(e.target.value)}>
@@ -80,6 +155,7 @@ export default function Drivers() {
         <button className="btn btn-sm" onClick={()=>exportCSV(filtered)}>⬇ Export CSV</button>
       </div>
 
+      {/* Table */}
       <div className="table-wrap">
         <table>
           <thead><tr><th>Nickname</th><th>Full Name</th><th>Cell</th><th>Type</th><th>PDP Expiry</th><th>Has Receipt</th><th>Start Date</th><th>Training Date</th><th>Active</th></tr></thead>
@@ -87,15 +163,18 @@ export default function Drivers() {
             {loading && <tr><td colSpan={9}><div className="loading">Loading drivers…</div></td></tr>}
             {!loading && filtered.length===0 && <tr><td colSpan={9}><div className="empty-state">No drivers found</div></td></tr>}
             {!loading && filtered.map(d => {
-              const pdpDays = d.d_pdp_expiry ? (new Date(d.d_pdp_expiry)-new Date())/86400000 : null;
-              const pdpColor = pdpDays===null?'':pdpDays<0?'color:#e53e3e':pdpDays<90?'color:#d97706':'color:#059669';
+              const pdpStatus = getPdpStatus(d.d_pdp_expiry);
+              const rowBg = pdpStatus === 'expired' ? '#fff0f0'
+                          : pdpStatus === 'soon'    ? '#fff7ed'
+                          : pdpStatus === 'warning' ? '#fffbeb'
+                          : undefined;
               return (
-                <tr key={d.d_id} onClick={()=>openEdit(d)}>
+                <tr key={d.d_id} onClick={()=>openEdit(d)} style={{ background: rowBg, cursor: 'pointer' }}>
                   <td style={{fontWeight:600}}>{d.d_nickname}</td>
                   <td>{d.d_name||d.d_nickname}</td>
                   <td className="mono">{d.d_cell||'—'}</td>
                   <td>{d.d_type||'Interland'}</td>
-                  <td style={{fontFamily:'monospace',fontSize:12,...(pdpColor?{style:pdpColor}:{})}}>{d.d_pdp_expiry||'—'}</td>
+                  <PdpCell value={d.d_pdp_expiry} />
                   <td><span className={`badge ${d.d_receipt==='Y'?'badge-green':'badge-gray'}`}>{d.d_receipt==='Y'?'YES':'NO'}</span></td>
                   <td className="mono">{d.d_start_date||'—'}</td>
                   <td className="mono">{d.d_training_date||'—'}</td>
@@ -107,6 +186,7 @@ export default function Drivers() {
         </table>
       </div>
 
+      {/* Add / Edit Modal */}
       {showModal && (
         <div className="modal-overlay" onClick={()=>setShowModal(false)}>
           <div className="modal" onClick={e=>e.stopPropagation()} style={{width:600}}>
