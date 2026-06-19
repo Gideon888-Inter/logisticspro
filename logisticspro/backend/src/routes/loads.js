@@ -291,13 +291,29 @@ router.post('/:id/comments', requireRole(...CAN_VIEW_LOADS), async (req, res) =>
 // ============================================================
 // POST /api/loads — create new load
 // ============================================================
-router.post('/', requireRole(...CAN_CREATE_LOAD), async (req, res) => {
-  try {
-    const { data: allLast } = await supabase
-      .from('lp_movement')
-      .select('m_load_no')
-      .order('created_at', { ascending: false })
-      .limit(200);
+// Generate unique load number with retry on collision
+    async function generateLoadNo() {
+      const { data: allLast } = await supabase
+        .from('lp_movement')
+        .select('m_load_no')
+        .order('created_at', { ascending: false })
+        .limit(200);
+      let nextNum = 100001;
+      if (allLast?.length > 0) {
+        let maxSeen = 0;
+        for (const row of allLast) {
+          const raw = (row.m_load_no || '').replace(/^A/i, '');
+          const n = parseInt(raw, 10);
+          if (!isNaN(n) && n > maxSeen) maxSeen = n;
+        }
+        if (maxSeen >= nextNum) nextNum = maxSeen + 1;
+      }
+      return 'A' + String(nextNum).padStart(6, '0');
+    }
+
+    // Try once, retry once if there is a duplicate key collision
+    let m_load_no = await generateLoadNo();
+
 
     let nextNum = 100001;
     if (allLast?.length > 0) {
