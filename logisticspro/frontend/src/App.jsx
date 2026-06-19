@@ -1,5 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from './lib/AuthContext';
+import {
+  canViewLoads, canViewFleet, canViewWorkshop, canViewRates,
+  canManageClients, canManageDrivers, canManageUsers,
+  canManageInvoices, canViewApprovals,
+} from './lib/roles';
 import Login from './pages/Login';
 import Loads from './pages/Loads';
 import Dashboard from './pages/Dashboard';
@@ -9,6 +14,7 @@ import Drivers from './pages/Drivers';
 import Clients from './pages/Clients';
 import Rates from './pages/Rates';
 import Users from './pages/Users';
+import Invoices from './pages/Invoices';
 import { Maintenance, Inventory, Routes } from './pages/Entities';
 import ServiceCards from './pages/ServiceCards';
 
@@ -40,44 +46,57 @@ const LogoutIcon = () => (
   </svg>
 );
 
-const MENU = [
-  { key: '',           label: 'Home',            icon: '🏠' },
-  { key: 'movement',   label: 'Loads',           icon: '🚛' },
-  { key: 'workshop',   label: 'Workshop',        icon: '🔧',
-    sub: [
-      { key: 'workshop-service',     label: 'Service' },
-      { key: 'workshop-maintenance', label: 'Maintenance' },
-      { key: 'workshop-inventory',   label: 'Inventory' },
-    ]
-  },
-  { key: 'approvals',  label: 'Approvals',       icon: '✅' },
-  { key: 'vehicles', label: 'Fleet', icon: '🚚' },
-  { key: 'drivers',    label: 'Drivers',           icon: '👤',
-    sub: [
-      { key: 'drivers-list',  label: 'Driver List' },
-      { key: 'drivers-leave', label: 'Leave' },
-    ]
-  },
-  { key: 'rates',      label: 'Client Rates',     icon: '💰',
-    sub: [
-      { key: 'rates-list',   label: 'Rate List' },
-      { key: 'rates-routes', label: 'Routes' },
-    ]
-  },
-  { key: 'clients',    label: 'Clients',           icon: '🏢' },
-  { key: 'users',      label: 'Users',              icon: '👥' },
-  { key: 'schedule',   label: 'Report Schedule',   icon: '📅' },
-];
+// Build menu dynamically based on user role
+function buildMenu(user) {
+  const menu = [
+    { key: '', label: 'Home', icon: '🏠', show: true },
+  ];
+  if (canViewLoads(user))
+    menu.push({ key: 'movement', label: 'Loads', icon: '🚛' });
+  if (canViewWorkshop(user))
+    menu.push({ key: 'workshop', label: 'Workshop', icon: '🔧',
+      sub: [
+        { key: 'workshop-service',     label: 'Service' },
+        { key: 'workshop-maintenance', label: 'Maintenance' },
+        { key: 'workshop-inventory',   label: 'Inventory' },
+      ]
+    });
+  if (canViewApprovals(user))
+    menu.push({ key: 'approvals', label: 'Approvals', icon: '✅' });
+  if (canViewFleet(user))
+    menu.push({ key: 'vehicles', label: 'Fleet', icon: '🚚' });
+  if (canManageDrivers(user))
+    menu.push({ key: 'drivers', label: 'Drivers', icon: '👤',
+      sub: [
+        { key: 'drivers-list',  label: 'Driver List' },
+        { key: 'drivers-leave', label: 'Leave' },
+      ]
+    });
+  if (canViewRates(user))
+    menu.push({ key: 'rates', label: 'Client Rates', icon: '💰',
+      sub: [
+        { key: 'rates-list',   label: 'Rate List' },
+        { key: 'rates-routes', label: 'Routes' },
+      ]
+    });
+  if (canManageClients(user))
+    menu.push({ key: 'clients', label: 'Clients', icon: '🏢' });
+  if (canManageInvoices(user))
+    menu.push({ key: 'invoices', label: 'Invoices', icon: '🧾' });
+  if (canManageUsers(user))
+    menu.push({ key: 'users', label: 'Users', icon: '👥' });
+  return menu;
+}
 
 const PAGE_TITLES = {
   '': 'Overview',
   movement: 'Loads',
-  'vehicles': 'Fleet',
+  vehicles: 'Fleet',
   'drivers-list': 'Drivers', 'drivers-leave': 'Driver Leave',
   clients: 'Clients', 'workshop-service': 'Service Cards',
   'workshop-maintenance': 'Maintenance', 'workshop-inventory': 'Inventory',
   approvals: 'Approvals', 'rates-list': 'Client Rates', 'rates-routes': 'Routes',
-  users: 'Users', schedule: 'Report Schedule',
+  users: 'Users', invoices: 'Invoices',
 };
 
 export default function App() {
@@ -85,10 +104,11 @@ export default function App() {
   const [page, setPage] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [expandedMenus, setExpandedMenus] = useState({});
+  const MENU = user ? buildMenu(user) : [];
 
   const navigate = (key) => {
     setPage(key);
-    MENU.forEach(item => {
+    buildMenu(user).forEach(item => {
       if (item.sub && item.sub.find(s => s.key === key)) {
         setExpandedMenus(prev => ({ ...prev, [item.key]: true }));
       }
@@ -110,23 +130,31 @@ export default function App() {
     setExpandedMenus(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
+  const AccessDenied = () => (
+    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'50vh', gap:12 }}>
+      <div style={{ fontSize:48 }}>🔒</div>
+      <div style={{ fontSize:20, fontWeight:700, color:'#e53e3e' }}>Access Denied</div>
+      <div style={{ fontSize:14, color:'#aaa' }}>You do not have permission to view this page.</div>
+    </div>
+  );
+
   const renderPage = () => {
     switch (page) {
       case '':                    return <Dashboard onNavigate={navigate} />;
-      case 'movement':            return <Loads />;
-      case 'approvals':           return <Approvals />;
-      case 'vehicles':            return <Fleet />;
-      case 'drivers-list':        return <Drivers />;
-      case 'workshop-service':    return <ServiceCards />;
-      case 'workshop-maintenance':return <Maintenance />;
-      case 'workshop-inventory':  return <Inventory />;
-      case 'rates-list':          return <Rates />;
-      case 'clients':             return <Clients />;
-      case 'users':               return <Users />;
+      case 'movement':            return canViewLoads(user) ? <Loads /> : <AccessDenied />;
+      case 'approvals':           return canViewApprovals(user) ? <Approvals /> : <AccessDenied />;
+      case 'vehicles':            return canViewFleet(user) ? <Fleet /> : <AccessDenied />;
+      case 'drivers-list':        return canManageDrivers(user) ? <Drivers /> : <AccessDenied />;
+      case 'workshop-service':    return canViewWorkshop(user) ? <ServiceCards /> : <AccessDenied />;
+      case 'workshop-maintenance':return canViewWorkshop(user) ? <Maintenance /> : <AccessDenied />;
+      case 'workshop-inventory':  return canViewWorkshop(user) ? <Inventory /> : <AccessDenied />;
+      case 'rates-list':          return canViewRates(user) ? <Rates /> : <AccessDenied />;
+      case 'clients':             return canManageClients(user) ? <Clients /> : <AccessDenied />;
+      case 'users':               return canManageUsers(user) ? <Users /> : <AccessDenied />;
+      case 'invoices':            return canManageInvoices(user) ? <Invoices /> : <AccessDenied />;
       case 'drivers-leave':
-      case 'rates-routes':
-      case 'schedule': {
-        const labels = { 'drivers-leave': 'Driver Leave', 'rates-routes': 'Routes', 'schedule': 'Report Schedule' };
+      case 'rates-routes': {
+        const labels = { 'drivers-leave': 'Driver Leave', 'rates-routes': 'Routes' };
         return (
           <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'50vh', gap:12 }}>
             <div style={{ fontSize:48 }}>🚧</div>
@@ -135,7 +163,7 @@ export default function App() {
           </div>
         );
       }
-      default:                    return <Dashboard onNavigate={navigate} />;
+      default: return <Dashboard onNavigate={navigate} />;
     }
   };
 
