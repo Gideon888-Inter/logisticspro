@@ -18,7 +18,7 @@ import Rates from './pages/Rates';
 import Users from './pages/Users';
 import Invoices from './pages/Invoices';
 import PODs from './pages/PODs';
-import { Maintenance, Inventory, Routes } from './pages/Entities';
+import { Maintenance, Inventory } from './pages/Entities';
 import ServiceCards from './pages/ServiceCards';
 
 const MenuIcon = () => (
