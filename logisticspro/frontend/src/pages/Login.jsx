@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../lib/AuthContext';
-import TRUCK_BG from '../assets/login.jpeg';
+import TRUCK_BG from '../../assets/login.jpeg';
 
 export default function Login() {
   const { login } = useAuth();
