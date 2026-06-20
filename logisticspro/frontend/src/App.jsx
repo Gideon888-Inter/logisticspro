@@ -119,6 +119,7 @@ export default function App() {
 
   const navigate = (key) => {
     setPage(key);
+    setSidebarOpen(false); // close sidebar on nav (important for mobile)
     MENU.forEach(item => {
       if (item.sub && item.sub.find(s => s.key === key)) {
         setExpandedMenus(prev => ({ ...prev, [item.key]: true }));
@@ -133,6 +134,13 @@ export default function App() {
     };
     window.addEventListener('lp-navigate', handler);
     return () => window.removeEventListener('lp-navigate', handler);
+  }, []);
+
+  // Close sidebar on Escape key
+  useEffect(() => {
+    const handler = (e) => { if (e.key === 'Escape') setSidebarOpen(false); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
   }, []);
 
   if (!user) return <Login />;
@@ -183,17 +191,31 @@ export default function App() {
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: '#f5f7fa' }}>
 
-      {/* Sidebar */}
+      {/* ── Mobile overlay — tap to close sidebar ── */}
+      {sidebarOpen && (
+        <div
+          onClick={() => setSidebarOpen(false)}
+          style={{
+            position: 'fixed', inset: 0,
+            background: 'rgba(0,0,0,0.4)',
+            zIndex: 98,
+          }}
+        />
+      )}
+
+      {/* ── Sidebar ── */}
       <div style={{
-        width: sidebarOpen ? 220 : 0, minWidth: sidebarOpen ? 220 : 0,
-        background: '#005A8E', color: 'white', display: 'flex', flexDirection: 'column',
-        transition: 'width 0.2s, min-width 0.2s', overflow: 'hidden', flexShrink: 0,
+        position: 'fixed', top: 0, left: 0, bottom: 0,
+        width: 220, background: '#005A8E', color: 'white',
+        display: 'flex', flexDirection: 'column',
+        zIndex: 99,
+        transform: sidebarOpen ? 'translateX(0)' : 'translateX(-100%)',
+        transition: 'transform 0.22s ease',
+        overflowX: 'hidden',
       }}>
-        {sidebarOpen && (
-          <div style={{ padding: '16px 12px 12px', borderBottom: '1px solid rgba(255,255,255,0.12)', flexShrink: 0 }}>
-            <img src={LOGO} alt="Interland Distribution" style={{ width: '100%', maxHeight: 48, objectFit: 'contain' }} />
-          </div>
-        )}
+        <div style={{ padding: '16px 12px 12px', borderBottom: '1px solid rgba(255,255,255,0.12)', flexShrink: 0 }}>
+          <img src={LOGO} alt="Interland Distribution" style={{ width: '100%', maxHeight: 48, objectFit: 'contain' }} />
+        </div>
 
         <nav style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
           {MENU.map(item => (
@@ -248,7 +270,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* Main */}
+      {/* ── Main (always full-width — sidebar overlays on top) ── */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
         {/* Top bar */}
