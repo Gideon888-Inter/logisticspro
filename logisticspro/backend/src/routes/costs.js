@@ -4,6 +4,11 @@ const { authMiddleware } = require('../middleware/auth');
 const router = express.Router();
 router.use(authMiddleware);
 
+// Statuses after which no new costs can be added
+const COST_LOCKED_STATUSES = [
+  'WAIT_APPROVAL', 'WAIT_RATE_CHECK', 'WAIT_INVOICE_NO', 'LOAD_INVOICED', 'REJECTED', 'DELETED',
+];
+
 // GET pending cost deletions
 router.get('/pending-deletions', async (req, res) => {
   const { data, error } = await supabase
@@ -45,8 +50,25 @@ router.get('/', async (req, res) => {
   res.json(data || []);
 });
 
-// POST add a cost
+// POST add a cost — blocked after WAIT_APPROVAL
 router.post('/', async (req, res) => {
+  const { c_load } = req.body;
+
+  // ── Status guard: no costs after WAIT_APPROVAL ──
+  if (c_load) {
+    const { data: load } = await supabase
+      .from('lp_movement')
+      .select('m_status')
+      .eq('m_load_no', c_load)
+      .single();
+
+    if (load && COST_LOCKED_STATUSES.includes(load.m_status)) {
+      return res.status(403).json({
+        error: `Costs cannot be added once a load has reached ${load.m_status} status. Please contact your operator.`,
+      });
+    }
+  }
+
   const payload = {
     ...req.body,
     c_operator: req.user.username,
@@ -59,10 +81,10 @@ router.post('/', async (req, res) => {
   if (error) return res.status(400).json({ error: error.message });
 
   // Add audit trail comment
-  if (req.body.c_load) {
+  if (c_load) {
     const amount = Number(req.body.c_amount||0).toLocaleString('en-ZA', {minimumFractionDigits:2});
     await supabase.from('lp_comments').insert([{
-      c_load: req.body.c_load,
+      c_load,
       c_comment: `Cost added: ${req.body.c_code} — R ${amount} (${req.body.c_description || req.body.c_code})`,
       c_logged_by: req.user.username,
     }]);
@@ -120,46 +142,19 @@ router.patch('/:id/approve-delete', async (req, res) => {
   if (!cost) return res.status(404).json({ error: 'Cost not found' });
 
   if (action === 'approve') {
-    await supabase.from('lp_costs').update({
-      c_deleted: 'Y',
-      c_deleted_by: req.user.username,
-      c_deleted_at: new Date().toISOString(),
-      c_delete_requested: 'N',
-    }).eq('c_cost_no', req.params.id);
-
+    await supabase.from('lp_costs').update({ c_deleted: 'Y', c_delete_requested: 'N' }).eq('c_cost_no', req.params.id);
     await supabase.from('lp_comments').insert([{
       c_load: cost.c_load,
-      c_comment: `Cost deletion APPROVED by ${req.user.username}: ${cost.c_code} R ${Number(cost.c_amount).toLocaleString('en-ZA', {minimumFractionDigits:2})}`,
+      c_comment: `Cost deletion approved by ${req.user.username}: ${cost.c_code} R ${Number(cost.c_amount).toFixed(2)}`,
       c_logged_by: req.user.username,
-    }]);
-
-    // Notify requestor
-    await supabase.from('lp_notifications').insert([{
-      n_user: cost.c_delete_requested_by,
-      n_type: 'COST_DELETE_APPROVED',
-      n_title: 'Cost Deletion Approved',
-      n_message: `Your request to delete ${cost.c_code} R ${Number(cost.c_amount).toFixed(2)} on load ${cost.c_load} was approved.`,
-      n_load_no: cost.c_load,
     }]);
   } else {
-    await supabase.from('lp_costs').update({
-      c_delete_requested: 'N',
-      c_delete_requested_by: null,
-      c_delete_reason: null,
-    }).eq('c_cost_no', req.params.id);
-
+    if (!rejection_reason?.trim()) return res.status(400).json({ error: 'A rejection reason is required' });
+    await supabase.from('lp_costs').update({ c_delete_requested: 'N' }).eq('c_cost_no', req.params.id);
     await supabase.from('lp_comments').insert([{
       c_load: cost.c_load,
-      c_comment: `Cost deletion REJECTED by ${req.user.username}: ${cost.c_code} R ${Number(cost.c_amount).toLocaleString('en-ZA', {minimumFractionDigits:2})}. Reason: ${rejection_reason || 'No reason given'}`,
+      c_comment: `Cost deletion rejected by ${req.user.username}: ${cost.c_code} — Reason: ${rejection_reason}`,
       c_logged_by: req.user.username,
-    }]);
-
-    await supabase.from('lp_notifications').insert([{
-      n_user: cost.c_delete_requested_by,
-      n_type: 'COST_DELETE_REJECTED',
-      n_title: 'Cost Deletion Rejected',
-      n_message: `Your request to delete ${cost.c_code} on load ${cost.c_load} was rejected. Reason: ${rejection_reason || 'No reason given'}`,
-      n_load_no: cost.c_load,
     }]);
   }
 
