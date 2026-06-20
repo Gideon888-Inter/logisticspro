@@ -108,11 +108,10 @@ function PieChart({ data }) {
   );
 }
 
-// ── PDP Expiry Banner ─────────────────────────────────────────
-function PdpBanner({ drivers, onNavigate }) {
+// ── PDP Expiry Tile ────────────────────────────────────────────
+function PdpTile({ drivers, onNavigate }) {
   const [expanded, setExpanded] = useState(false);
   const today = new Date(); today.setHours(0, 0, 0, 0);
-  const thisMonthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
   const next30 = new Date(today); next30.setDate(today.getDate() + 30);
 
   const expired = drivers
@@ -128,52 +127,58 @@ function PdpBanner({ drivers, onNavigate }) {
     .sort((a, b) => new Date(a.d_pdp_expiry) - new Date(b.d_pdp_expiry));
 
   const total = expired.length + expiring.length;
-  if (total === 0) return null;
-
   const fmtD = (d) => new Date(d).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' });
 
   return (
     <div style={{
-      background: expired.length > 0 ? '#fff1f2' : '#fff7ed',
-      border: `2px solid ${expired.length > 0 ? '#e53e3e' : '#f97316'}`,
-      borderRadius: 8, marginBottom: 4, overflow: 'hidden',
+      background: 'white', borderRadius: 8, borderTop: '3px solid #e53e3e',
+      boxShadow: '0 2px 12px rgba(0,0,0,0.08)', overflow: 'hidden',
     }}>
-      <div
-        onClick={() => setExpanded(e => !e)}
-        style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '12px 16px', cursor: 'pointer',
-          background: expired.length > 0 ? '#e53e3e' : '#f97316',
-        }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 20 }}>📋</span>
-          <div>
-            <span style={{ color: 'white', fontWeight: 700, fontSize: 14 }}>
-              {expired.length > 0
-                ? `${expired.length} driver${expired.length > 1 ? 's' : ''} with EXPIRED PDP`
-                : ''}
-              {expired.length > 0 && expiring.length > 0 ? ' · ' : ''}
-              {expiring.length > 0
-                ? `${expiring.length} driver PDP${expiring.length > 1 ? 's' : ''} expiring within 30 days`
-                : ''}
-            </span>
-          </div>
+      {/* Tile header — always visible, same style as stat cards */}
+      <div style={{ padding: '16px 20px' }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
+          📋 Driver PDP
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button
-            onClick={e => { e.stopPropagation(); onNavigate && onNavigate('drivers-list'); }}
-            style={{ color: 'white', fontSize: 12, textDecoration: 'underline', opacity: 0.9, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
-            View all drivers →
-          </button>
-          <span style={{ color: 'white', fontSize: 18, fontWeight: 700 }}>{expanded ? '▲' : '▼'}</span>
+        <div style={{ fontSize: 22, fontWeight: 700, color: total > 0 ? '#e53e3e' : '#059669' }}>
+          {total > 0 ? total : '✓ All clear'}
+        </div>
+        <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
+          {total === 0
+            ? 'No PDP issues'
+            : [
+                expired.length > 0 ? `${expired.length} expired` : null,
+                expiring.length > 0 ? `${expiring.length} expiring ≤30 days` : null,
+              ].filter(Boolean).join(' · ')
+          }
         </div>
       </div>
 
-      {expanded && (
-        <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {/* Action row */}
+      {total > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          borderTop: '1px solid #f3f4f6', padding: '8px 20px',
+          background: '#fafafa',
+        }}>
+          <button
+            onClick={() => onNavigate && onNavigate('drivers-list')}
+            style={{ fontSize: 12, color: '#005A8E', textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}>
+            View all drivers →
+          </button>
+          <button
+            onClick={() => setExpanded(e => !e)}
+            style={{ fontSize: 12, color: '#555', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}>
+            {expanded ? 'Hide ▲' : 'Details ▼'}
+          </button>
+        </div>
+      )}
+
+      {/* Expandable detail list */}
+      {expanded && total > 0 && (
+        <div style={{ padding: '8px 20px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
           {expired.length > 0 && (
             <>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#e53e3e', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#e53e3e', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2, marginTop: 4 }}>
                 Already Expired
               </div>
               {expired.map(d => (
@@ -184,16 +189,14 @@ function PdpBanner({ drivers, onNavigate }) {
                 }}>
                   <span style={{ fontWeight: 600, fontSize: 13, fontFamily: 'monospace' }}>{d.d_id}</span>
                   <span style={{ fontSize: 12, color: '#555' }}>{d.d_nickname}</span>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: '#e53e3e' }}>
-                    Expired: {fmtD(d.d_pdp_expiry)}
-                  </span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: '#e53e3e' }}>Expired: {fmtD(d.d_pdp_expiry)}</span>
                 </div>
               ))}
             </>
           )}
           {expiring.length > 0 && (
             <>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#f97316', textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: expired.length > 0 ? 8 : 0, marginBottom: 2 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#f97316', textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: expired.length > 0 ? 8 : 4, marginBottom: 2 }}>
                 Expiring Within 30 Days
               </div>
               {expiring.map(d => (
@@ -204,9 +207,7 @@ function PdpBanner({ drivers, onNavigate }) {
                 }}>
                   <span style={{ fontWeight: 600, fontSize: 13, fontFamily: 'monospace' }}>{d.d_id}</span>
                   <span style={{ fontSize: 12, color: '#555' }}>{d.d_nickname}</span>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: '#f97316' }}>
-                    Expires: {fmtD(d.d_pdp_expiry)}
-                  </span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: '#f97316' }}>Expires: {fmtD(d.d_pdp_expiry)}</span>
                 </div>
               ))}
             </>
@@ -217,14 +218,13 @@ function PdpBanner({ drivers, onNavigate }) {
   );
 }
 
-// ── License Expiry Banner ─────────────────────────────────────
-function LicenseBanner({ vehicles, onNavigate }) {
+// ── License Expiry Tile ────────────────────────────────────────
+function LicenseTile({ vehicles, onNavigate }) {
   const [expanded, setExpanded] = useState(false);
   const today = new Date();
   const thisMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
   const thisMonthEnd   = new Date(today.getFullYear(), today.getMonth() + 1, 0);
 
-  // Vehicles expiring THIS calendar month (regardless of dropdown)
   const expiring = vehicles
     .filter(v => {
       if (!v.vh_license_expiry) return false;
@@ -233,60 +233,59 @@ function LicenseBanner({ vehicles, onNavigate }) {
     })
     .sort((a, b) => new Date(a.vh_license_expiry) - new Date(b.vh_license_expiry));
 
-  // Also flag already expired
   const expired = vehicles
     .filter(v => v.vh_license_expiry && new Date(v.vh_license_expiry) < thisMonthStart)
     .sort((a, b) => new Date(a.vh_license_expiry) - new Date(b.vh_license_expiry));
 
   const total = expiring.length + expired.length;
-  if (total === 0) return null;
-
   const fmtD = (d) => new Date(d).toLocaleDateString('en-ZA', { day:'2-digit', month:'short', year:'numeric' });
 
   return (
     <div style={{
-      background: total > 0 ? '#fff1f2' : '#f0fdf4',
-      border: `2px solid ${expired.length > 0 ? '#e53e3e' : '#f97316'}`,
-      borderRadius: 8, marginBottom: 4, overflow: 'hidden',
+      background: 'white', borderRadius: 8, borderTop: '3px solid #e53e3e',
+      boxShadow: '0 2px 12px rgba(0,0,0,0.08)', overflow: 'hidden',
     }}>
-      {/* Banner header — always visible */}
-      <div
-        onClick={() => setExpanded(e => !e)}
-        style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '12px 16px', cursor: 'pointer',
-          background: expired.length > 0 ? '#e53e3e' : '#f97316',
-        }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 20 }}>🚨</span>
-          <div>
-            <span style={{ color: 'white', fontWeight: 700, fontSize: 14 }}>
-              {expired.length > 0
-                ? `${expired.length} vehicle${expired.length > 1 ? 's' : ''} with EXPIRED license${expired.length > 1 ? 's' : ''}`
-                : ''}
-              {expired.length > 0 && expiring.length > 0 ? ' · ' : ''}
-              {expiring.length > 0
-                ? `${expiring.length} vehicle license${expiring.length > 1 ? 's' : ''} expiring this month`
-                : ''}
-            </span>
-          </div>
+      <div style={{ padding: '16px 20px' }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
+          🚨 Vehicle Licenses
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button
-            onClick={e => { e.stopPropagation(); onNavigate && onNavigate('vehicles'); }}
-            style={{ color: 'white', fontSize: 12, textDecoration: 'underline', opacity: 0.9, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
-            View all vehicles →
-          </button>
-          <span style={{ color: 'white', fontSize: 18, fontWeight: 700 }}>{expanded ? '▲' : '▼'}</span>
+        <div style={{ fontSize: 22, fontWeight: 700, color: total > 0 ? '#e53e3e' : '#059669' }}>
+          {total > 0 ? total : '✓ All clear'}
+        </div>
+        <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
+          {total === 0
+            ? 'No license issues'
+            : [
+                expired.length > 0 ? `${expired.length} expired` : null,
+                expiring.length > 0 ? `${expiring.length} expiring this month` : null,
+              ].filter(Boolean).join(' · ')
+          }
         </div>
       </div>
 
-      {/* Expanded list */}
-      {expanded && (
-        <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {total > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          borderTop: '1px solid #f3f4f6', padding: '8px 20px', background: '#fafafa',
+        }}>
+          <button
+            onClick={() => onNavigate && onNavigate('vehicles')}
+            style={{ fontSize: 12, color: '#005A8E', textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}>
+            View all vehicles →
+          </button>
+          <button
+            onClick={() => setExpanded(e => !e)}
+            style={{ fontSize: 12, color: '#555', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}>
+            {expanded ? 'Hide ▲' : 'Details ▼'}
+          </button>
+        </div>
+      )}
+
+      {expanded && total > 0 && (
+        <div style={{ padding: '8px 20px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
           {expired.length > 0 && (
             <>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#e53e3e', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#e53e3e', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2, marginTop: 4 }}>
                 Already Expired
               </div>
               {expired.map(v => (
@@ -297,16 +296,14 @@ function LicenseBanner({ vehicles, onNavigate }) {
                 }}>
                   <span style={{ fontWeight: 600, fontSize: 13, fontFamily: 'monospace' }}>{v.vh_code}</span>
                   <span style={{ fontSize: 12, color: '#555' }}>{v.vh_type}</span>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: '#e53e3e' }}>
-                    Expired: {fmtD(v.vh_license_expiry)}
-                  </span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: '#e53e3e' }}>Expired: {fmtD(v.vh_license_expiry)}</span>
                 </div>
               ))}
             </>
           )}
           {expiring.length > 0 && (
             <>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#f97316', textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: expired.length > 0 ? 8 : 0, marginBottom: 2 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#f97316', textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: expired.length > 0 ? 8 : 4, marginBottom: 2 }}>
                 Expiring This Month
               </div>
               {expiring.map(v => (
@@ -317,9 +314,7 @@ function LicenseBanner({ vehicles, onNavigate }) {
                 }}>
                   <span style={{ fontWeight: 600, fontSize: 13, fontFamily: 'monospace' }}>{v.vh_code}</span>
                   <span style={{ fontSize: 12, color: '#555' }}>{v.vh_type}</span>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: '#f97316' }}>
-                    Expires: {fmtD(v.vh_license_expiry)}
-                  </span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: '#f97316' }}>Expires: {fmtD(v.vh_license_expiry)}</span>
                 </div>
               ))}
             </>
@@ -339,10 +334,8 @@ const STATUS_COLORS = {
 };
 
 
-// ─────────────────────────────────────────────────────────────────────
-// Service / Wheel Alignment Due Banner
-// ─────────────────────────────────────────────────────────────────────
-function ServiceBanner({ vehicles, onNavigate }) {
+// ── Service Due Tile ───────────────────────────────────────────
+function ServiceTile({ vehicles, onNavigate }) {
   const [expanded, setExpanded] = useState(false);
   const WARN_KM = 5000;
 
@@ -368,13 +361,9 @@ function ServiceBanner({ vehicles, onNavigate }) {
       return minA - minB;
     });
 
-  if (dueVehicles.length === 0) return null;
-
-  const overdue    = dueVehicles.filter(v => (v._svcRem !== null && v._svcRem <= 0) ||
-                                             (v._whlRem !== null && v._whlRem <= 0));
-  const bannerBg   = overdue.length > 0 ? '#e53e3e' : '#f97316';
-  const wrapperBg  = overdue.length > 0 ? '#fff1f2' : '#fff7ed';
-  const borderClr  = overdue.length > 0 ? '#e53e3e' : '#f97316';
+  const overdue = dueVehicles.filter(v => (v._svcRem !== null && v._svcRem <= 0) ||
+                                          (v._whlRem !== null && v._whlRem <= 0));
+  const total = dueVehicles.length;
 
   const fmtRem = (rem) => {
     if (rem === null) return null;
@@ -384,48 +373,47 @@ function ServiceBanner({ vehicles, onNavigate }) {
 
   return (
     <div style={{
-      background: wrapperBg,
-      border: '2px solid ' + borderClr,
-      borderRadius: 8, marginBottom: 4, overflow: 'hidden',
+      background: 'white', borderRadius: 8, borderTop: '3px solid #e53e3e',
+      boxShadow: '0 2px 12px rgba(0,0,0,0.08)', overflow: 'hidden',
     }}>
-      <div
-        onClick={() => setExpanded(e => !e)}
-        style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '12px 16px', cursor: 'pointer', background: bannerBg,
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 20 }}>🔧</span>
-          <span style={{ color: 'white', fontWeight: 700, fontSize: 14 }}>
-            {overdue.length > 0
-              ? overdue.length + ' vehicle' + (overdue.length > 1 ? 's' : '') + ' overdue for service / alignment'
-              : ''}
-            {overdue.length > 0 && dueVehicles.length - overdue.length > 0 ? ' · ' : ''}
-            {dueVehicles.length - overdue.length > 0
-              ? (dueVehicles.length - overdue.length) + ' vehicle' + (dueVehicles.length - overdue.length > 1 ? 's' : '') + ' due within 5 000 km'
-              : ''}
-          </span>
+      <div style={{ padding: '16px 20px' }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
+          🔧 Service / Alignment
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button
-            onClick={e => { e.stopPropagation(); onNavigate && onNavigate('vehicles'); }}
-            style={{
-              color: 'white', fontSize: 12, textDecoration: 'underline',
-              opacity: 0.9, background: 'none', border: 'none',
-              cursor: 'pointer', fontFamily: 'inherit',
-            }}
-          >
-            View fleet →
-          </button>
-          <span style={{ color: 'white', fontSize: 18, fontWeight: 700 }}>
-            {expanded ? '▲' : '▼'}
-          </span>
+        <div style={{ fontSize: 22, fontWeight: 700, color: total > 0 ? '#e53e3e' : '#059669' }}>
+          {total > 0 ? total : '✓ All clear'}
+        </div>
+        <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
+          {total === 0
+            ? 'No service due'
+            : [
+                overdue.length > 0 ? `${overdue.length} overdue` : null,
+                (total - overdue.length) > 0 ? `${total - overdue.length} due within 5 000 km` : null,
+              ].filter(Boolean).join(' · ')
+          }
         </div>
       </div>
 
-      {expanded && (
-        <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {total > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          borderTop: '1px solid #f3f4f6', padding: '8px 20px', background: '#fafafa',
+        }}>
+          <button
+            onClick={() => onNavigate && onNavigate('vehicles')}
+            style={{ fontSize: 12, color: '#005A8E', textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}>
+            View fleet →
+          </button>
+          <button
+            onClick={() => setExpanded(e => !e)}
+            style={{ fontSize: 12, color: '#555', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}>
+            {expanded ? 'Hide ▲' : 'Details ▼'}
+          </button>
+        </div>
+      )}
+
+      {expanded && total > 0 && (
+        <div style={{ padding: '8px 20px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
           {dueVehicles.map(v => {
             const svcBad = v._svcRem !== null && v._svcRem <= 0;
             const whlBad = v._whlRem !== null && v._whlRem <= 0;
@@ -433,15 +421,12 @@ function ServiceBanner({ vehicles, onNavigate }) {
             const rowBdr = (svcBad || whlBad) ? '#fca5a5' : '#fed7aa';
             return (
               <div key={v.vh_code} style={{
-                display: 'grid',
-                gridTemplateColumns: '120px 90px 1fr 1fr',
+                display: 'grid', gridTemplateColumns: '120px 90px 1fr 1fr',
                 alignItems: 'center', gap: 12,
                 background: rowBg, borderRadius: 4,
                 padding: '6px 12px', border: '1px solid ' + rowBdr,
               }}>
-                <span style={{ fontWeight: 700, fontFamily: 'monospace', fontSize: 13 }}>
-                  {v.vh_code}
-                </span>
+                <span style={{ fontWeight: 700, fontFamily: 'monospace', fontSize: 13 }}>{v.vh_code}</span>
                 <span style={{ fontSize: 12, color: '#555' }}>{v.vh_type}</span>
                 {v._svcRem !== null
                   ? <span style={{ fontSize: 12, fontWeight: svcBad ? 700 : 400, color: svcBad ? '#e53e3e' : '#c05621' }}>
@@ -596,10 +581,12 @@ export default function Dashboard({ onNavigate }) {
   return (
     <div style={{display:'flex', flexDirection:'column', gap:20}}>
 
-      {/* License Expiry Banner */}
-      <LicenseBanner vehicles={vehicles} onNavigate={onNavigate} />
-      <ServiceBanner vehicles={vehicles} onNavigate={onNavigate} />
-      <PdpBanner drivers={drivers} onNavigate={onNavigate} />
+      {/* Alert Tiles — License, Service, Driver PDP */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+        <LicenseTile vehicles={vehicles} onNavigate={onNavigate} />
+        <ServiceTile vehicles={vehicles} onNavigate={onNavigate} />
+        <PdpTile drivers={drivers} onNavigate={onNavigate} />
+      </div>
 
       {/* Month header */}
       <div style={{display:'flex', alignItems:'center', justifyContent:'space-between'}}>
