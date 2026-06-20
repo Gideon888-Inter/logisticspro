@@ -803,7 +803,7 @@ function ExpandedRow({ load, onRefresh, onCostUpdate }) {
   const hasPodPassed = POD_PASSED_STATUSES.includes(currentStatus);
   const sharepointPodUrl = `https://llamahosted.sharepoint.com/sites/Interland/Shared%20Documents/Forms/AllItems.aspx?id=%2Fsites%2FInterland%2FShared%20Documents%2FInterland%20Distribution%2FPODS%20New%2FA${load.m_load_no}&viewid=`;
   const sharepointInvoiceUrl = load.m_invoice
-    ? `https://llamahosted.sharepoint.com/:b:/r/sites/Interland/Shared%20Documents/Interland%20Distribution/INVOICES/${encodeURIComponent(load.m_invoice)}.pdf?csf=1&web=1&e=default`
+    ? `https://llamahosted.sharepoint.com/:b:/r/sites/Interland/Shared%20Documents/Interland%20Distribution/INVOICES/${encodeURIComponent(load.m_invoice)}?csf=1&web=1&e=default`
     : `https://llamahosted.sharepoint.com/sites/Interland/Shared%20Documents/Forms/AllItems.aspx?id=%2Fsites%2FInterland%2FShared%20Documents%2FInterland%20Distribution%2FINVOICES`;
 
   // Friendly next-step button labels
