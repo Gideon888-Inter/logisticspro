@@ -56,6 +56,11 @@ async function getLoadOperator(loadNo) {
   return data?.m_responsible_operator || data?.m_operator;
 }
 
+// Statuses after which order number changes are locked
+const ORDER_NO_LOCKED_STATUSES = [
+  'WAIT_APPROVAL', 'WAIT_RATE_CHECK', 'WAIT_INVOICE_NO', 'LOAD_INVOICED', 'REJECTED', 'DELETED',
+];
+
 // ============================================================
 // GET /api/loads — list with filters
 // ============================================================
@@ -75,7 +80,8 @@ router.get('/', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
       'm_rate, m_status, m_invoice, m_opening_km, m_closing_km, ' +
       'm_trailer1, m_trailer2, m_responsible_operator, m_bus_unit, ' +
       'm_order_no, m_order_no_pending, m_order_no_requested_by, ' +
-      'm_loading_address, m_offloading_address',
+      'm_loading_address, m_offloading_address, ' +
+      'm_pod_received, m_pod_sharepoint_url',   // ← FIX: include POD fields
       { count: 'exact' }
     )
     .neq('m_status', 'DELETED')
@@ -184,7 +190,6 @@ router.patch('/ops-actions/:id', requireRole(ROLES.ADMIN, ROLES.OPERATOR), async
     return res.status(400).json({ error: 'This action has already been actioned' });
 
   if (action === 'approve') {
-    // Apply the pending change to the load
     const payload = opsAction.oa_payload;
 
     if (opsAction.oa_action_type === 'STATUS_CHANGE') {
@@ -234,10 +239,10 @@ router.patch('/ops-actions/:id', requireRole(ROLES.ADMIN, ROLES.OPERATOR), async
   }
 
   await supabase.from('lp_ops_assistant_actions').update({
-    oa_status:          action === 'approve' ? 'APPROVED' : 'REJECTED',
+    oa_status:           action === 'approve' ? 'APPROVED' : 'REJECTED',
     oa_rejection_reason: rejection_reason || null,
-    oa_actioned_by:     req.user.username,
-    oa_actioned_at:     new Date().toISOString(),
+    oa_actioned_by:      req.user.username,
+    oa_actioned_at:      new Date().toISOString(),
   }).eq('id', req.params.id);
 
   res.json({ success: true, action });
@@ -367,9 +372,9 @@ router.patch('/:id', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
     // Manager: can approve WAIT_RATE_CHECK or reject
     if (role === ROLES.MANAGER) {
       if (currentStatus === 'WAIT_RATE_CHECK' && newStatus === 'WAIT_INVOICE_NO') {
-        // allowed -- manager confirms rate is correct
+        // allowed — manager confirms rate is correct
       } else if (newStatus === 'REJECTED') {
-        // allowed -- manager can reject
+        // allowed — manager can reject
       } else {
         return res.status(403).json({ error: 'Managers can only confirm the rate check or reject a load' });
       }
@@ -384,12 +389,12 @@ router.patch('/:id', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
         return res.status(403).json({ error: 'Control Room cannot reject loads' });
     }
 
-    // Accounting: cannot change status manually -- invoice flow only
+    // Accounting: cannot change status manually — invoice flow only
     if (role === ROLES.ACCOUNTING) {
       return res.status(403).json({ error: 'Accounting cannot change load status manually. Use the Invoices page.' });
     }
 
-    // Block manual set to LOAD_INVOICED for everyone -- invoice flow only
+    // Block manual set to LOAD_INVOICED for everyone — invoice flow only
     if (newStatus === 'LOAD_INVOICED') {
       return res.status(403).json({ error: 'LOAD_INVOICED is set by the invoice approval flow. Use the Invoices page.' });
     }
@@ -454,7 +459,6 @@ router.patch('/:id', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
 
 // ============================================================
 // DELETE /api/loads/:id — soft delete (Operator + Admin only)
-// Values are zeroed; load remains visible with DELETED status
 // ============================================================
 router.delete('/:id', requireRole(...CAN_DELETE_LOAD), async (req, res) => {
   const { reason } = req.body || {};
@@ -462,14 +466,14 @@ router.delete('/:id', requireRole(...CAN_DELETE_LOAD), async (req, res) => {
   const { error } = await supabase
     .from('lp_movement')
     .update({
-      m_status:        'DELETED',
-      m_rate:          0,
-      m_extras:        0,
-      m_load_total:    0,
-      m_deleted_by:    req.user.username,
-      m_deleted_at:    new Date().toISOString(),
+      m_status:         'DELETED',
+      m_rate:           0,
+      m_extras:         0,
+      m_load_total:     0,
+      m_deleted_by:     req.user.username,
+      m_deleted_at:     new Date().toISOString(),
       m_deleted_reason: reason || null,
-      updated_at:      new Date().toISOString(),
+      updated_at:       new Date().toISOString(),
     })
     .eq('m_load_no', req.params.id);
 
@@ -492,6 +496,7 @@ router.delete('/:id', requireRole(...CAN_DELETE_LOAD), async (req, res) => {
 
 // ============================================================
 // POST /api/loads/:id/request-order-no
+// ── FIX: blocked after WAIT_APPROVAL status ──
 // ============================================================
 router.post('/:id/request-order-no', requireRole(...CAN_ADD_COSTS), async (req, res) => {
   const { order_no } = req.body;
@@ -500,11 +505,18 @@ router.post('/:id/request-order-no', requireRole(...CAN_ADD_COSTS), async (req, 
 
   const { data: load } = await supabase
     .from('lp_movement')
-    .select('m_order_no, m_order_no_pending, m_responsible_operator, m_operator')
+    .select('m_status, m_order_no, m_order_no_pending, m_responsible_operator, m_operator')
     .eq('m_load_no', req.params.id)
     .single();
 
   if (!load) return res.status(404).json({ error: 'Load not found' });
+
+  // ── Status guard: order number locked after WAIT_APPROVAL ──
+  if (ORDER_NO_LOCKED_STATUSES.includes(load.m_status)) {
+    return res.status(403).json({
+      error: `Order number cannot be changed once a load has reached ${load.m_status} status.`,
+    });
+  }
 
   // Control Room — always goes to approval even if no existing order no
   if (req.user.role === ROLES.CONTROL_ROOM) {
