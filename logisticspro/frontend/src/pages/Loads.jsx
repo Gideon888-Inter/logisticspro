@@ -688,6 +688,8 @@ function ExpandedRow({ load, onRefresh, onCostUpdate }) {
   const [kmSaving, setKmSaving] = useState(false);
   const [kmMaxAllowed, setKmMaxAllowed] = useState(0);
   const [statusSaving, setStatusSaving] = useState(false);
+  const [podLink, setPodLink] = useState(load.m_pod_sharepoint_url || null);
+  const [podChecking, setPodChecking] = useState(false);
 
   const loadDetails = async () => {
     try {
@@ -704,6 +706,29 @@ function ExpandedRow({ load, onRefresh, onCostUpdate }) {
   };
 
   useEffect(() => { loadDetails(); }, [load.m_load_no]);
+
+  // Auto-check SharePoint for POD when load is in WAIT_POD_SCAN
+  useEffect(() => {
+    if (load.m_status !== 'WAIT_POD_SCAN') return;
+    let cancelled = false;
+    const checkPod = async () => {
+      setPodChecking(true);
+      try {
+        const result = await req(`/pods/${encodeURIComponent(load.m_load_no)}/check`);
+        if (cancelled) return;
+        if (result.found) {
+          setPodLink(result.sharepoint_url);
+          // Reload parent list so the badge updates to WAIT_APPROVAL
+          onRefresh();
+          loadDetails();
+        }
+      } catch (e) { /* silent — will retry on next interval */ }
+      finally { if (!cancelled) setPodChecking(false); }
+    };
+    checkPod(); // immediate check on expand
+    const interval = setInterval(checkPod, 60000); // re-check every 60s
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [load.m_load_no, load.m_status]);
 
   // Pre-fetch route KM for closing KM max calculation
   useEffect(() => {
@@ -1010,10 +1035,47 @@ function ExpandedRow({ load, onRefresh, onCostUpdate }) {
                       {statusSaving ? 'Saving…' : NEXT_LABELS[currentStatus] || `→ ${nextStatus}`}
                     </button>
                   ) : currentStatus !== 'LOAD_INVOICED' && currentStatus !== 'REJECTED' && !isKmStatus ? (
-                    <div style={{ fontSize: 12, color: '#aaa', fontStyle: 'italic' }}>
-                      {allowedRoles.length === 0
-                        ? 'This step is system-driven'
-                        : `Waiting for: ${allowedRoles.join(', ')}`}
+                    <div>
+                      {currentStatus === 'WAIT_POD_SCAN' ? (
+                        <div style={{
+                          background: podLink ? '#f0fdf4' : '#fffbeb',
+                          border: `1px solid ${podLink ? '#86efac' : '#fcd34d'}`,
+                          borderRadius: 6, padding: '10px 12px',
+                        }}>
+                          {podLink ? (
+                            <>
+                              <div style={{ color: '#059669', fontWeight: 700, fontSize: 13, marginBottom: 6 }}>
+                                ✅ POD found in SharePoint
+                              </div>
+                              <a href={podLink} target="_blank" rel="noopener noreferrer"
+                                style={{ fontSize: 12, color: '#005A8E', textDecoration: 'underline', display: 'block', marginBottom: 6 }}>
+                                📂 Open POD folder →
+                              </a>
+                              <div style={{ fontSize: 11, color: '#059669' }}>Status advancing to Operator review…</div>
+                            </>
+                          ) : (
+                            <>
+                              <div style={{ color: '#d97706', fontWeight: 700, fontSize: 13, marginBottom: 4 }}>
+                                {podChecking ? '🔍 Scanning SharePoint…' : '⏳ Awaiting POD in SharePoint'}
+                              </div>
+                              <div style={{ fontSize: 11, color: '#555', marginBottom: 6 }}>
+                                Upload the POD to the SharePoint PODS folder for this load. The system checks automatically every 60 seconds.
+                              </div>
+                              <a href={`https://llamahosted.sharepoint.com/sites/Interland/Shared%20Documents/Interland%20Distribution/PODS%20New`}
+                                target="_blank" rel="noopener noreferrer"
+                                style={{ fontSize: 12, color: '#005A8E', textDecoration: 'underline' }}>
+                                📂 Open SharePoint PODs folder →
+                              </a>
+                            </>
+                          )}
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: 12, color: '#aaa', fontStyle: 'italic' }}>
+                          {allowedRoles.length === 0
+                            ? 'This step is system-driven'
+                            : `Waiting for: ${allowedRoles.join(', ')}`}
+                        </div>
+                      )}
                     </div>
                   ) : null}
 
@@ -1265,3 +1327,4 @@ export default function Loads() {
     </div>
   );
 }
+
