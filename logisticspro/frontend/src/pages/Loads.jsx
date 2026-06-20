@@ -798,6 +798,11 @@ function ExpandedRow({ load, onRefresh, onCostUpdate }) {
   const canAdvance = allowedRoles.includes(user?.role) && nextStatus;
   const isKmStatus = currentStatus === 'PENDING_KM_APPROVAL' || currentStatus === 'KM_CORRECTION_NEEDED';
 
+  // Any status that comes after WAIT_POD_SCAN means the POD was received
+  const POD_PASSED_STATUSES = ['WAIT_APPROVAL', 'WAIT_RATE_CHECK', 'WAIT_INVOICE_NO', 'LOAD_INVOICED'];
+  const hasPodPassed = POD_PASSED_STATUSES.includes(currentStatus);
+  const sharepointPodUrl = `https://llamahosted.sharepoint.com/sites/Interland/Shared%20Documents/Forms/AllItems.aspx?id=%2Fsites%2FInterland%2FShared%20Documents%2FInterland%20Distribution%2FPODS%20New%2FA${load.m_load_no}&viewid=`;
+
   // Friendly next-step button labels
   const NEXT_LABELS = {
     PRELOAD:          '✓ Approve — Send En Route',
@@ -870,6 +875,15 @@ function ExpandedRow({ load, onRefresh, onCostUpdate }) {
               {orderNoMsg && <div style={{ fontSize: 11, color: orderNoMsg.includes('⏳') ? '#d97706' : '#059669', marginTop: 2 }}>{orderNoMsg}</div>}
             </div>
             {cell('Invoice', load.m_invoice)}
+            {hasPodPassed && (
+              <div style={{ minWidth: 120 }}>
+                <div style={{ fontSize: 10, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>POD</div>
+                <a href={podLink || sharepointPodUrl} target="_blank" rel="noopener noreferrer"
+                  style={{ fontSize: 13, color: '#005A8E', textDecoration: 'underline', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  📂 View POD
+                </a>
+              </div>
+            )}
             {load.m_loading_address && cell('Loading Address', load.m_loading_address)}
             {load.m_offloading_address && cell('Offloading Address', load.m_offloading_address)}
           </div>
@@ -1327,4 +1341,5 @@ export default function Loads() {
     </div>
   );
 }
+
 
