@@ -461,25 +461,30 @@ export default function Dashboard({ onNavigate }) {
     `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`
   );
 
+  // Fetch vehicles, drivers, users once on mount (not month-dependent)
+  useEffect(() => {
+    Promise.all([
+      req('/users').catch(()=>[]),
+      req('/vehicles').catch(()=>[]),
+      req('/drivers').catch(()=>[]),
+    ]).then(([u, v, dr]) => {
+      setUsers(Array.isArray(u) ? u : []);
+      setVehicles(Array.isArray(v) ? v : []);
+      setDrivers(Array.isArray(dr) ? dr : []);
+    }).catch(console.error);
+  }, []);
+
+  // Fetch loads when selected month changes
   useEffect(() => {
     setLoading(true);
     const [selYear, selMon] = selectedMonth.split('-');
     const from = `${selYear}-${selMon}-01`;
-    // Calculate last day of selected month
     const lastDay = new Date(Number(selYear), Number(selMon), 0).getDate();
     const to = `${selYear}-${selMon}-${String(lastDay).padStart(2,'0')}`;
-    Promise.all([
-      req(`/loads?date_from=${from}&date_to=${to}&limit=2000`),
-      req('/users').catch(()=>[]),
-      req('/vehicles').catch(()=>[]),
-      req('/drivers').catch(()=>[]),
-    ]).then(([l, u, v, dr]) => {
-      setLoads(l.data || []);
-      setUsers(Array.isArray(u) ? u : []);
-      setVehicles(Array.isArray(v) ? v : []);
-      setDrivers(Array.isArray(dr) ? dr : []);
-    }).catch(console.error)
-    .finally(() => setLoading(false));
+    req(`/loads?date_from=${from}&date_to=${to}&limit=2000`)
+      .then(l => setLoads(l.data || []))
+      .catch(console.error)
+      .finally(() => setLoading(false));
   }, [selectedMonth]);
 
   if (loading) return <div className="loading" style={{paddingTop:40}}>Loading dashboard…</div>;
@@ -564,7 +569,6 @@ export default function Dashboard({ onNavigate }) {
     .filter(d => d.value > 0)
     .sort((a,b) => b.value - a.value);
 
-  const originPie = pieData; // Same data, kept for fallback reference
 
   // Status breakdown
   const statusMap = {};
