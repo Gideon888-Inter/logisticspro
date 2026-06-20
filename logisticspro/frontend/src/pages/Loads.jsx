@@ -243,7 +243,7 @@ function MapPicker({ label, value, onChange, onClose }) {
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()} style={{ width: 680, maxHeight: '90vh' }}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ width: 'min(680px, 95vw)', maxHeight: '90vh' }}>
         <div className="modal-header">
           <h3>📍 Pin {label}</h3>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', fontSize: 18 }}>✕</button>
@@ -413,7 +413,7 @@ function NewLoadModal({ onClose, onCreated }) {
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()} style={{ width: 620 }}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ width: 'min(620px, 95vw)' }}>
         <div className="modal-header">
           <h3>New Load</h3>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', fontSize: 18 }}>✕</button>
@@ -871,8 +871,10 @@ function ExpandedRow({ load, onRefresh, onCostUpdate }) {
                       ? <><span style={{ textDecoration: 'line-through', color: '#aaa' }}>{load.m_order_no || '—'}</span> <span style={{ color: '#d97706' }}>→ {load.m_order_no_pending} ⏳</span></>
                       : load.m_order_no || '—'}
                   </span>
-                  <button onClick={() => setOrderNoEdit(true)}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#00AEEF', fontSize: 11, padding: '1px 4px' }}>✏️</button>
+                  {!['WAIT_APPROVAL','WAIT_RATE_CHECK','WAIT_INVOICE_NO','LOAD_INVOICED','REJECTED'].includes(currentStatus) && (
+                    <button onClick={() => setOrderNoEdit(true)}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#00AEEF', fontSize: 11, padding: '1px 4px' }}>✏️</button>
+                  )}
                 </div>
               )}
               {orderNoMsg && <div style={{ fontSize: 11, color: orderNoMsg.includes('⏳') ? '#d97706' : '#059669', marginTop: 2 }}>{orderNoMsg}</div>}
@@ -904,7 +906,9 @@ function ExpandedRow({ load, onRefresh, onCostUpdate }) {
           <div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: '#005A8E', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Additional Costs</div>
-              <button className="btn btn-sm btn-primary" onClick={() => setShowCostModal(true)}>+ Add Cost</button>
+              {!['WAIT_APPROVAL','WAIT_RATE_CHECK','WAIT_INVOICE_NO','LOAD_INVOICED','REJECTED'].includes(currentStatus) && (
+                <button className="btn btn-sm btn-primary" onClick={() => setShowCostModal(true)}>+ Add Cost</button>
+              )}
             </div>
             {costs.length === 0 ? (
               <div style={{ fontSize: 12, color: '#aaa', padding: '8px 0' }}>No additional costs</div>
@@ -1089,9 +1093,27 @@ function ExpandedRow({ load, onRefresh, onCostUpdate }) {
                               </div>
                               <a href={`https://llamahosted.sharepoint.com/sites/Interland/Shared%20Documents/Interland%20Distribution/PODS%20New`}
                                 target="_blank" rel="noopener noreferrer"
-                                style={{ fontSize: 12, color: '#005A8E', textDecoration: 'underline' }}>
+                                style={{ fontSize: 12, color: '#005A8E', textDecoration: 'underline', display: 'block', marginBottom: 8 }}>
                                 📂 Open SharePoint PODs folder →
                               </a>
+                              <button
+                                onClick={async () => {
+                                  if (!window.confirm('Mark POD as received for load ' + load.m_load_no + '? This will advance the status to Awaiting Approval.')) return;
+                                  try {
+                                    await req(`/pods/${encodeURIComponent(load.m_load_no)}/mark-received`, {
+                                      method: 'POST',
+                                      body: JSON.stringify({ received_by: user?.username }),
+                                    });
+                                    onRefresh();
+                                  } catch (e) { alert('Error: ' + e.message); }
+                                }}
+                                style={{
+                                  background: '#059669', color: 'white', border: 'none',
+                                  borderRadius: 4, padding: '6px 12px', fontSize: 12,
+                                  cursor: 'pointer', fontFamily: 'inherit', width: '100%',
+                                }}>
+                                ✓ Mark POD Received Manually
+                              </button>
                             </>
                           )}
                         </div>
