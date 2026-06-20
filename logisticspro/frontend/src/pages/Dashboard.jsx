@@ -421,25 +421,25 @@ function ServiceTile({ vehicles, onNavigate }) {
             const rowBdr = (svcBad || whlBad) ? '#fca5a5' : '#fed7aa';
             return (
               <div key={v.vh_code} style={{
-                display: 'grid', gridTemplateColumns: '120px 90px 1fr 1fr',
-                alignItems: 'center', gap: 12,
                 background: rowBg, borderRadius: 4,
-                padding: '6px 12px', border: '1px solid ' + rowBdr,
+                padding: '8px 12px', border: '1px solid ' + rowBdr,
               }}>
-                <span style={{ fontWeight: 700, fontFamily: 'monospace', fontSize: 13 }}>{v.vh_code}</span>
-                <span style={{ fontSize: 12, color: '#555' }}>{v.vh_type}</span>
-                {v._svcRem !== null
-                  ? <span style={{ fontSize: 12, fontWeight: svcBad ? 700 : 400, color: svcBad ? '#e53e3e' : '#c05621' }}>
-                      Service: {fmtRem(v._svcRem)}
-                    </span>
-                  : <span />
-                }
-                {v._whlRem !== null
-                  ? <span style={{ fontSize: 12, fontWeight: whlBad ? 700 : 400, color: whlBad ? '#e53e3e' : '#c05621' }}>
-                      Alignment: {fmtRem(v._whlRem)}
-                    </span>
-                  : <span />
-                }
+                {/* Vehicle header row */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                  <span style={{ fontWeight: 700, fontFamily: 'monospace', fontSize: 13 }}>{v.vh_code}</span>
+                  <span style={{ fontSize: 12, color: '#555' }}>{v.vh_type}</span>
+                </div>
+                {/* Service & Alignment on separate lines — no clipping */}
+                {v._svcRem !== null && (
+                  <div style={{ fontSize: 12, fontWeight: svcBad ? 700 : 400, color: svcBad ? '#e53e3e' : '#c05621' }}>
+                    Service: {fmtRem(v._svcRem)}
+                  </div>
+                )}
+                {v._whlRem !== null && (
+                  <div style={{ fontSize: 12, fontWeight: whlBad ? 700 : 400, color: whlBad ? '#e53e3e' : '#c05621' }}>
+                    Alignment: {fmtRem(v._whlRem)}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -582,7 +582,7 @@ export default function Dashboard({ onNavigate }) {
     <div style={{display:'flex', flexDirection:'column', gap:20}}>
 
       {/* Alert Tiles — License, Service, Driver PDP */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16 }}>
         <LicenseTile vehicles={vehicles} onNavigate={onNavigate} />
         <ServiceTile vehicles={vehicles} onNavigate={onNavigate} />
         <PdpTile drivers={drivers} onNavigate={onNavigate} />
@@ -602,7 +602,7 @@ export default function Dashboard({ onNavigate }) {
       </div>
 
       {/* Top stats */}
-      <div className="stats-grid">
+      <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(160px, 1fr))', gap:16}}>
         {card('Total Loads', totalLoads, '#00AEEF', 'Selected month')}
         {card('Total Revenue', fmtR(totalRevenue), '#005A8E', 'All loads')}
         {card('Invoiced Revenue', fmtR(billedRevenue), '#059669', 'Billed to clients')}
@@ -613,7 +613,7 @@ export default function Dashboard({ onNavigate }) {
 
       {/* Revenue by region */}
       {revenueByRegion.length > 0 && (
-        <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:16}}>
+        <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(240px, 1fr))', gap:16}}>
           {revenueByRegion.map((r,i) => (
             <div key={i} className="stat-card" style={{borderTop:'3px solid #00AEEF'}}>
               <div className="stat-label">{r.label} Region</div>
@@ -625,7 +625,7 @@ export default function Dashboard({ onNavigate }) {
       )}
 
       {/* Charts row */}
-      <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:16}}>
+      <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(300px, 1fr))', gap:16}}>
 
         {/* Operator / Region pie */}
         <div style={{background:'white', borderRadius:8, padding:20, boxShadow:'0 2px 12px rgba(0,0,0,0.08)'}}>
@@ -657,7 +657,7 @@ export default function Dashboard({ onNavigate }) {
       </div>
 
       {/* Bar charts row */}
-      <div style={{display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:16}}>
+      <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(260px, 1fr))', gap:16}}>
 
         {/* Top clients */}
         <div style={{background:'white', borderRadius:8, padding:20, boxShadow:'0 2px 12px rgba(0,0,0,0.08)'}}>
