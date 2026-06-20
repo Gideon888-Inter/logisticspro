@@ -5,9 +5,6 @@ const { authMiddleware, requireRole, CAN_VIEW_LOADS, CAN_ADD_COSTS } = require('
 const router = express.Router();
 router.use(authMiddleware);
 
-import { Maintenance, Inventory, Routes } from './pages/Entities';
-
-
 // Roles that can mark a POD as received
 const CAN_MARK_POD = CAN_ADD_COSTS; // ADMIN, OPERATOR, OPS_ASSISTANT, CONTROL_ROOM
 
@@ -18,6 +15,43 @@ function sharepointLink(loadNo) {
   const listUrl = 'https://llamahosted.sharepoint.com/sites/Interland/Shared Documents';
   return `https://llamahosted-my.sharepoint.com/shared?id=${encodeURIComponent(folderPath)}&listurl=${encodeURIComponent(listUrl)}`;
 }
+
+// ============================================================
+// GET /api/pods/:loadNo/check
+// Called by the Loads page when a load is in WAIT_POD_SCAN.
+// Checks if a POD folder exists in SharePoint (via the m_pod_received flag
+// or a future direct SharePoint API call). If found, advances the status
+// automatically to WAIT_APPROVAL and returns the SharePoint link.
+// ============================================================
+router.get('/:loadNo/check', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
+  const { loadNo } = req.params;
+
+  try {
+    const { data: load, error } = await supabase
+      .from('lp_movement')
+      .select('m_status, m_pod_received, m_pod_sharepoint_url')
+      .eq('m_load_no', loadNo)
+      .single();
+
+    if (error || !load) return res.json({ found: false });
+
+    // If already marked received (manually or previously auto-detected)
+    if (load.m_pod_received) {
+      return res.json({
+        found: true,
+        sharepoint_url: load.m_pod_sharepoint_url || sharepointLink(loadNo),
+      });
+    }
+
+    // Not yet found
+    return res.json({ found: false });
+
+  } catch (err) {
+    console.error('[POD CHECK ERROR]', err);
+    res.json({ found: false });
+  }
+});
+
 
 // ============================================================
 // GET /api/pods/pending
@@ -137,3 +171,4 @@ router.post('/:loadNo/mark-received', requireRole(...CAN_MARK_POD), async (req, 
 
 
 module.exports = router;
+
