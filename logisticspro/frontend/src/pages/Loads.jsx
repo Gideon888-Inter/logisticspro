@@ -802,6 +802,9 @@ function ExpandedRow({ load, onRefresh, onCostUpdate }) {
   const POD_PASSED_STATUSES = ['WAIT_APPROVAL', 'WAIT_RATE_CHECK', 'WAIT_INVOICE_NO', 'LOAD_INVOICED'];
   const hasPodPassed = POD_PASSED_STATUSES.includes(currentStatus);
   const sharepointPodUrl = `https://llamahosted.sharepoint.com/sites/Interland/Shared%20Documents/Forms/AllItems.aspx?id=%2Fsites%2FInterland%2FShared%20Documents%2FInterland%20Distribution%2FPODS%20New%2FA${load.m_load_no}&viewid=`;
+  const sharepointInvoiceUrl = load.m_invoice
+    ? `https://llamahosted.sharepoint.com/sites/Interland/Shared%20Documents/Forms/AllItems.aspx?id=%2Fsites%2FInterland%2FShared%20Documents%2FInterland%20Distribution%2FINVOICES%2F${encodeURIComponent(load.m_invoice)}.pdf`
+    : `https://llamahosted.sharepoint.com/sites/Interland/Shared%20Documents/Forms/AllItems.aspx?id=%2Fsites%2FInterland%2FShared%20Documents%2FInterland%20Distribution%2FINVOICES`;
 
   // Friendly next-step button labels
   const NEXT_LABELS = {
@@ -881,6 +884,15 @@ function ExpandedRow({ load, onRefresh, onCostUpdate }) {
                 <a href={podLink || sharepointPodUrl} target="_blank" rel="noopener noreferrer"
                   style={{ fontSize: 13, color: '#005A8E', textDecoration: 'underline', display: 'flex', alignItems: 'center', gap: 4 }}>
                   📂 View POD
+                </a>
+              </div>
+            )}
+            {currentStatus === 'LOAD_INVOICED' && (
+              <div style={{ minWidth: 120 }}>
+                <div style={{ fontSize: 10, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>Invoice</div>
+                <a href={sharepointInvoiceUrl} target="_blank" rel="noopener noreferrer"
+                  style={{ fontSize: 13, color: '#005A8E', textDecoration: 'underline', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  📄 {load.m_invoice || 'View Invoice'}
                 </a>
               </div>
             )}
@@ -1341,5 +1353,6 @@ export default function Loads() {
     </div>
   );
 }
+
 
 
