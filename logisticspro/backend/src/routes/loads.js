@@ -98,7 +98,8 @@ router.get('/', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
     query = query.or(
       `m_load_no.ilike.%${search}%,m_truck.ilike.%${search}%,` +
       `m_customer.ilike.%${search}%,m_from.ilike.%${search}%,` +
-      `m_to.ilike.%${search}%,m_driver_id.ilike.%${search}%`
+      `m_to.ilike.%${search}%,m_driver_id.ilike.%${search}%,` +
+      `m_order_no.ilike.%${search}%`
     );
   }
 
