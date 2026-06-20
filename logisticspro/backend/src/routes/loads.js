@@ -80,8 +80,7 @@ router.get('/', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
       'm_rate, m_status, m_invoice, m_opening_km, m_closing_km, ' +
       'm_trailer1, m_trailer2, m_responsible_operator, m_bus_unit, ' +
       'm_order_no, m_order_no_pending, m_order_no_requested_by, ' +
-      'm_loading_address, m_offloading_address, ' +
-      'm_pod_received, m_pod_sharepoint_url',   // ← FIX: include POD fields
+      'm_loading_address, m_offloading_address',
       { count: 'exact' }
     )
     .neq('m_status', 'DELETED')
