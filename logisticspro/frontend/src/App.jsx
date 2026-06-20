@@ -4,7 +4,7 @@ import { useAuth } from './lib/AuthContext';
 import {
   canViewLoads, canViewFleet, canViewWorkshop, canViewRates,
   canManageClients, canManageDrivers, canManageUsers,
-  canManageInvoices, canViewApprovals, canViewPODs,
+  canManageInvoices, canViewApprovals,
   ROLES,
 } from './lib/roles';
 import Login from './pages/Login';
@@ -17,7 +17,6 @@ import Clients from './pages/Clients';
 import Rates from './pages/Rates';
 import Users from './pages/Users';
 import Invoices from './pages/Invoices';
-import PODs from './pages/PODs';
 import { Maintenance, Inventory } from './pages/Entities';
 import ServiceCards from './pages/ServiceCards';
 
@@ -50,7 +49,7 @@ const LogoutIcon = () => (
 // Build menu dynamically based on user role
 function buildMenu(user) {
   const menu = [];
-  if (user?.role === ROLES.READONLY) return menu; // No menu items for read-only users
+  if (user?.role === ROLES.READONLY) return menu;
   menu.push({ key: '', label: 'Home', icon: '🏠' });
   if (canViewLoads(user))
     menu.push({ key: 'movement', label: 'Loads', icon: '🚛' });
@@ -84,8 +83,6 @@ function buildMenu(user) {
     menu.push({ key: 'clients', label: 'Clients', icon: '🏢' });
   if (canManageInvoices(user))
     menu.push({ key: 'invoices', label: 'Invoices', icon: '🧾' });
-  if (canViewPODs(user))
-    menu.push({ key: 'pods', label: 'PODs', icon: '📄' });
   if (canManageUsers(user))
     menu.push({ key: 'users', label: 'Users', icon: '👥' });
   return menu;
@@ -99,7 +96,7 @@ const PAGE_TITLES = {
   clients: 'Clients', 'workshop-service': 'Service Cards',
   'workshop-maintenance': 'Maintenance', 'workshop-inventory': 'Inventory',
   approvals: 'Approvals', 'rates-list': 'Client Rates', 'rates-routes': 'Routes',
-  users: 'Users', invoices: 'Invoices', pods: 'Proof of Delivery',
+  users: 'Users', invoices: 'Invoices',
 };
 
 const ReadOnlyHome = () => (
@@ -153,7 +150,6 @@ export default function App() {
   );
 
   const renderPage = () => {
-    // Read-only users see only the read-only home screen
     if (user?.role === ROLES.READONLY) return <ReadOnlyHome />;
 
     switch (page) {
@@ -169,7 +165,6 @@ export default function App() {
       case 'clients':             return canManageClients(user) ? <Clients /> : <AccessDenied />;
       case 'users':               return canManageUsers(user) ? <Users /> : <AccessDenied />;
       case 'invoices':            return canManageInvoices(user) ? <Invoices /> : <AccessDenied />;
-      case 'pods':                return canViewPODs(user) ? <PODs /> : <AccessDenied />;
       case 'drivers-leave':
       case 'rates-routes': {
         const labels = { 'drivers-leave': 'Driver Leave', 'rates-routes': 'Routes' };
@@ -194,14 +189,12 @@ export default function App() {
         background: '#005A8E', color: 'white', display: 'flex', flexDirection: 'column',
         transition: 'width 0.2s, min-width 0.2s', overflow: 'hidden', flexShrink: 0,
       }}>
-        {/* Logo */}
         {sidebarOpen && (
           <div style={{ padding: '16px 12px 12px', borderBottom: '1px solid rgba(255,255,255,0.12)', flexShrink: 0 }}>
             <img src={LOGO} alt="Interland Distribution" style={{ width: '100%', maxHeight: 48, objectFit: 'contain' }} />
           </div>
         )}
 
-        {/* Nav items */}
         <nav style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
           {MENU.map(item => (
             <div key={item.key}>
@@ -242,7 +235,6 @@ export default function App() {
           ))}
         </nav>
 
-        {/* Logout */}
         <div style={{ borderTop: '1px solid rgba(255,255,255,0.12)', padding: 8 }}>
           <div onClick={logout} style={{
             display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px',
@@ -265,7 +257,6 @@ export default function App() {
           display: 'flex', alignItems: 'center', padding: '0 20px', gap: 12,
           boxShadow: '0 1px 4px rgba(0,0,0,0.06)', flexShrink: 0,
         }}>
-          {/* Only show menu toggle if user has menu items */}
           {MENU.length > 0 && (
             <button onClick={() => setSidebarOpen(o => !o)} style={{
               background: 'none', border: 'none', cursor: 'pointer', color: '#005A8E',
