@@ -15,6 +15,7 @@ const serviceRouter  = require('./routes/service');
 const podsRouter     = require('./routes/pods');
 const invoicesRouter = require('./routes/invoices');
 const stockRouter    = require('./routes/inventory');    // LP2.0 Inventory & PO module
+const finSeedRouter  = require('./routes/fin_seed');     // ONE-TIME financial seed (remove after use)
 const rolesRouter    = require('./routes/roles_admin');  // LP2.0 Role Manager
 
 const app = express();
@@ -54,6 +55,7 @@ app.use('/api/maintenance', maintenanceRouter);
 app.use('/api/inventory',   inventoryRouter);   // legacy entities inventory (vehicle parts etc.)
 app.use('/api/stock',       stockRouter);       // LP2.0 Inventory & Purchase Orders module
 app.use('/api/roles',       rolesRouter);       // LP2.0 Role Manager (Admin only)
+app.use('/api/fin-seed',    finSeedRouter);    // ONE-TIME financial seed (remove after use)
 app.use('/api/routes',      routesRouter);
 app.use('/api/rates',       clientRatesRouter);
 app.use('/api/users',       usersRouter);
