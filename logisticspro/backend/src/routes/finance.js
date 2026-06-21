@@ -1276,21 +1276,43 @@ router.get('/asset-register', requireFin, async (req, res) => {
 
   const assetIds = (assets || []).map(a => a.asset_id);
 
-  // Get depreciation runs for the date range (for period-specific depreciation column)
-  let periodDepre = {};
-  if (assetIds.length > 0 && (date_from || date_to)) {
-    let runsQ = supabase
-      .from('fin_depreciation_runs')
-      .select('asset_id, book_depre_amount, tax_depre_amount, run_date')
-      .in('asset_id', assetIds);
-    if (date_from) runsQ = runsQ.gte('run_date', date_from);
-    if (date_to)   runsQ = runsQ.lte('run_date', date_to);
-    const { data: runs } = await runsQ;
-    (runs || []).forEach(r => {
-      if (!periodDepre[r.asset_id]) periodDepre[r.asset_id] = { book: 0, tax: 0 };
-      periodDepre[r.asset_id].book += r.book_depre_amount || 0;
-      periodDepre[r.asset_id].tax  += r.tax_depre_amount  || 0;
-    });
+  // Get depreciation runs split into two buckets:
+  //   openingDepre = runs BEFORE date_from  (opening accumulated depreciation)
+  //   periodDepre  = runs within date_from..date_to (depreciation for the period)
+  let openingDepre = {};
+  let periodDepre  = {};
+
+  if (assetIds.length > 0) {
+    // Opening: all runs before date_from (gives opening accumulated depre at start of period)
+    if (date_from) {
+      let openQ = supabase
+        .from('fin_depreciation_runs')
+        .select('asset_id, book_depre_amount, tax_depre_amount')
+        .in('asset_id', assetIds)
+        .lt('run_date', date_from);
+      const { data: openRuns } = await openQ;
+      (openRuns || []).forEach(r => {
+        if (!openingDepre[r.asset_id]) openingDepre[r.asset_id] = { book: 0, tax: 0 };
+        openingDepre[r.asset_id].book += r.book_depre_amount || 0;
+        openingDepre[r.asset_id].tax  += r.tax_depre_amount  || 0;
+      });
+    }
+
+    // Period: runs within date_from..date_to
+    if (date_from || date_to) {
+      let perQ = supabase
+        .from('fin_depreciation_runs')
+        .select('asset_id, book_depre_amount, tax_depre_amount')
+        .in('asset_id', assetIds);
+      if (date_from) perQ = perQ.gte('run_date', date_from);
+      if (date_to)   perQ = perQ.lte('run_date', date_to);
+      const { data: perRuns } = await perQ;
+      (perRuns || []).forEach(r => {
+        if (!periodDepre[r.asset_id]) periodDepre[r.asset_id] = { book: 0, tax: 0 };
+        periodDepre[r.asset_id].book += r.book_depre_amount || 0;
+        periodDepre[r.asset_id].tax  += r.tax_depre_amount  || 0;
+      });
+    }
   }
 
   // Build register rows
@@ -1310,8 +1332,11 @@ router.get('/asset-register', requireFin, async (req, res) => {
       purchase_price:     a.purchase_price,           // Cost
       depre_start_date:   a.depre_start_date,
       accumulated_depre:  Math.round((a.book_depre_total || 0) * 100) / 100,
+      opening_depre_book: date_from ? Math.round((openingDepre[a.asset_id]?.book || 0) * 100) / 100 : null,
+      opening_depre_tax:  date_from ? Math.round((openingDepre[a.asset_id]?.tax  || 0) * 100) / 100 : null,
       period_depre_book:  Math.round(pd.book * 100) / 100,
       period_depre_tax:   Math.round(pd.tax  * 100) / 100,
+      closing_depre_book: date_from ? Math.round(((openingDepre[a.asset_id]?.book || 0) + pd.book) * 100) / 100 : null,
       book_nbv:           a.book_nbv,
       tax_value:          a.tax_value,
       timing_difference:  Math.round(((a.book_nbv || 0) - (a.tax_value || 0)) * 100) / 100,
@@ -1329,32 +1354,38 @@ router.get('/asset-register', requireFin, async (req, res) => {
   const classSummary = {};
   rows.forEach(r => {
     if (!classSummary[r.class_code]) {
-      classSummary[r.class_code] = { class_code: r.class_code, class_name: r.class_name, count: 0, cost: 0, accum_depre: 0, period_depre: 0, book_nbv: 0 };
+      classSummary[r.class_code] = { class_code: r.class_code, class_name: r.class_name, count: 0, cost: 0, accum_depre: 0, opening_depre: 0, period_depre: 0, closing_depre: 0, book_nbv: 0 };
     }
     const cs = classSummary[r.class_code];
-    cs.count        += 1;
-    cs.cost         += r.purchase_price   || 0;
-    cs.accum_depre  += r.accumulated_depre|| 0;
-    cs.period_depre += r.period_depre_book|| 0;
-    cs.book_nbv     += r.book_nbv         || 0;
+    cs.count         += 1;
+    cs.cost          += r.purchase_price    || 0;
+    cs.accum_depre   += r.accumulated_depre || 0;
+    cs.opening_depre += r.opening_depre_book|| 0;
+    cs.period_depre  += r.period_depre_book || 0;
+    cs.closing_depre += r.closing_depre_book|| 0;
+    cs.book_nbv      += r.book_nbv          || 0;
   });
 
   const totals = {
-    count:        rows.length,
-    total_cost:   Math.round(rows.reduce((s,r) => s + (r.purchase_price    || 0), 0) * 100) / 100,
-    total_accum:  Math.round(rows.reduce((s,r) => s + (r.accumulated_depre || 0), 0) * 100) / 100,
-    total_period: Math.round(rows.reduce((s,r) => s + (r.period_depre_book || 0), 0) * 100) / 100,
-    total_nbv:    Math.round(rows.reduce((s,r) => s + (r.book_nbv          || 0), 0) * 100) / 100,
+    count:         rows.length,
+    total_cost:    Math.round(rows.reduce((s,r) => s + (r.purchase_price    || 0), 0) * 100) / 100,
+    total_accum:   Math.round(rows.reduce((s,r) => s + (r.accumulated_depre || 0), 0) * 100) / 100,
+    total_opening: date_from ? Math.round(rows.reduce((s,r) => s + (r.opening_depre_book || 0), 0) * 100) / 100 : null,
+    total_period:  Math.round(rows.reduce((s,r) => s + (r.period_depre_book || 0), 0) * 100) / 100,
+    total_closing: date_from ? Math.round(rows.reduce((s,r) => s + (r.closing_depre_book || 0), 0) * 100) / 100 : null,
+    total_nbv:     Math.round(rows.reduce((s,r) => s + (r.book_nbv          || 0), 0) * 100) / 100,
   };
 
   res.json({
     rows,
     class_summary: Object.values(classSummary).map(cs => ({
       ...cs,
-      cost:        Math.round(cs.cost        * 100) / 100,
-      accum_depre: Math.round(cs.accum_depre * 100) / 100,
-      period_depre:Math.round(cs.period_depre* 100) / 100,
-      book_nbv:    Math.round(cs.book_nbv    * 100) / 100,
+      cost:         Math.round(cs.cost         * 100) / 100,
+      accum_depre:  Math.round(cs.accum_depre  * 100) / 100,
+      opening_depre:Math.round(cs.opening_depre* 100) / 100,
+      period_depre: Math.round(cs.period_depre * 100) / 100,
+      closing_depre:Math.round(cs.closing_depre* 100) / 100,
+      book_nbv:     Math.round(cs.book_nbv     * 100) / 100,
     })),
     totals,
     filters: { class_code, asset_code, date_from, date_to, show_additions, show_disposals },
