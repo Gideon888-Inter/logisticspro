@@ -94,7 +94,7 @@ function buildMenu(user) {
     menu.push({ key: 'clients', label: 'Clients', icon: '🏢',
       sub: [
         ...(canManageClients(user)   ? [{ key: 'clients-list',     label: 'Customers' }] : []),
-        ...(canManageInvoices(user)  ? [{ key: 'clients-invoices', label: 'Invoices' }] : []),
+        // Invoices moved to Finance > AR module
       ]
     });
   if (canViewFinance(user) || canManageInvoices(user))
@@ -200,7 +200,7 @@ export default function App() {
       case 'workshop-pos':        return canViewPOs(user) ? <PurchaseOrders /> : <AccessDenied />;
       case 'rates-list':          return canViewRates(user) ? <Rates /> : <AccessDenied />;
       case 'clients-list':        return canManageClients(user) ? <Clients /> : <AccessDenied />;
-      case 'clients-invoices':    return canManageInvoices(user) ? <Invoices /> : <AccessDenied />;
+      case 'clients-invoices':    return canViewFinance(user) ? <FinanceAR /> : (canManageInvoices(user) ? <Invoices /> : <AccessDenied />);
       case 'users':               return canManageUsers(user) ? <Users /> : <AccessDenied />;
       case 'finance-gl':      return canViewFinance(user) ? <FinanceGL /> : <AccessDenied />;
       case 'finance-cashbook': return canViewFinance(user) ? <FinanceCashbook /> : <AccessDenied />;
@@ -336,6 +336,7 @@ export default function App() {
     </div>
   );
 }
+
 
 
 
