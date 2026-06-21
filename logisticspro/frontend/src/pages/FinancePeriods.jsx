@@ -51,6 +51,14 @@ export default function FinancePeriods({ user }) {
         <div className="stat-card"><div className="stat-label">Posted Journals</div><div className="stat-value" style={{color:'#00AEEF'}}>{periods.reduce((s,p)=>s+(p.posted_journals||0),0)}</div></div>
       </div>
 
+      <div style={{ display:'flex', gap:6, marginBottom:10, justifyContent:'flex-end' }}>
+        <button className="btn btn-sm" onClick={() => {
+          const rows = periods.map(p => ({ Period: p.period_name, From: p.period_start, To: p.period_end, Journals: p.total_journals||0, Status: p.is_closed ? 'Locked':'Open', 'Locked By': p.locked_by||'' }));
+          const h = Object.keys(rows[0]); const csv = [h, ...rows.map(r=>h.map(k=>`"${(r[k]??'').toString().replace(/"/g,'""')}"`))].map(r=>r.join(',')).join('\n');
+          const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);a.download='periods.csv';a.click();
+        }}>⬇ CSV</button>
+        <button className="btn btn-sm" onClick={() => window.print()}>🖨 Print</button>
+      </div>
       <div className="table-wrap">
         <table>
           <thead><tr><th>Period</th><th>Dates</th><th style={{textAlign:'center'}}>Journals</th><th style={{textAlign:'center'}}>Posted</th><th>VAT Period</th><th>Status</th><th>Locked By</th>{isAdmin && <th>Action</th>}</tr></thead>
@@ -115,3 +123,4 @@ export default function FinancePeriods({ user }) {
     </div>
   );
 }
+
