@@ -28,10 +28,16 @@ const {
   authMiddleware, requireRole, ROLES, BUILTIN_ROLES,
 } = require('../middleware/auth');
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_KEY
-);
+let _supabase = null;
+function supabase() {
+  if (!_supabase) {
+    _supabase = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_KEY
+    );
+  }
+  return _supabase;
+}
 
 router.use(authMiddleware);
 router.use(requireRole(ROLES.ADMIN));  // All role management is Admin-only
@@ -292,8 +298,8 @@ router.put('/:key/permissions', async (req, res) => {
   }));
 
   // Delete existing and reinsert
-  await supabase.from('lp_role_permissions').delete().eq('role_key', key);
-  const { data, error } = await supabase.from('lp_role_permissions').insert(rows).select();
+  await supabase().from('lp_role_permissions').delete().eq('role_key', key);
+  const { data, error } = await supabase().from('lp_role_permissions').insert(rows).select();
   if (error) return res.status(400).json({ error: error.message });
   res.json({ success: true, updated: data?.length });
 });
@@ -375,3 +381,4 @@ ALTER TABLE lp_user_approvals
 });
 
 module.exports = router;
+
