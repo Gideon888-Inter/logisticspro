@@ -48,7 +48,6 @@ router.post('/login', async (req, res) => {
       name:        user.u_name,
       role:        user.u_role,
       region:      user.u_region,
-      bus_unit:    user.u_bus_unit,
       first_login: user.u_first_login === 'Y',
     },
   });
@@ -67,7 +66,7 @@ router.post('/login', async (req, res) => {
 //   • ACCOUNTING / READONLY                    → created directly (no approval)
 // ============================================================
 router.post('/register', authMiddleware, requireRole(...CAN_MANAGE_USERS), async (req, res) => {
-  const { u_username, u_password, u_name, u_email, u_role, u_bus_unit, u_region, u_active } = req.body;
+  const { u_username, u_password, u_name, u_email, u_role, u_region, u_active } = req.body;
 
   if (!u_username?.trim())
     return res.status(400).json({ error: 'Username is required' });
@@ -121,12 +120,11 @@ router.post('/register', authMiddleware, requireRole(...CAN_MANAGE_USERS), async
         u_name:        u_name || '',
         u_email:       u_email || '',
         u_role:        u_role || ROLES.OPERATOR,
-        u_bus_unit:    u_bus_unit || null,
         u_region:      u_region || null,
         u_active:      u_active || 'Y',
         u_first_login: 'Y',
       }])
-      .select('u_id, u_username, u_name, u_role, u_bus_unit, u_region, u_active')
+      .select('u_id, u_username, u_name, u_role, u_region, u_active')
       .single();
 
     if (error) return res.status(400).json({ error: error.message });
@@ -171,7 +169,6 @@ router.post('/register', authMiddleware, requireRole(...CAN_MANAGE_USERS), async
       ua_name:          u_name || '',
       ua_email:         u_email || '',
       ua_role:          u_role,
-      ua_bus_unit:      u_bus_unit || null,
       ua_region:        u_region || null,
       ua_requested_by:  req.user.username,
       ua_approver:      approverUsername,
@@ -249,7 +246,6 @@ router.patch('/pending-users/:id', authMiddleware, async (req, res) => {
         u_name:        approval.ua_name,
         u_email:       approval.ua_email,
         u_role:        approval.ua_role,
-        u_bus_unit:    approval.ua_bus_unit,
         u_region:      approval.ua_region,
         u_active:      'Y',
         u_first_login: 'Y',
@@ -385,7 +381,7 @@ router.post('/forgot-password', async (req, res) => {
 router.get('/me', authMiddleware, async (req, res) => {
   const { data: user } = await supabase
     .from('lp_users')
-    .select('u_username, u_name, u_role, u_region, u_bus_unit, u_first_login')
+    .select('u_username, u_name, u_role, u_region, u_first_login')
     .eq('u_username', req.user.username)
     .single();
 
@@ -396,3 +392,4 @@ router.get('/me', authMiddleware, async (req, res) => {
 
 
 module.exports = router;
+
