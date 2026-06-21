@@ -401,3 +401,19 @@ export const PO_STATUS_COLORS = {
   REJECTED:           'badge-red',
   CANCELLED:          'badge-gray',
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ROLES MANAGEMENT — Admin only
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function canManageRoles(user) {
+  return user?.role === ROLES.ADMIN;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FINANCE MODULE visibility
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function canViewFinance(user) {
+  return [ROLES.ADMIN, ROLES.FINANCE].includes(user?.role);
+}
