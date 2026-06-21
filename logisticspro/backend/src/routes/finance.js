@@ -797,4 +797,187 @@ router.get('/account-transactions', requireFin, async (req, res) => {
   });
 });
 
+
+// ─────────────────────────────────────────────────────────────
+// AP TRANSACTIONS (Supplier Ledger Enquiry)
+// ─────────────────────────────────────────────────────────────
+
+// GET /fin/ap-transactions
+// Query params: supplier_code (optional), date_from (optional), date_to (optional)
+// Returns invoices + payments merged and sorted by date desc
+router.get('/ap-transactions', requireFin, async (req, res) => {
+  const { supplier_code, date_from, date_to } = req.query;
+
+  // Build shared date filters
+  const applyDates = (q, dateCol) => {
+    if (date_from) q = q.gte(dateCol, date_from);
+    if (date_to)   q = q.lte(dateCol, date_to);
+    return q;
+  };
+
+  // Invoices
+  let invQ = supabase
+    .from('fin_ap_invoices')
+    .select('invoice_id,invoice_ref,supplier_code,supplier_invoice_no,invoice_date,due_date,status,subtotal_excl_vat,vat_amount,total_incl_vat,amount_paid,balance_due,document_ref')
+    .order('invoice_date', { ascending: false })
+    .limit(500);
+  if (supplier_code) invQ = invQ.eq('supplier_code', supplier_code);
+  invQ = applyDates(invQ, 'invoice_date');
+
+  // Payments
+  let payQ = supabase
+    .from('fin_ap_payments')
+    .select('payment_id,payment_ref,supplier_code,payment_date,payment_method,amount,bank_account,notes')
+    .order('payment_date', { ascending: false })
+    .limit(500);
+  if (supplier_code) payQ = payQ.eq('supplier_code', supplier_code);
+  payQ = applyDates(payQ, 'payment_date');
+
+  const [invRes, payRes] = await Promise.all([invQ, payQ]);
+  if (invRes.error) return res.status(500).json({ error: invRes.error.message });
+  if (payRes.error) return res.status(500).json({ error: payRes.error.message });
+
+  // Merge into unified transaction list
+  const invoices = (invRes.data || []).map(i => ({
+    tx_type:        'INVOICE',
+    tx_date:        i.invoice_date,
+    tx_ref:         i.invoice_ref,
+    supplier_code:  i.supplier_code,
+    description:    i.supplier_invoice_no ? `Supplier Inv: ${i.supplier_invoice_no}` : 'Supplier Invoice',
+    document_ref:   i.document_ref || null,
+    debit:          i.total_incl_vat,   // invoices increase what we owe
+    credit:         0,
+    vat_amount:     i.vat_amount,
+    excl_amount:    i.subtotal_excl_vat,
+    status:         i.status,
+    balance_due:    i.balance_due,
+    due_date:       i.due_date,
+  }));
+
+  const payments = (payRes.data || []).map(p => ({
+    tx_type:        'PAYMENT',
+    tx_date:        p.payment_date,
+    tx_ref:         p.payment_ref,
+    supplier_code:  p.supplier_code,
+    description:    `Payment — ${p.payment_method || 'EFT'}${p.notes ? ': ' + p.notes : ''}`,
+    document_ref:   null,
+    debit:          0,
+    credit:         p.amount,           // payments reduce what we owe
+    vat_amount:     0,
+    excl_amount:    p.amount,
+    status:         'PAID',
+    balance_due:    0,
+    due_date:       null,
+  }));
+
+  const transactions = [...invoices, ...payments].sort((a, b) =>
+    b.tx_date.localeCompare(a.tx_date)
+  );
+
+  const totalInvoiced = invoices.reduce((s, r) => s + r.debit, 0);
+  const totalPaid     = payments.reduce((s, r) => s + r.credit, 0);
+  const outstanding   = totalInvoiced - totalPaid;
+
+  res.json({
+    transactions,
+    totals: {
+      total_invoiced: Math.round(totalInvoiced * 100) / 100,
+      total_paid:     Math.round(totalPaid     * 100) / 100,
+      outstanding:    Math.round(outstanding   * 100) / 100,
+    },
+    count: transactions.length,
+  });
+});
+
+// ─────────────────────────────────────────────────────────────
+// AR TRANSACTIONS (Customer Ledger Enquiry)
+// ─────────────────────────────────────────────────────────────
+
+// GET /fin/ar-transactions
+// Query params: customer_code (optional), date_from (optional), date_to (optional)
+// Returns invoices + receipts merged and sorted by date desc
+router.get('/ar-transactions', requireFin, async (req, res) => {
+  const { customer_code, date_from, date_to } = req.query;
+
+  const applyDates = (q, dateCol) => {
+    if (date_from) q = q.gte(dateCol, date_from);
+    if (date_to)   q = q.lte(dateCol, date_to);
+    return q;
+  };
+
+  // Invoices
+  let invQ = supabase
+    .from('fin_ar_invoices')
+    .select('invoice_id,invoice_ref,customer_code,customer_invoice_no,invoice_date,due_date,status,subtotal_excl_vat,vat_amount,total_incl_vat,amount_received,balance_due,lp_load_number,document_ref,notes')
+    .order('invoice_date', { ascending: false })
+    .limit(500);
+  if (customer_code) invQ = invQ.eq('customer_code', customer_code);
+  invQ = applyDates(invQ, 'invoice_date');
+
+  // Receipts
+  let recQ = supabase
+    .from('fin_ar_receipts')
+    .select('receipt_id,receipt_ref,customer_code,receipt_date,payment_method,amount,bank_account,notes')
+    .order('receipt_date', { ascending: false })
+    .limit(500);
+  if (customer_code) recQ = recQ.eq('customer_code', customer_code);
+  recQ = applyDates(recQ, 'receipt_date');
+
+  const [invRes, recRes] = await Promise.all([invQ, recQ]);
+  if (invRes.error) return res.status(500).json({ error: invRes.error.message });
+  if (recRes.error) return res.status(500).json({ error: recRes.error.message });
+
+  const invoices = (invRes.data || []).map(i => ({
+    tx_type:       'INVOICE',
+    tx_date:       i.invoice_date,
+    tx_ref:        i.invoice_ref,
+    customer_code: i.customer_code,
+    description:   i.notes || (i.lp_load_number ? `Load: ${i.lp_load_number}` : 'Customer Invoice'),
+    document_ref:  i.document_ref || null,
+    debit:         i.total_incl_vat,    // invoices increase what customer owes us
+    credit:        0,
+    vat_amount:    i.vat_amount,
+    excl_amount:   i.subtotal_excl_vat,
+    status:        i.status,
+    balance_due:   i.balance_due,
+    due_date:      i.due_date,
+    load_number:   i.lp_load_number || null,
+  }));
+
+  const receipts = (recRes.data || []).map(r => ({
+    tx_type:       'RECEIPT',
+    tx_date:       r.receipt_date,
+    tx_ref:        r.receipt_ref,
+    customer_code: r.customer_code,
+    description:   `Receipt — ${r.payment_method || 'EFT'}${r.notes ? ': ' + r.notes : ''}`,
+    document_ref:  null,
+    debit:         0,
+    credit:        r.amount,            // receipts reduce what customer owes
+    vat_amount:    0,
+    excl_amount:   r.amount,
+    status:        'RECEIVED',
+    balance_due:   0,
+    due_date:      null,
+    load_number:   null,
+  }));
+
+  const transactions = [...invoices, ...receipts].sort((a, b) =>
+    b.tx_date.localeCompare(a.tx_date)
+  );
+
+  const totalInvoiced = invoices.reduce((s, r) => s + r.debit, 0);
+  const totalReceived = receipts.reduce((s, r) => s + r.credit, 0);
+  const outstanding   = totalInvoiced - totalReceived;
+
+  res.json({
+    transactions,
+    totals: {
+      total_invoiced: Math.round(totalInvoiced * 100) / 100,
+      total_received: Math.round(totalReceived * 100) / 100,
+      outstanding:    Math.round(outstanding   * 100) / 100,
+    },
+    count: transactions.length,
+  });
+});
+
 module.exports = router;
