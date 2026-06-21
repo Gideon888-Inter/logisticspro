@@ -109,15 +109,14 @@ router.get('/:key', async (req, res) => {
     roleData = { ...data, is_builtin: false };
   }
 
-  // Get permission matrix
-  const { data: perms } = await supabase
+  // Get permission matrix — two separate queries (join shorthand unreliable)
+  const { data: perms } = await supabase()
     .from('lp_role_permissions')
-    .select('*, lp_modules(module_label, module_group, sort_order)')
-    .eq('role_key', key)
-    .order('lp_modules(sort_order)');
+    .select('*')
+    .eq('role_key', key);
 
   // Get all modules so we can show 0-permission rows too
-  const { data: allModules } = await supabase
+  const { data: allModules } = await supabase()
     .from('lp_modules')
     .select('*')
     .eq('is_active', true)
@@ -381,4 +380,5 @@ ALTER TABLE lp_user_approvals
 });
 
 module.exports = router;
+
 
