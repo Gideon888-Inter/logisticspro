@@ -109,7 +109,7 @@ function RoleManagerPanel() {
   };
 
   const togglePerm = async (moduleKey, action, current) => {
-    if (BUILTIN_ROLE_KEYS.has(selectedKey)) return;
+    if (selectedKey === 'ADMIN') return; // ADMIN perms cannot be changed
     const updated = perms.map(p =>
       p.module_key === moduleKey ? { ...p, [`can_${action}`]: !current } : p
     );
@@ -147,7 +147,8 @@ function RoleManagerPanel() {
   };
 
   const selectedRole = [...roles.builtin, ...roles.custom].find(r => r.role_key === selectedKey);
-  const isBuiltinSelected = BUILTIN_ROLE_KEYS.has(selectedKey);
+  // Only lock ADMIN role — all other built-ins editable by Admin
+  const isBuiltinSelected = selectedKey === 'ADMIN';
   const displayList = roleTab === 'builtin' ? roles.builtin : roles.custom.filter(r => r.is_active);
   const groupedPerms = MODULE_GROUPS.map(g => ({
     group: g,
@@ -241,7 +242,12 @@ function RoleManagerPanel() {
                 {selectedRole?.description && <span style={{ fontSize: 12, color: '#888' }}>— {selectedRole.description}</span>}
                 {isBuiltinSelected && (
                   <span style={{ fontSize: 10, color: '#888', background: '#f5f5f5', padding: '2px 8px', borderRadius: 4, marginLeft: 'auto' }}>
-                    Read-only (enforced in code)
+                    🔒 Admin role cannot be modified
+                  </span>
+                )}
+                {!isBuiltinSelected && BUILTIN_ROLE_KEYS.has(selectedKey) && (
+                  <span style={{ fontSize: 10, color: '#059669', background: '#f0fdf4', padding: '2px 8px', borderRadius: 4, marginLeft: 'auto' }}>
+                    ✏️ Editable — changes override defaults
                   </span>
                 )}
               </div>
@@ -654,4 +660,5 @@ export default function Users() {
     </div>
   );
 }
+
 
