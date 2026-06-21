@@ -24,7 +24,8 @@ import FinanceAssets  from './pages/FinanceAssets';
 import FinanceAR      from './pages/FinanceAR';
 import FinanceAP      from './pages/FinanceAP';
 import FinanceVAT     from './pages/FinanceVAT';
-import FinancePeriods from './pages/FinancePeriods';
+import FinancePeriods  from './pages/FinancePeriods';
+import FinanceCashbook from './pages/FinanceCashbook';
 import ServiceCards from './pages/ServiceCards';
 import InventoryPage from './pages/Inventory';
 import PurchaseOrders from './pages/PurchaseOrders';
@@ -100,6 +101,7 @@ function buildMenu(user) {
     menu.push({ key: 'finance', label: 'Finance', icon: '💰',
       sub: [
         { key: 'finance-gl',        label: 'GL / Chart of Accounts' },
+        { key: 'finance-cashbook',  label: 'Cash Book' },
         { key: 'finance-ar',        label: 'Accounts Receivable' },
         { key: 'finance-ap',        label: 'Accounts Payable' },
         { key: 'finance-assets',    label: 'Fixed Assets' },
@@ -123,7 +125,7 @@ const PAGE_TITLES = {
   approvals: 'Approvals', 'rates-list': 'Client Rates', 'rates-routes': 'Routes',
   users: 'Users',
   'finance-invoices':'Invoices','finance-gl':'GL / Chart of Accounts',
-  'finance-ar':'Accounts Receivable','finance-ap':'Accounts Payable',
+  'finance-cashbook':'Cash Book','finance-ar':'Accounts Receivable','finance-ap':'Accounts Payable',
   'finance-assets':'Fixed Assets','finance-vat':'VAT Returns','finance-periods':'Period Management',
 };
 
@@ -201,6 +203,7 @@ export default function App() {
       case 'clients-invoices':    return canManageInvoices(user) ? <Invoices /> : <AccessDenied />;
       case 'users':               return canManageUsers(user) ? <Users /> : <AccessDenied />;
       case 'finance-gl':      return canViewFinance(user) ? <FinanceGL /> : <AccessDenied />;
+      case 'finance-cashbook': return canViewFinance(user) ? <FinanceCashbook /> : <AccessDenied />;
       case 'finance-ar':      return canViewFinance(user) ? <FinanceAR /> : <AccessDenied />;
       case 'finance-ap':      return canViewFinance(user) ? <FinanceAP /> : <AccessDenied />;
       case 'finance-assets':  return canViewFinance(user) ? <FinanceAssets /> : <AccessDenied />;
