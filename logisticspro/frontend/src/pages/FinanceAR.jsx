@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../lib/AuthContext';
 
 const API   = `${import.meta.env.VITE_API_URL}/api`;
@@ -28,6 +28,172 @@ function ExportBar({ onCSV }) {
 
 const EMPTY_CUSTOMER = { customer_code: '', customer_name: '', category: '', vat_number: '', telephone: '', email: '', payment_terms_days: 30, gl_control_account: '1200' };
 
+// ── CUSTOMER TRANSACTIONS ─────────────────────────────────────
+function CustomerTransactions({ customers }) {
+  const [rows, setRows]         = useState([]);
+  const [totals, setTotals]     = useState(null);
+  const [loading, setLoading]   = useState(false);
+  const [searched, setSearched] = useState(false);
+  const [custFilter, setCust]   = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo]     = useState('');
+
+  const search = useCallback(async () => {
+    setLoading(true);
+    setSearched(true);
+    const params = new URLSearchParams();
+    if (custFilter) params.set('customer_code', custFilter);
+    if (dateFrom)   params.set('date_from', dateFrom);
+    if (dateTo)     params.set('date_to', dateTo);
+    const data = await req(`/fin/ar-transactions?${params.toString()}`);
+    setRows(data.transactions || []);
+    setTotals(data.totals || null);
+    setLoading(false);
+  }, [custFilter, dateFrom, dateTo]);
+
+  const clear = () => { setCust(''); setDateFrom(''); setDateTo(''); setRows([]); setTotals(null); setSearched(false); };
+
+  // Running balance (invoices add, receipts subtract)
+  const rowsChron = [...rows].reverse();
+  let runBal = 0;
+  const rowsWithBal = rowsChron.map(r => {
+    runBal += r.debit - r.credit;
+    return { ...r, running_balance: runBal };
+  }).reverse();
+
+  const selectedCustomer = customers.find(c => c.customer_code === custFilter);
+
+  const doExport = () => {
+    if (!rows.length) return;
+    exportCSV(rows.map(r => ({
+      Date: r.tx_date, Ref: r.tx_ref, Type: r.tx_type,
+      Customer: r.customer_code, Description: r.description,
+      'Load #': r.load_number || '',
+      Debit: r.debit || 0, Credit: r.credit || 0,
+      Status: r.status, 'Due Date': r.due_date || '', 'Balance Due': r.balance_due || 0,
+    })), `ar_transactions${custFilter ? '_' + custFilter : ''}.csv`);
+  };
+
+  const STATUS_COLOR = { POSTED: 'badge-blue', PARTIAL: 'badge-amber', PAID: 'badge-green', RECEIVED: 'badge-green', DISPUTED: 'badge-red', CANCELLED: 'badge-gray', UNPOSTED: 'badge-gray', OVERDUE: 'badge-red' };
+
+  return (
+    <div>
+      {/* Filter panel */}
+      <div style={{ background: '#f8fafc', border: '1px solid #e8edf2', borderRadius: 8, padding: '14px 16px', marginBottom: 16 }}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <div style={{ flex: '1 1 240px' }}>
+            <label style={{ fontSize: 11, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>Customer</label>
+            <select value={custFilter} onChange={e => setCust(e.target.value)} style={{ width: '100%' }}>
+              <option value="">— All customers —</option>
+              {customers.map(c => <option key={c.customer_code} value={c.customer_code}>{c.customer_code} — {c.customer_name}</option>)}
+            </select>
+          </div>
+          <div style={{ flex: '0 0 148px' }}>
+            <label style={{ fontSize: 11, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>Date From</label>
+            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={{ width: '100%' }} />
+          </div>
+          <div style={{ flex: '0 0 148px' }}>
+            <label style={{ fontSize: 11, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>Date To</label>
+            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} style={{ width: '100%' }} />
+          </div>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end', paddingBottom: 1 }}>
+            <button className="btn btn-primary btn-sm" onClick={search} disabled={loading}>{loading ? 'Loading…' : '🔍 Search'}</button>
+            {searched && <button className="btn btn-sm" onClick={clear}>Clear</button>}
+          </div>
+        </div>
+        {selectedCustomer && (
+          <div style={{ marginTop: 10, fontSize: 12, color: '#555' }}>
+            <strong>{selectedCustomer.customer_code}</strong> — {selectedCustomer.customer_name}
+            {selectedCustomer.payment_terms_days && <span style={{ marginLeft: 8, color: '#888' }}>Terms: {selectedCustomer.payment_terms_days} days</span>}
+            {selectedCustomer.lp_client_code && <span className="badge badge-blue" style={{ fontSize: 10, marginLeft: 8 }}>LP: {selectedCustomer.lp_client_code}</span>}
+          </div>
+        )}
+      </div>
+
+      {/* Totals */}
+      {totals && (
+        <div className="stats-grid" style={{ marginBottom: 12 }}>
+          <div className="stat-card"><div className="stat-label">Transactions</div><div className="stat-value" style={{ color: '#00AEEF' }}>{rows.length}</div></div>
+          <div className="stat-card"><div className="stat-label">Total Invoiced</div><div className="stat-value" style={{ fontSize: 14, color: '#005A8E' }}>{fmt(totals.total_invoiced)}</div></div>
+          <div className="stat-card"><div className="stat-label">Total Received</div><div className="stat-value" style={{ fontSize: 14, color: '#059669' }}>{fmt(totals.total_received)}</div></div>
+          <div className="stat-card">
+            <div className="stat-label">Outstanding</div>
+            <div className="stat-value" style={{ fontSize: 14, color: totals.outstanding > 0 ? '#e53e3e' : '#059669' }}>{fmt(totals.outstanding)}</div>
+          </div>
+        </div>
+      )}
+
+      {rows.length > 0 && <ExportBar onCSV={doExport} />}
+
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Ref</th>
+              <th>Type</th>
+              {!custFilter && <th>Customer</th>}
+              <th>Description</th>
+              <th>Load #</th>
+              <th>Due Date</th>
+              <th style={{ textAlign: 'right' }}>Invoiced</th>
+              <th style={{ textAlign: 'right' }}>Received</th>
+              {custFilter && <th style={{ textAlign: 'right' }}>Running Bal</th>}
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading && <tr><td colSpan={11}><div className="loading">Loading transactions…</div></td></tr>}
+            {!loading && !searched && (
+              <tr><td colSpan={11}>
+                <div className="empty-state" style={{ padding: '32px 0' }}>
+                  <div style={{ fontSize: 32, marginBottom: 8 }}>🔍</div>
+                  <div>Select filters above and click <strong>Search</strong> to view customer transactions.</div>
+                  <div style={{ fontSize: 12, color: '#aaa', marginTop: 4 }}>No customer filter = all customers. No date filter = all dates.</div>
+                </div>
+              </td></tr>
+            )}
+            {!loading && searched && rows.length === 0 && (
+              <tr><td colSpan={11}><div className="empty-state">No transactions found for the selected filters.</div></td></tr>
+            )}
+            {!loading && rowsWithBal.map((r, idx) => (
+              <tr key={r.tx_ref + idx} style={{ background: idx % 2 === 0 ? 'white' : '#fafbfc' }}>
+                <td style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{r.tx_date}</td>
+                <td className="mono" style={{ fontWeight: 600, fontSize: 12 }}>{r.tx_ref}</td>
+                <td>
+                  <span className={`badge ${r.tx_type === 'INVOICE' ? 'badge-blue' : 'badge-green'}`} style={{ fontSize: 10 }}>
+                    {r.tx_type}
+                  </span>
+                </td>
+                {!custFilter && <td className="mono" style={{ fontSize: 12 }}>{r.customer_code}</td>}
+                <td style={{ fontSize: 12 }}>{r.description}</td>
+                <td className="mono" style={{ fontSize: 11, color: '#00AEEF' }}>{r.load_number || '—'}</td>
+                <td style={{ fontSize: 12, color: r.due_date && r.balance_due > 0 && r.due_date < new Date().toISOString().slice(0, 10) ? '#e53e3e' : '#555' }}>
+                  {r.due_date || '—'}
+                </td>
+                <td style={{ textAlign: 'right', fontFamily: 'monospace', color: r.debit > 0 ? '#005A8E' : '#ccc' }}>
+                  {r.debit > 0 ? fmt(r.debit) : '—'}
+                </td>
+                <td style={{ textAlign: 'right', fontFamily: 'monospace', color: r.credit > 0 ? '#059669' : '#ccc' }}>
+                  {r.credit > 0 ? fmt(r.credit) : '—'}
+                </td>
+                {custFilter && (
+                  <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: r.running_balance > 0 ? '#005A8E' : '#059669' }}>
+                    {fmt(Math.abs(r.running_balance))}
+                    <span style={{ fontSize: 10, fontWeight: 400, marginLeft: 3 }}>{r.running_balance > 0 ? 'DR' : 'CR'}</span>
+                  </td>
+                )}
+                <td><span className={`badge ${STATUS_COLOR[r.status] || 'badge-gray'}`} style={{ fontSize: 10 }}>{r.status}</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ── MAIN AR PAGE ──────────────────────────────────────────────
 export default function FinanceAR() {
   const { user } = useAuth();
   const [tab, setTab]             = useState('aging');
@@ -42,17 +208,25 @@ export default function FinanceAR() {
   const [syncing, setSyncing]     = useState(null);
   const [syncMsg, setSyncMsg]     = useState('');
 
-  useEffect(() => { load(); }, [tab]);
+  useEffect(() => {
+    // Always keep customer list loaded (needed for Transactions tab dropdown)
+    loadCustomers();
+  }, []);
 
-  const load = async () => {
+  useEffect(() => {
+    if (tab === 'aging') loadAging();
+  }, [tab]);
+
+  const loadCustomers = async () => {
+    const data = await req('/fin/ar-customers?active=true');
+    setCustomers(Array.isArray(data) ? data : []);
+    setLoading(false);
+  };
+
+  const loadAging = async () => {
     setLoading(true);
-    if (tab === 'aging') {
-      const data = await req('/fin/aging/debtors');
-      setAging(data);
-    } else {
-      const data = await req('/fin/ar-customers?active=true');
-      setCustomers(Array.isArray(data) ? data : []);
-    }
+    const data = await req('/fin/aging/debtors');
+    setAging(data);
     setLoading(false);
   };
 
@@ -64,10 +238,9 @@ export default function FinanceAR() {
     try {
       const res = await req('/fin/ar-customers', { method: 'POST', body: JSON.stringify(form) });
       if (res.error) throw new Error(res.error);
-      setShowAdd(false);
-      setForm(EMPTY_CUSTOMER);
+      setShowAdd(false); setForm(EMPTY_CUSTOMER);
+      loadCustomers();
       setTab('customers');
-      load();
     } catch (e) { alert(e.message); }
     finally { setSaving(false); }
   };
@@ -77,12 +250,11 @@ export default function FinanceAR() {
     setSyncMsg('');
     try {
       const res = await req(`/fin/ar-customers/${c.customer_code}/loads`, {
-        method: 'PATCH',
-        body: JSON.stringify({ loads_allowed: val }),
+        method: 'PATCH', body: JSON.stringify({ loads_allowed: val }),
       });
       if (res.error) throw new Error(res.error);
       if (res.synced) setSyncMsg(`✓ Customer synced to Loads as "${res.lp_client_code}" — blank rate card created.`);
-      load();
+      loadCustomers();
     } catch (e) { alert(e.message); }
     finally { setSyncing(null); }
   };
@@ -101,15 +273,16 @@ export default function FinanceAR() {
   const agingCSV = () => {
     if (!aging?.invoices?.length) return;
     exportCSV(aging.invoices.map(i => ({
-      Customer: i.customer_name, 'Invoice Ref': i.invoice_ref, 'Invoice Date': i.invoice_date,
-      'Due Date': i.due_date, Amount: i.total_incl_vat, Balance: i.balance_due,
+      Customer: i.customer_name, 'Invoice Ref': i.invoice_ref,
+      'Invoice Date': i.invoice_date, 'Due Date': i.due_date,
+      Amount: i.total_incl_vat, Balance: i.balance_due,
       Bucket: i.aging_bucket, 'Load #': i.lp_load_number || '',
     })), 'ar_aging.csv');
   };
   const customersCSV = () => exportCSV(filteredCustomers.map(c => ({
-    Code: c.customer_code, Name: c.customer_name, VAT: c.vat_number || '', Tel: c.telephone || '',
-    Email: c.email || '', 'Terms (days)': c.payment_terms_days, 'LP Code': c.lp_client_code || '',
-    'Loads Allowed': c.loads_allowed ? 'YES' : 'NO', Synced: c.lp_synced ? 'YES' : 'NO',
+    Code: c.customer_code, Name: c.customer_name, VAT: c.vat_number || '',
+    Tel: c.telephone || '', Email: c.email || '', 'Terms (days)': c.payment_terms_days,
+    'LP Code': c.lp_client_code || '', 'Loads Allowed': c.loads_allowed ? 'YES' : 'NO',
   })), 'ar_customers.csv');
 
   return (
@@ -121,13 +294,14 @@ export default function FinanceAR() {
       )}
 
       <div style={{ display: 'flex', borderBottom: '1px solid #e8edf2', marginBottom: 16, gap: 4, alignItems: 'center' }}>
-        <div style={tabStyle('aging')}     onClick={() => setTab('aging')}>Debtor Aging</div>
-        <div style={tabStyle('customers')} onClick={() => setTab('customers')}>Customer Master ({customers.length || '…'})</div>
+        <div style={tabStyle('aging')}       onClick={() => setTab('aging')}>Debtor Aging</div>
+        <div style={tabStyle('customers')}   onClick={() => setTab('customers')}>Customer Master ({customers.length || '…'})</div>
+        <div style={tabStyle('transactions')}onClick={() => setTab('transactions')}>Transactions</div>
         <div style={{ flex: 1 }} />
         <button className="btn btn-primary btn-sm" onClick={() => { setForm(EMPTY_CUSTOMER); setShowAdd(true); }}>+ New Customer</button>
       </div>
 
-      {/* AGING TAB */}
+      {/* ── AGING TAB ── */}
       {tab === 'aging' && (
         <>
           {aging && (
@@ -166,7 +340,7 @@ export default function FinanceAR() {
         </>
       )}
 
-      {/* CUSTOMERS TAB */}
+      {/* ── CUSTOMERS TAB ── */}
       {tab === 'customers' && (
         <>
           <div className="filter-bar">
@@ -194,7 +368,6 @@ export default function FinanceAR() {
                         style={{ fontSize: 10, padding: '2px 8px', opacity: syncing === c.customer_code ? 0.5 : 1 }}
                         onClick={() => toggleLoads(c, !c.loads_allowed)}
                         disabled={syncing === c.customer_code}
-                        title={c.loads_allowed ? 'Remove from Loads' : 'Allow in Loads + auto-create rate card'}
                       >
                         {syncing === c.customer_code ? '…' : c.loads_allowed ? '✓ Loads' : 'Allow'}
                       </button>
@@ -211,6 +384,9 @@ export default function FinanceAR() {
           </div>
         </>
       )}
+
+      {/* ── TRANSACTIONS TAB ── */}
+      {tab === 'transactions' && <CustomerTransactions customers={customers} />}
 
       {/* Customer Detail Modal */}
       {selected && (
@@ -241,7 +417,6 @@ export default function FinanceAR() {
                     <span className={`badge ${selected.loads_allowed ? 'badge-green' : 'badge-gray'}`} style={{ fontSize: 11 }}>
                       {selected.loads_allowed ? '✓ Allowed in Loads' : 'Not in Loads'}
                     </span>
-                    {selected.lp_synced && <span className="badge badge-blue" style={{ fontSize: 10 }}>Synced</span>}
                     <button className="btn btn-sm" style={{ fontSize: 11 }}
                       onClick={() => { toggleLoads(selected, !selected.loads_allowed); setSelected(null); }}>
                       {selected.loads_allowed ? 'Remove from Loads' : 'Allow in Loads'}
@@ -251,6 +426,10 @@ export default function FinanceAR() {
               </div>
             </div>
             <div className="modal-footer">
+              <button className="btn btn-sm" style={{ marginRight: 'auto' }}
+                onClick={() => { setSelected(null); setTab('transactions'); }}>
+                View Transactions →
+              </button>
               <button className="btn btn-primary" onClick={() => setSelected(null)}>Close</button>
             </div>
           </div>
@@ -271,7 +450,7 @@ export default function FinanceAR() {
                 <div className="form-group"><label>Customer Name *</label><input value={form.customer_name} onChange={e => set('customer_name', e.target.value)} placeholder="Full customer name" /></div>
               </div>
               <div className="form-row">
-                <div className="form-group"><label>VAT Number</label><input value={form.vat_number} onChange={e => set('vat_number', e.target.value)} placeholder="4xxxxxxxxx" /></div>
+                <div className="form-group"><label>VAT Number</label><input value={form.vat_number} onChange={e => set('vat_number', e.target.value)} /></div>
                 <div className="form-group"><label>Category</label><input value={form.category} onChange={e => set('category', e.target.value)} placeholder="e.g. RETAIL" /></div>
                 <div className="form-group"><label>Payment Terms (days)</label><input type="number" value={form.payment_terms_days} onChange={e => set('payment_terms_days', e.target.value)} /></div>
               </div>
