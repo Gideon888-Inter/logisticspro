@@ -9,7 +9,7 @@ driversRouter.use(authMiddleware);
 driversRouter.get('/', async (req, res) => {
   const { bus_unit, active } = req.query;
   let q = supabase.from('lp_drivers').select('*').order('d_nickname');
-  if (bus_unit) q = q.eq('d_bus_unit', bus_unit);
+  // bus_unit filter removed — column dropped
   if (active !== undefined) q = q.eq('d_active', active);
   const { data, error } = await q;
   if (error) return res.status(500).json({ error: error.message });
@@ -162,3 +162,4 @@ routesRouter.patch('/:id', requireRole('ADMIN', 'MANAGER'), async (req, res) => 
 });
 
 module.exports = { driversRouter, customersRouter, maintenanceRouter, inventoryRouter, routesRouter };
+
