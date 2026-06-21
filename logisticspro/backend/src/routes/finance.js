@@ -1148,4 +1148,217 @@ router.get('/vat-return/:period', requireFin, async (req, res) => {
   });
 });
 
+
+// ─────────────────────────────────────────────────────────────
+// ASSET TRANSACTIONS (per-asset depreciation run history)
+// ─────────────────────────────────────────────────────────────
+
+// GET /fin/asset-transactions/:asset_code
+// Returns all depreciation runs for a specific asset, joined to period names
+router.get('/asset-transactions/:asset_code', requireFin, async (req, res) => {
+  const { asset_code } = req.params;
+  const { date_from, date_to } = req.query;
+
+  // First get the asset to confirm it exists and get asset_id
+  const { data: asset, error: assetErr } = await supabase
+    .from('fin_assets')
+    .select('asset_id, asset_code, description, class_code, purchase_price, purchase_date, depre_start_date, book_nbv, tax_value, book_depre_total, is_active, disposal_date, disposal_proceeds')
+    .eq('asset_code', asset_code)
+    .single();
+
+  if (assetErr) return res.status(404).json({ error: 'Asset not found' });
+
+  // Get depreciation runs joined to periods
+  let runsQ = supabase
+    .from('fin_depreciation_runs')
+    .select(`
+      run_id,
+      run_date,
+      book_depre_amount,
+      tax_depre_amount,
+      book_nbv_after,
+      tax_value_after,
+      timing_difference,
+      deferred_tax,
+      journal_id,
+      fin_periods(period_name, period_start, period_end)
+    `)
+    .eq('asset_id', asset.asset_id)
+    .order('run_date', { ascending: false });
+
+  if (date_from) runsQ = runsQ.gte('run_date', date_from);
+  if (date_to)   runsQ = runsQ.lte('run_date', date_to);
+
+  const { data: runs, error: runsErr } = await runsQ;
+  if (runsErr) return res.status(500).json({ error: runsErr.message });
+
+  const rows = (runs || []).map(r => ({
+    run_id:            r.run_id,
+    run_date:          r.run_date,
+    period_name:       r.fin_periods?.period_name,
+    period_start:      r.fin_periods?.period_start,
+    period_end:        r.fin_periods?.period_end,
+    book_depre_amount: r.book_depre_amount,
+    tax_depre_amount:  r.tax_depre_amount,
+    book_nbv_after:    r.book_nbv_after,
+    tax_value_after:   r.tax_value_after,
+    timing_difference: r.timing_difference,
+    deferred_tax:      r.deferred_tax,
+    journal_id:        r.journal_id,
+  }));
+
+  const totalBookDepre = rows.reduce((s, r) => s + (r.book_depre_amount || 0), 0);
+  const totalTaxDepre  = rows.reduce((s, r) => s + (r.tax_depre_amount  || 0), 0);
+
+  res.json({
+    asset,
+    transactions: rows,
+    totals: {
+      total_book_depre: Math.round(totalBookDepre * 100) / 100,
+      total_tax_depre:  Math.round(totalTaxDepre  * 100) / 100,
+      run_count:        rows.length,
+    },
+  });
+});
+
+// ─────────────────────────────────────────────────────────────
+// ASSET REGISTER (summary per asset with period-filtered depreciation)
+// ─────────────────────────────────────────────────────────────
+
+// GET /fin/asset-register
+// Query params: class_code, asset_code, date_from, date_to, show_additions, show_disposals
+router.get('/asset-register', requireFin, async (req, res) => {
+  const { class_code, asset_code, date_from, date_to, show_additions, show_disposals } = req.query;
+
+  // Build asset filter
+  let assetsQ = supabase
+    .from('fin_assets')
+    .select(`
+      asset_id,
+      asset_code,
+      description,
+      class_code,
+      purchase_date,
+      purchase_price,
+      depre_start_date,
+      book_depre_total,
+      book_depre_prior,
+      book_depre_curr_yr,
+      book_nbv,
+      tax_value,
+      is_active,
+      fully_depreciated,
+      disposal_date,
+      disposal_proceeds,
+      location,
+      reg_number,
+      fin_asset_classes(class_name, gl_cost_account, gl_accum_account, sars_wt_rate_pct, ifrs_useful_life_yr)
+    `)
+    .order('class_code')
+    .order('asset_code');
+
+  if (class_code) assetsQ = assetsQ.eq('class_code', class_code);
+  if (asset_code) assetsQ = assetsQ.eq('asset_code', asset_code);
+
+  // Filter for new additions during period
+  if (show_additions === 'true' && date_from) assetsQ = assetsQ.gte('purchase_date', date_from);
+  if (show_additions === 'true' && date_to)   assetsQ = assetsQ.lte('purchase_date', date_to);
+
+  // Filter for disposals during period
+  if (show_disposals === 'true') {
+    assetsQ = assetsQ.eq('is_active', false).not('disposal_date', 'is', null);
+    if (date_from) assetsQ = assetsQ.gte('disposal_date', date_from);
+    if (date_to)   assetsQ = assetsQ.lte('disposal_date', date_to);
+  }
+
+  const { data: assets, error: aErr } = await assetsQ;
+  if (aErr) return res.status(500).json({ error: aErr.message });
+
+  const assetIds = (assets || []).map(a => a.asset_id);
+
+  // Get depreciation runs for the date range (for period-specific depreciation column)
+  let periodDepre = {};
+  if (assetIds.length > 0 && (date_from || date_to)) {
+    let runsQ = supabase
+      .from('fin_depreciation_runs')
+      .select('asset_id, book_depre_amount, tax_depre_amount, run_date')
+      .in('asset_id', assetIds);
+    if (date_from) runsQ = runsQ.gte('run_date', date_from);
+    if (date_to)   runsQ = runsQ.lte('run_date', date_to);
+    const { data: runs } = await runsQ;
+    (runs || []).forEach(r => {
+      if (!periodDepre[r.asset_id]) periodDepre[r.asset_id] = { book: 0, tax: 0 };
+      periodDepre[r.asset_id].book += r.book_depre_amount || 0;
+      periodDepre[r.asset_id].tax  += r.tax_depre_amount  || 0;
+    });
+  }
+
+  // Build register rows
+  const rows = (assets || []).map(a => {
+    const pd = periodDepre[a.asset_id] || { book: 0, tax: 0 };
+    return {
+      asset_id:           a.asset_id,
+      asset_code:         a.asset_code,
+      description:        a.description,
+      class_code:         a.class_code,
+      class_name:         a.fin_asset_classes?.class_name,
+      gl_cost_account:    a.fin_asset_classes?.gl_cost_account,
+      gl_accum_account:   a.fin_asset_classes?.gl_accum_account,
+      sars_wt_rate_pct:   a.fin_asset_classes?.sars_wt_rate_pct,
+      ifrs_useful_life_yr:a.fin_asset_classes?.ifrs_useful_life_yr,
+      purchase_date:      a.purchase_date,
+      purchase_price:     a.purchase_price,           // Cost
+      depre_start_date:   a.depre_start_date,
+      accumulated_depre:  Math.round((a.book_depre_total || 0) * 100) / 100,
+      period_depre_book:  Math.round(pd.book * 100) / 100,
+      period_depre_tax:   Math.round(pd.tax  * 100) / 100,
+      book_nbv:           a.book_nbv,
+      tax_value:          a.tax_value,
+      timing_difference:  Math.round(((a.book_nbv || 0) - (a.tax_value || 0)) * 100) / 100,
+      deferred_tax_27pct: Math.round(((a.book_nbv || 0) - (a.tax_value || 0)) * 0.27 * 100) / 100,
+      location:           a.location,
+      reg_number:         a.reg_number,
+      is_active:          a.is_active,
+      fully_depreciated:  a.fully_depreciated,
+      disposal_date:      a.disposal_date,
+      disposal_proceeds:  a.disposal_proceeds,
+    };
+  });
+
+  // Group by class for summary
+  const classSummary = {};
+  rows.forEach(r => {
+    if (!classSummary[r.class_code]) {
+      classSummary[r.class_code] = { class_code: r.class_code, class_name: r.class_name, count: 0, cost: 0, accum_depre: 0, period_depre: 0, book_nbv: 0 };
+    }
+    const cs = classSummary[r.class_code];
+    cs.count        += 1;
+    cs.cost         += r.purchase_price   || 0;
+    cs.accum_depre  += r.accumulated_depre|| 0;
+    cs.period_depre += r.period_depre_book|| 0;
+    cs.book_nbv     += r.book_nbv         || 0;
+  });
+
+  const totals = {
+    count:        rows.length,
+    total_cost:   Math.round(rows.reduce((s,r) => s + (r.purchase_price    || 0), 0) * 100) / 100,
+    total_accum:  Math.round(rows.reduce((s,r) => s + (r.accumulated_depre || 0), 0) * 100) / 100,
+    total_period: Math.round(rows.reduce((s,r) => s + (r.period_depre_book || 0), 0) * 100) / 100,
+    total_nbv:    Math.round(rows.reduce((s,r) => s + (r.book_nbv          || 0), 0) * 100) / 100,
+  };
+
+  res.json({
+    rows,
+    class_summary: Object.values(classSummary).map(cs => ({
+      ...cs,
+      cost:        Math.round(cs.cost        * 100) / 100,
+      accum_depre: Math.round(cs.accum_depre * 100) / 100,
+      period_depre:Math.round(cs.period_depre* 100) / 100,
+      book_nbv:    Math.round(cs.book_nbv    * 100) / 100,
+    })),
+    totals,
+    filters: { class_code, asset_code, date_from, date_to, show_additions, show_disposals },
+  });
+});
+
 module.exports = router;
