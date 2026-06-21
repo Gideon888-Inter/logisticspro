@@ -721,65 +721,54 @@ router.get('/dashboard', requireFin, async (req, res) => {
 router.get('/account-transactions', requireFin, async (req, res) => {
   const { account_code, date_from, date_to, limit = 500 } = req.query;
 
-  // Fetch journal lines with journal header data
-  let query = supabase
-    .from('fin_gl_journal_lines')
-    .select(`
-      line_id,
-      line_number,
-      account_code,
-      description,
-      debit,
-      credit,
-      vat_type,
-      vat_amount,
-      reference,
-      fin_gl_journals!inner (
-        journal_id,
-        journal_ref,
-        journal_date,
-        journal_type,
-        description,
-        posted,
-        source_module,
-        source_document
-      )
-    `)
-    .eq('fin_gl_journals.posted', true)
-    .order('fin_gl_journals(journal_date)', { ascending: false })
+  // Fetch posted journals in range first (no join shorthand)
+  let jQ = supabase
+    .from('fin_gl_journals')
+    .select('journal_id, journal_ref, journal_date, journal_type, description, source_module, source_document')
+    .eq('posted', true)
+    .order('journal_date', { ascending: false })
     .limit(parseInt(limit));
 
-  if (account_code) {
-    query = query.eq('account_code', account_code);
-  }
-  if (date_from) {
-    query = query.gte('fin_gl_journals.journal_date', date_from);
-  }
-  if (date_to) {
-    query = query.lte('fin_gl_journals.journal_date', date_to);
-  }
+  if (date_from) jQ = jQ.gte('journal_date', date_from);
+  if (date_to)   jQ = jQ.lte('journal_date', date_to);
 
-  const { data, error } = await query;
+  const { data: journals, error } = await jQ;
   if (error) return res.status(500).json({ error: error.message });
 
-  // Flatten the nested join for easy frontend consumption
-  const rows = (data || []).map(l => ({
-    line_id:         l.line_id,
-    account_code:    l.account_code,
-    line_desc:       l.description,
-    debit:           l.debit || 0,
-    credit:          l.credit || 0,
-    vat_type:        l.vat_type,
-    vat_amount:      l.vat_amount || 0,
-    reference:       l.reference,
-    journal_id:      l.fin_gl_journals?.journal_id,
-    journal_ref:     l.fin_gl_journals?.journal_ref,
-    journal_date:    l.fin_gl_journals?.journal_date,
-    journal_type:    l.fin_gl_journals?.journal_type,
-    journal_desc:    l.fin_gl_journals?.description,
-    source_module:   l.fin_gl_journals?.source_module,
-    source_document: l.fin_gl_journals?.source_document,
-  }));
+  const journalIds = (journals || []).map(j => j.journal_id);
+  const jMap = {};
+  (journals || []).forEach(j => { jMap[j.journal_id] = j; });
+
+  let linesData = [];
+  if (journalIds.length > 0) {
+    let lQ = supabase
+      .from('fin_gl_journal_lines')
+      .select('line_id, journal_id, account_code, description, debit, credit, vat_type, vat_amount, reference')
+      .in('journal_id', journalIds);
+    if (account_code) lQ = lQ.eq('account_code', account_code);
+    const { data: ld } = await lQ;
+    linesData = ld || [];
+  }
+
+  const rows = linesData
+    .map(l => ({
+      line_id:         l.line_id,
+      account_code:    l.account_code,
+      line_desc:       l.description,
+      debit:           l.debit || 0,
+      credit:          l.credit || 0,
+      vat_type:        l.vat_type,
+      vat_amount:      l.vat_amount || 0,
+      reference:       l.reference,
+      journal_id:      jMap[l.journal_id]?.journal_id,
+      journal_ref:     jMap[l.journal_id]?.journal_ref,
+      journal_date:    jMap[l.journal_id]?.journal_date,
+      journal_type:    jMap[l.journal_id]?.journal_type,
+      journal_desc:    jMap[l.journal_id]?.description,
+      source_module:   jMap[l.journal_id]?.source_module,
+      source_document: jMap[l.journal_id]?.source_document,
+    }))
+    .sort((a, b) => (b.journal_date || '').localeCompare(a.journal_date || ''));
 
   // Compute running totals
   const totalDebit  = rows.reduce((s, r) => s + r.debit,  0);
@@ -1378,6 +1367,176 @@ router.get('/asset-register', requireFin, async (req, res) => {
     })),
     totals,
     filters: { class_code, asset_code, date_from, date_to, show_additions, show_disposals },
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────
+// INCOME STATEMENT
+// ─────────────────────────────────────────────────────────────
+
+// GET /fin/income-statement
+// Query params: date_from, date_to (required — YYYY-MM-DD)
+// Returns: per-account balances grouped by IS section, with monthly columns
+// when date range spans multiple periods
+router.get('/income-statement', requireFin, async (req, res) => {
+  const { date_from, date_to } = req.query;
+  if (!date_from || !date_to) {
+    return res.status(400).json({ error: 'date_from and date_to are required' });
+  }
+
+  // 1. Get all IS accounts (Income Statement only, active)
+  const { data: accounts, error: accErr } = await supabase
+    .from('fin_gl_accounts')
+    .select('account_code, account_name, category, account_type, is_sub_account, parent_account')
+    .eq('ifrs_classification', 'Income Statement')
+    .eq('active', true)
+    .order('account_code');
+
+  if (accErr) return res.status(500).json({ error: accErr.message });
+
+  // 2. Get all periods that fall within the date range
+  const { data: periods, error: perErr } = await supabase
+    .from('fin_periods')
+    .select('period_id, period_name, period_start, period_end')
+    .gte('period_end',   date_from)
+    .lte('period_start', date_to)
+    .order('period_id');
+
+  if (perErr) return res.status(500).json({ error: perErr.message });
+
+  const periodIds = (periods || []).map(p => p.period_id);
+  const accountCodes = (accounts || []).map(a => a.account_code);
+
+  // 3. Get journal lines for those periods, for IS accounts
+  // Separate queries for current period and prior year
+  let lines = [];
+  if (periodIds.length > 0 && accountCodes.length > 0) {
+    // Get posted journals in the period range first
+    const { data: journals } = await supabase
+      .from('fin_gl_journals')
+      .select('journal_id, period_id')
+      .in('period_id', periodIds)
+      .eq('posted', true);
+
+    const journalIds = (journals || []).map(j => j.journal_id);
+    const journalPeriodMap = {};
+    (journals || []).forEach(j => { journalPeriodMap[j.journal_id] = j.period_id; });
+
+    if (journalIds.length > 0) {
+      const { data: jLines } = await supabase
+        .from('fin_gl_journal_lines')
+        .select('account_code, debit, credit, journal_id')
+        .in('journal_id', journalIds)
+        .in('account_code', accountCodes);
+
+      lines = (jLines || []).map(l => ({
+        ...l,
+        fin_gl_journals: { period_id: journalPeriodMap[l.journal_id], posted: true }
+      }));
+    }
+  }
+
+  // 4. Separate query for prior year (same period range, 1 year back)
+  const priorFrom = new Date(date_from);
+  const priorTo   = new Date(date_to);
+  priorFrom.setFullYear(priorFrom.getFullYear() - 1);
+  priorTo.setFullYear(priorTo.getFullYear() - 1);
+
+  const { data: priorPeriods } = await supabase
+    .from('fin_periods')
+    .select('period_id, period_name, period_start, period_end')
+    .gte('period_end',   priorFrom.toISOString().slice(0,10))
+    .lte('period_start', priorTo.toISOString().slice(0,10))
+    .order('period_id');
+
+  const priorPeriodIds = (priorPeriods || []).map(p => p.period_id);
+  let priorLines = [];
+  if (priorPeriodIds.length > 0 && accountCodes.length > 0) {
+    const { data: priorJournals } = await supabase
+      .from('fin_gl_journals')
+      .select('journal_id')
+      .in('period_id', priorPeriodIds)
+      .eq('posted', true);
+    const priorJournalIds = (priorJournals || []).map(j => j.journal_id);
+    if (priorJournalIds.length > 0) {
+      const { data: pLines } = await supabase
+        .from('fin_gl_journal_lines')
+        .select('account_code, debit, credit')
+        .in('journal_id', priorJournalIds)
+        .in('account_code', accountCodes);
+      priorLines = pLines || [];
+    }
+  }
+
+  // 5. Build account balances per period and totals
+  // Income accounts: credit = positive, debit = negative
+  // Expense accounts: debit = positive, credit = negative
+
+  const isIncomeType = (cat) => ['Income', 'Other Income'].includes(cat);
+  const isExpenseType = (cat) => ['Cost of Sales', 'Expenses'].includes(cat);
+
+  const getNet = (debit, credit, category) => {
+    if (isIncomeType(category))  return (credit || 0) - (debit || 0);
+    if (isExpenseType(category)) return (debit  || 0) - (credit || 0);
+    return (credit || 0) - (debit || 0);
+  };
+
+  // Build period map: { period_id: { account_code: net } }
+  const periodBalances = {};
+  (periods || []).forEach(p => { periodBalances[p.period_id] = {}; });
+
+  lines.forEach(l => {
+    const pid = l.fin_gl_journals?.period_id;
+    const acc = accounts.find(a => a.account_code === l.account_code);
+    if (!pid || !acc) return;
+    if (!periodBalances[pid]) periodBalances[pid] = {};
+    const current = periodBalances[pid][l.account_code] || 0;
+    periodBalances[pid][l.account_code] = current + getNet(l.debit, l.credit, acc.category);
+  });
+
+  // Build prior year totals per account
+  const priorTotals = {};
+  priorLines.forEach(l => {
+    const acc = accounts.find(a => a.account_code === l.account_code);
+    if (!acc) return;
+    priorTotals[l.account_code] = (priorTotals[l.account_code] || 0) + getNet(l.debit, l.credit, acc.category);
+  });
+
+  // Build YTD per account
+  const ytdTotals = {};
+  lines.forEach(l => {
+    const acc = accounts.find(a => a.account_code === l.account_code);
+    if (!acc) return;
+    ytdTotals[l.account_code] = (ytdTotals[l.account_code] || 0) + getNet(l.debit, l.credit, acc.category);
+  });
+
+  // 6. Assemble rows
+  const rows = (accounts || []).map(a => {
+    const periodData = {};
+    (periods || []).forEach(p => {
+      periodData[p.period_id] = Math.round((periodBalances[p.period_id]?.[a.account_code] || 0) * 100) / 100;
+    });
+    return {
+      account_code:   a.account_code,
+      account_name:   a.account_name,
+      category:       a.category,
+      account_type:   a.account_type,
+      is_sub_account: a.is_sub_account,
+      parent_account: a.parent_account,
+      period_data:    periodData,
+      ytd:            Math.round((ytdTotals[a.account_code] || 0) * 100) / 100,
+      prior_year:     Math.round((priorTotals[a.account_code] || 0) * 100) / 100,
+    };
+  });
+
+  res.json({
+    periods: periods || [],
+    rows,
+    date_from,
+    date_to,
+    prior_date_from: priorFrom.toISOString().slice(0,10),
+    prior_date_to:   priorTo.toISOString().slice(0,10),
   });
 });
 
