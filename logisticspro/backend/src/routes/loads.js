@@ -367,7 +367,11 @@ router.patch('/:id', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
     const currentStatus = load.m_status;
 
     // Workshop role — read only, no status changes ever
-    if (role === ROLES.WORKSHOP || role === ROLES.READONLY)
+    if ([
+      ROLES.WORKSHOP_MANAGER, ROLES.WORKSHOP_ASSISTANT,
+      ROLES.STOCK_CONTROLLER, ROLES.WORKSHOP,
+      ROLES.READONLY,
+    ].includes(role))
       return res.status(403).json({ error: 'You do not have permission to change load status' });
 
     // Manager: can approve WAIT_RATE_CHECK or reject
@@ -391,8 +395,8 @@ router.patch('/:id', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
     }
 
     // Accounting: cannot change status manually — invoice flow only
-    if (role === ROLES.ACCOUNTING) {
-      return res.status(403).json({ error: 'Accounting cannot change load status manually. Use the Invoices page.' });
+    if (role === ROLES.FINANCE) {
+      return res.status(403).json({ error: 'Finance cannot change load status manually. Use the Invoices page.' });
     }
 
     // Block manual set to LOAD_INVOICED for everyone — invoice flow only
@@ -428,7 +432,7 @@ router.patch('/:id', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
   const updates = { ...req.body, updated_at: new Date().toISOString() };
 
   // Fields read-only for all but Admin/Operator/OpsAsst
-  if ([ROLES.CONTROL_ROOM, ROLES.ACCOUNTING, ROLES.WORKSHOP, ROLES.READONLY, ROLES.MANAGER].includes(role)) {
+  if ([ROLES.CONTROL_ROOM, ROLES.FINANCE, ROLES.WORKSHOP_MANAGER, ROLES.WORKSHOP_ASSISTANT, ROLES.STOCK_CONTROLLER, ROLES.WORKSHOP, ROLES.READONLY, ROLES.MANAGER].includes(role)) {
     delete updates.m_rate;
     delete updates.m_customer;
     delete updates.m_from;
