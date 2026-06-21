@@ -89,12 +89,16 @@ function buildMenu(user) {
         { key: 'rates-routes', label: 'Routes' },
       ]
     });
-  if (canManageClients(user))
-    menu.push({ key: 'clients', label: 'Clients', icon: '🏢' });
+  if (canManageClients(user) || canManageInvoices(user))
+    menu.push({ key: 'clients', label: 'Clients', icon: '🏢',
+      sub: [
+        ...(canManageClients(user)   ? [{ key: 'clients-list',     label: 'Customers' }] : []),
+        ...(canManageInvoices(user)  ? [{ key: 'clients-invoices', label: 'Invoices' }] : []),
+      ]
+    });
   if (canViewFinance(user) || canManageInvoices(user))
     menu.push({ key: 'finance', label: 'Finance', icon: '💰',
       sub: [
-        { key: 'finance-invoices',  label: 'Invoices' },
         { key: 'finance-gl',        label: 'GL / Chart of Accounts' },
         { key: 'finance-ar',        label: 'Accounts Receivable' },
         { key: 'finance-ap',        label: 'Accounts Payable' },
@@ -113,7 +117,7 @@ const PAGE_TITLES = {
   movement: 'Loads',
   vehicles: 'Fleet',
   'drivers-list': 'Drivers', 'drivers-leave': 'Driver Leave',
-  clients: 'Clients',
+  clients: 'Clients', 'clients-list': 'Customers', 'clients-invoices': 'Invoices',
   'workshop-service': 'Service Cards', 'workshop-maintenance': 'Maintenance',
   'workshop-inventory': 'Inventory', 'workshop-pos': 'Purchase Orders',
   approvals: 'Approvals', 'rates-list': 'Client Rates', 'rates-routes': 'Routes',
@@ -193,9 +197,9 @@ export default function App() {
       case 'workshop-inventory':  return canViewInventory(user) ? <InventoryPage /> : <AccessDenied />;
       case 'workshop-pos':        return canViewPOs(user) ? <PurchaseOrders /> : <AccessDenied />;
       case 'rates-list':          return canViewRates(user) ? <Rates /> : <AccessDenied />;
-      case 'clients':             return canManageClients(user) ? <Clients /> : <AccessDenied />;
+      case 'clients-list':        return canManageClients(user) ? <Clients /> : <AccessDenied />;
+      case 'clients-invoices':    return canManageInvoices(user) ? <Invoices /> : <AccessDenied />;
       case 'users':               return canManageUsers(user) ? <Users /> : <AccessDenied />;
-      case 'finance-invoices':     return canManageInvoices(user) ? <Invoices /> : <AccessDenied />;
       case 'finance-gl':      return canViewFinance(user) ? <FinanceGL /> : <AccessDenied />;
       case 'finance-ar':      return canViewFinance(user) ? <FinanceAR /> : <AccessDenied />;
       case 'finance-ap':      return canViewFinance(user) ? <FinanceAP /> : <AccessDenied />;
@@ -329,5 +333,6 @@ export default function App() {
     </div>
   );
 }
+
 
 
