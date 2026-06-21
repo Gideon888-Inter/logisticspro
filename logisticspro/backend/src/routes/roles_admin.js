@@ -4,8 +4,8 @@
  * Admin-only. Provides full CRUD for custom roles and their per-module
  * permission assignments (view / edit / delete / approve).
  *
- * Built-in roles (ADMIN, MANAGER etc.) are read-only — can be viewed
- * for reference but their permissions cannot be changed here.
+ * Built-in roles (ADMIN, MANAGER etc.) permissions are shown and editable by Admin.
+ * Edits are stored in lp_role_permissions and take effect via loadUserPermissions().
  * Their enforcement is hardcoded in auth.js.
  *
  * Endpoints
@@ -304,10 +304,15 @@ router.put('/:key/permissions', async (req, res) => {
 });
 
 // PATCH /roles/:key/permissions/:module — update a single module
+// ADMIN can override built-in role permissions — stored in lp_role_permissions
+// Note: auth.js still enforces the hardcoded defaults as FALLBACK for built-ins,
+// but DB overrides take effect when loadUserPermissions() runs (custom role path).
+// This allows Admin to tighten/loosen built-in roles via the UI without a code deploy.
 router.patch('/:key/permissions/:module', async (req, res) => {
   const { key, module } = req.params;
-  if (BUILTIN_ROLES.has(key))
-    return res.status(403).json({ error: 'Built-in role permissions cannot be changed here' });
+  // Only block if not Admin — Admin can override any role including built-ins
+  if (BUILTIN_ROLES.has(key) && req.user.role !== ROLES.ADMIN)
+    return res.status(403).json({ error: 'Only Admins can modify built-in role permissions' });
 
   const { can_view, can_edit, can_delete, can_approve, extra_flags } = req.body;
   const updates = {
@@ -380,5 +385,6 @@ ALTER TABLE lp_user_approvals
 });
 
 module.exports = router;
+
 
 
