@@ -4,7 +4,8 @@ import { useAuth } from './lib/AuthContext';
 import {
   canViewLoads, canViewFleet, canViewWorkshop, canViewRates,
   canManageClients, canManageDrivers, canManageUsers,
-  canManageInvoices, canViewApprovals,
+  canManageInvoices, canViewApprovals, canViewInventory,
+  canViewPOs, canManageRoles,
   ROLES,
 } from './lib/roles';
 import Login from './pages/Login';
@@ -17,8 +18,11 @@ import Clients from './pages/Clients';
 import Rates from './pages/Rates';
 import Users from './pages/Users';
 import Invoices from './pages/Invoices';
-import { Maintenance, Inventory } from './pages/Entities';
+import { Maintenance, Inventory as LegacyInventory } from './pages/Entities';
 import ServiceCards from './pages/ServiceCards';
+import InventoryPage from './pages/Inventory';
+import PurchaseOrders from './pages/PurchaseOrders';
+import RoleManager from './pages/RoleManager';
 
 const MenuIcon = () => (
   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -61,6 +65,13 @@ function buildMenu(user) {
         { key: 'workshop-inventory',   label: 'Inventory' },
       ]
     });
+  if (canViewInventory(user))
+    menu.push({ key: 'stock', label: 'Stock', icon: '📦',
+      sub: [
+        { key: 'stock-items',  label: 'Inventory Items' },
+        { key: 'stock-pos',    label: 'Purchase Orders' },
+      ]
+    });
   if (canViewApprovals(user))
     menu.push({ key: 'approvals', label: 'Approvals', icon: '✅' });
   if (canViewFleet(user))
@@ -85,6 +96,8 @@ function buildMenu(user) {
     menu.push({ key: 'invoices', label: 'Invoices', icon: '🧾' });
   if (canManageUsers(user))
     menu.push({ key: 'users', label: 'Users', icon: '👥' });
+  if (canManageRoles(user))
+    menu.push({ key: 'roles', label: 'Role Manager', icon: '🔑' });
   return menu;
 }
 
@@ -97,6 +110,8 @@ const PAGE_TITLES = {
   'workshop-maintenance': 'Maintenance', 'workshop-inventory': 'Inventory',
   approvals: 'Approvals', 'rates-list': 'Client Rates', 'rates-routes': 'Routes',
   users: 'Users', invoices: 'Invoices',
+  'stock-items': 'Inventory Items', 'stock-pos': 'Purchase Orders',
+  roles: 'Role Manager',
 };
 
 const ReadOnlyHome = () => (
@@ -119,7 +134,7 @@ export default function App() {
 
   const navigate = (key) => {
     setPage(key);
-    setSidebarOpen(false); // close sidebar on nav (important for mobile)
+    setSidebarOpen(false);
     MENU.forEach(item => {
       if (item.sub && item.sub.find(s => s.key === key)) {
         setExpandedMenus(prev => ({ ...prev, [item.key]: true }));
@@ -127,7 +142,6 @@ export default function App() {
     });
   };
 
-  // Handle banner navigation from Dashboard
   useEffect(() => {
     const handler = (e) => {
       if (e.detail?.page) navigate(e.detail.page);
@@ -136,7 +150,6 @@ export default function App() {
     return () => window.removeEventListener('lp-navigate', handler);
   }, []);
 
-  // Close sidebar on Escape key
   useEffect(() => {
     const handler = (e) => { if (e.key === 'Escape') setSidebarOpen(false); };
     window.addEventListener('keydown', handler);
@@ -168,7 +181,10 @@ export default function App() {
       case 'drivers-list':        return canManageDrivers(user) ? <Drivers /> : <AccessDenied />;
       case 'workshop-service':    return canViewWorkshop(user) ? <ServiceCards /> : <AccessDenied />;
       case 'workshop-maintenance':return canViewWorkshop(user) ? <Maintenance /> : <AccessDenied />;
-      case 'workshop-inventory':  return canViewWorkshop(user) ? <Inventory /> : <AccessDenied />;
+      case 'workshop-inventory':  return canViewWorkshop(user) ? <LegacyInventory /> : <AccessDenied />;
+      case 'stock-items':         return canViewInventory(user) ? <InventoryPage /> : <AccessDenied />;
+      case 'stock-pos':           return canViewPOs(user) ? <PurchaseOrders /> : <AccessDenied />;
+      case 'roles':               return canManageRoles(user) ? <RoleManager /> : <AccessDenied />;
       case 'rates-list':          return canViewRates(user) ? <Rates /> : <AccessDenied />;
       case 'clients':             return canManageClients(user) ? <Clients /> : <AccessDenied />;
       case 'users':               return canManageUsers(user) ? <Users /> : <AccessDenied />;
@@ -191,7 +207,6 @@ export default function App() {
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: '#f5f7fa' }}>
 
-      {/* ── Mobile overlay — tap to close sidebar ── */}
       {sidebarOpen && (
         <div
           onClick={() => setSidebarOpen(false)}
@@ -203,7 +218,6 @@ export default function App() {
         />
       )}
 
-      {/* ── Sidebar ── */}
       <div style={{
         position: 'fixed', top: 0, left: 0, bottom: 0,
         width: 220, background: '#005A8E', color: 'white',
@@ -270,10 +284,8 @@ export default function App() {
         </div>
       </div>
 
-      {/* ── Main (always full-width — sidebar overlays on top) ── */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
-        {/* Top bar */}
         <div style={{
           height: 52, background: 'white', borderBottom: '1px solid #e8edf2',
           display: 'flex', alignItems: 'center', padding: '0 20px', gap: 12,
@@ -297,7 +309,6 @@ export default function App() {
           </span>
         </div>
 
-        {/* Page content */}
         <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
           {renderPage()}
         </div>
