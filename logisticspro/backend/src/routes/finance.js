@@ -1734,4 +1734,740 @@ router.get('/cashbook/bank-accounts', requireFin, async (req, res) => {
   res.json(data);
 });
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /fin/accounts/:id — update an existing GL account (all fields editable)
+// ─────────────────────────────────────────────────────────────────────────────
+router.patch('/accounts/:id', requireFin, async (req, res) => {
+  const { id } = req.params;
+  const allowed = [
+    'account_code','account_name','category','ifrs_classification',
+    'account_type','vat_treatment','allowed_vat_codes','vat_notes',
+    'is_sub_account','parent_code','default_vat_type','allow_journals',
+    'active','notes',
+  ];
+  const updates = {};
+  allowed.forEach(k => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
+  if (!Object.keys(updates).length) return res.status(400).json({ error: 'No fields to update' });
+
+  const { data, error } = await supabase
+    .from('fin_gl_accounts')
+    .update(updates)
+    .eq('account_id', id)
+    .select()
+    .single();
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /fin/audit-log — GL audit log export
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/audit-log', requireFin, async (req, res) => {
+  const { date_from, date_to, table_name, limit = 500 } = req.query;
+  let query = supabase
+    .from('fin_gl_audit_log')
+    .select('*')
+    .order('event_time', { ascending: false })
+    .limit(Number(limit));
+  if (date_from) query = query.gte('event_time', date_from);
+  if (date_to)   query = query.lte('event_time', date_to + 'T23:59:59');
+  if (table_name) query = query.eq('table_name', table_name);
+  const { data, error } = await query;
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data || []);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /fin/cashbook/staging/:id/post — post a staged cashbook entry to GL
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/cashbook/staging/:id/post', requireFin, async (req, res) => {
+  const { id } = req.params;
+
+  const { data: entry, error: fetchErr } = await supabase
+    .from('fin_cb_staging')
+    .select('*')
+    .eq('staging_id', id)
+    .single();
+
+  if (fetchErr || !entry) return res.status(404).json({ error: 'Staging entry not found' });
+  if (entry.status === 'POSTED') return res.status(400).json({ error: 'Already posted' });
+  if (!entry.gl_account_code) return res.status(400).json({ error: 'GL account must be assigned before posting' });
+  if (!entry.entity_id) return res.status(400).json({ error: 'Entity not set on staging entry' });
+
+  // Find the open period for this transaction date
+  const { data: period } = await supabase
+    .from('fin_periods')
+    .select('period_id, period_name, is_closed')
+    .lte('period_start', entry.transaction_date)
+    .gte('period_end',   entry.transaction_date)
+    .eq('entity_id',     entry.entity_id)
+    .single();
+
+  if (!period)          return res.status(400).json({ error: `No period found for date ${entry.transaction_date}` });
+  if (period.is_closed) return res.status(400).json({ error: `Period ${period.period_name} is locked` });
+
+  // Auto-generate journal ref: CB-YYYYMM-NNNNN
+  const datePart = entry.transaction_date.replace(/-/g,'').slice(0,6);
+  const { count } = await supabase
+    .from('fin_gl_journals')
+    .select('*', { count: 'exact', head: true })
+    .like('journal_ref', `CB-${datePart}-%`);
+  const seq         = String((count || 0) + 1).padStart(5, '0');
+  const journal_ref = `CB-${datePart}-${seq}`;
+
+  // Cashbook journal: bank account DR/CR, contra account CR/DR
+  const isReceipt = entry.direction === 'RECEIPT' || entry.amount > 0;
+  const absAmount = Math.abs(entry.amount);
+  const vatAmt    = entry.vat_type && entry.vat_type !== 'NONE' ? absAmount - (absAmount / 1.15) : 0;
+  const exclAmt   = absAmount - vatAmt;
+
+  const lines = [
+    {
+      line_number:  1,
+      account_code: entry.bank_account,
+      description:  entry.description,
+      debit:        isReceipt ? absAmount : 0,
+      credit:       isReceipt ? 0 : absAmount,
+      vat_type:     null,
+      vat_amount:   0,
+    },
+    {
+      line_number:  2,
+      account_code: entry.gl_account_code,
+      description:  entry.journal_description || entry.description,
+      debit:        isReceipt ? 0 : exclAmt,
+      credit:       isReceipt ? exclAmt : 0,
+      vat_type:     entry.vat_type !== 'NONE' ? entry.vat_type : null,
+      vat_amount:   vatAmt,
+    },
+  ];
+
+  // Add VAT line if applicable
+  if (vatAmt > 0) {
+    lines.push({
+      line_number:  3,
+      account_code: '9500', // VAT control account
+      description:  `VAT on ${entry.description}`,
+      debit:        isReceipt ? 0 : vatAmt,
+      credit:       isReceipt ? vatAmt : 0,
+      vat_type:     entry.vat_type,
+      vat_amount:   vatAmt,
+    });
+  }
+
+  // Create journal
+  const { data: journal, error: jErr } = await supabase
+    .from('fin_gl_journals')
+    .insert({
+      journal_ref,
+      journal_type:  'CB',
+      description:   entry.description,
+      period_id:     period.period_id,
+      journal_date:  entry.transaction_date,
+      source_module: 'CASHBOOK',
+      source_document: entry.import_batch,
+      posted:        true,
+      posted_at:     new Date().toISOString(),
+      posted_by:     req.user.username,
+      created_by:    req.user.username,
+    })
+    .select()
+    .single();
+
+  if (jErr) return res.status(500).json({ error: jErr.message });
+
+  await supabase.from('fin_gl_journal_lines').insert(
+    lines.map(l => ({ ...l, journal_id: journal.journal_id }))
+  );
+
+  // Mark staging entry as POSTED
+  await supabase
+    .from('fin_cb_staging')
+    .update({
+      status:     'POSTED',
+      journal_id: journal.journal_id,
+      journal_ref,
+      posted_by:  req.user.username,
+      posted_at:  new Date().toISOString(),
+    })
+    .eq('staging_id', id);
+
+  res.json({ success: true, journal_ref, journal_id: journal.journal_id });
+});
+
+// POST /fin/cashbook/staging/post-bulk — post all MATCHED entries in a batch
+router.post('/cashbook/staging/post-bulk', requireFin, async (req, res) => {
+  const { staging_ids } = req.body; // array of IDs, or omit for all MATCHED
+  let query = supabase
+    .from('fin_cb_staging')
+    .select('staging_id')
+    .eq('status', 'MATCHED');
+  if (staging_ids?.length) query = query.in('staging_id', staging_ids);
+  const { data: toPost } = await query;
+
+  const results = { posted: 0, failed: 0, errors: [] };
+  for (const entry of (toPost || [])) {
+    try {
+      const r = await fetch(
+        `${process.env.BACKEND_URL || 'http://localhost:3000'}/api/fin/cashbook/staging/${entry.staging_id}/post`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${req.headers.authorization?.split(' ')[1]}`,
+          },
+        }
+      );
+      const json = await r.json();
+      if (json.error) { results.failed++; results.errors.push(`${entry.staging_id}: ${json.error}`); }
+      else results.posted++;
+    } catch (e) {
+      results.failed++;
+      results.errors.push(`${entry.staging_id}: ${e.message}`);
+    }
+  }
+  res.json(results);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET  /fin/cashbook/bank-recon — list recons for a bank account / period
+// POST /fin/cashbook/bank-recon — create or update a bank recon
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/cashbook/bank-recon', requireFin, async (req, res) => {
+  const { bank_account, period_id } = req.query;
+  let query = supabase
+    .from('fin_cb_bank_recon')
+    .select('*, fin_periods(period_name, period_start, period_end)')
+    .order('recon_date', { ascending: false })
+    .limit(50);
+  if (bank_account) query = query.eq('bank_account', bank_account);
+  if (period_id)    query = query.eq('period_id', period_id);
+  const { data, error } = await query;
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data || []);
+});
+
+router.get('/cashbook/bank-recon/:id', requireFin, async (req, res) => {
+  const { data: recon, error } = await supabase
+    .from('fin_cb_bank_recon')
+    .select('*')
+    .eq('recon_id', req.params.id)
+    .single();
+  if (error) return res.status(404).json({ error: 'Recon not found' });
+
+  const { data: items } = await supabase
+    .from('fin_cb_recon_items')
+    .select('*')
+    .eq('recon_id', req.params.id)
+    .order('created_at');
+
+  // Calculate GL closing balance from posted journals
+  const { data: period } = await supabase
+    .from('fin_periods')
+    .select('period_start, period_end')
+    .eq('period_id', recon.period_id)
+    .single();
+
+  let glBalance = 0;
+  if (period) {
+    const { data: journals } = await supabase
+      .from('fin_gl_journals')
+      .select('journal_id')
+      .eq('posted', true)
+      .lte('journal_date', period.period_end);
+    const jIds = (journals || []).map(j => j.journal_id);
+    if (jIds.length) {
+      const { data: lines } = await supabase
+        .from('fin_gl_journal_lines')
+        .select('debit, credit')
+        .in('journal_id', jIds)
+        .eq('account_code', recon.bank_account);
+      glBalance = (lines || []).reduce((s, l) => s + (l.debit || 0) - (l.credit || 0), 0);
+    }
+  }
+
+  res.json({ recon, items: items || [], gl_balance: glBalance });
+});
+
+router.post('/cashbook/bank-recon', requireFin, async (req, res) => {
+  const {
+    period_id, bank_account, recon_date,
+    bank_stmt_opening, bank_stmt_closing, notes, items,
+  } = req.body;
+
+  if (!period_id)      return res.status(400).json({ error: 'period_id is required' });
+  if (!bank_account)   return res.status(400).json({ error: 'bank_account is required' });
+  if (!recon_date)     return res.status(400).json({ error: 'recon_date is required' });
+
+  // Get GL balance for this bank account up to recon_date
+  const { data: journals } = await supabase
+    .from('fin_gl_journals')
+    .select('journal_id')
+    .eq('posted', true)
+    .lte('journal_date', recon_date);
+  const jIds = (journals || []).map(j => j.journal_id);
+  let glClosing = 0;
+  if (jIds.length) {
+    const { data: lines } = await supabase
+      .from('fin_gl_journal_lines')
+      .select('debit, credit')
+      .in('journal_id', jIds)
+      .eq('account_code', bank_account);
+    glClosing = (lines || []).reduce((s, l) => s + (l.debit || 0) - (l.credit || 0), 0);
+  }
+
+  // Calculate outstanding items totals from provided items
+  const itemList = items || [];
+  const outDeposits = itemList.filter(i => i.item_type === 'OUTSTANDING_DEPOSIT').reduce((s, i) => s + Number(i.amount || 0), 0);
+  const outPayments = itemList.filter(i => i.item_type === 'OUTSTANDING_PAYMENT').reduce((s, i) => s + Number(i.amount || 0), 0);
+  const unrecReceipts = itemList.filter(i => i.item_type === 'UNRECORDED_RECEIPT').reduce((s, i) => s + Number(i.amount || 0), 0);
+  const unrecPayments = itemList.filter(i => i.item_type === 'UNRECORDED_PAYMENT').reduce((s, i) => s + Number(i.amount || 0), 0);
+
+  const adjBankBal = Number(bank_stmt_closing) + outDeposits - outPayments;
+  const adjGlBal   = glClosing + unrecReceipts - unrecPayments;
+  const difference = adjBankBal - adjGlBal;
+  const status     = Math.abs(difference) < 0.01 ? 'BALANCED' : 'DRAFT';
+
+  // Check if a recon already exists for this period/account
+  const { data: existing } = await supabase
+    .from('fin_cb_bank_recon')
+    .select('recon_id')
+    .eq('period_id', period_id)
+    .eq('bank_account', bank_account)
+    .single();
+
+  let recon;
+  const reconData = {
+    period_id, bank_account, recon_date,
+    bank_stmt_opening: Number(bank_stmt_opening || 0),
+    bank_stmt_closing: Number(bank_stmt_closing || 0),
+    gl_closing: glClosing,
+    outstanding_deposits: outDeposits,
+    outstanding_payments: outPayments,
+    unrecorded_receipts: unrecReceipts,
+    unrecorded_payments: unrecPayments,
+    adjusted_bank_balance: adjBankBal,
+    adjusted_gl_balance:   adjGlBal,
+    difference, status, notes: notes || null,
+    created_by: req.user.username,
+  };
+
+  if (existing?.recon_id) {
+    const { data: updated, error } = await supabase
+      .from('fin_cb_bank_recon')
+      .update(reconData)
+      .eq('recon_id', existing.recon_id)
+      .select().single();
+    if (error) return res.status(500).json({ error: error.message });
+    recon = updated;
+    // Delete old items and reinsert
+    await supabase.from('fin_cb_recon_items').delete().eq('recon_id', recon.recon_id);
+  } else {
+    const { data: created, error } = await supabase
+      .from('fin_cb_bank_recon')
+      .insert({ ...reconData, entity_id: 1 })
+      .select().single();
+    if (error) return res.status(500).json({ error: error.message });
+    recon = created;
+  }
+
+  // Insert recon items
+  if (itemList.length) {
+    await supabase.from('fin_cb_recon_items').insert(
+      itemList.map(i => ({
+        recon_id:         recon.recon_id,
+        item_type:        i.item_type,
+        description:      i.description,
+        amount:           Number(i.amount || 0),
+        transaction_date: i.transaction_date || null,
+        bank_reference:   i.bank_reference || null,
+        gl_journal_ref:   i.gl_journal_ref || null,
+        resolved:         false,
+      }))
+    );
+  }
+
+  res.json({ success: true, recon_id: recon.recon_id, status, difference, gl_closing: glClosing });
+});
+
+// PATCH /fin/cashbook/bank-recon/:id/lock — lock a balanced recon
+router.patch('/cashbook/bank-recon/:id/lock', requireFin, async (req, res) => {
+  const { data: recon } = await supabase
+    .from('fin_cb_bank_recon')
+    .select('status, difference')
+    .eq('recon_id', req.params.id)
+    .single();
+  if (!recon) return res.status(404).json({ error: 'Recon not found' });
+  if (recon.status === 'LOCKED') return res.status(400).json({ error: 'Already locked' });
+  if (Math.abs(recon.difference || 0) >= 0.01)
+    return res.status(400).json({ error: 'Cannot lock — recon is not balanced (difference ≠ 0)' });
+
+  const { data, error } = await supabase
+    .from('fin_cb_bank_recon')
+    .update({ status: 'LOCKED', locked_by: req.user.username, locked_at: new Date().toISOString() })
+    .eq('recon_id', req.params.id)
+    .select().single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ success: true, recon: data });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AP SUPPLIER INVOICES
+// GET  /fin/ap/invoices — list supplier invoices
+// POST /fin/ap/invoices — create supplier invoice (optionally from PO)
+// PATCH /fin/ap/invoices/:id — update invoice status
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/ap/invoices', requireFin, async (req, res) => {
+  const { supplier_code, status, period_id } = req.query;
+  let query = supabase
+    .from('fin_ap_invoices')
+    .select('*, fin_suppliers(supplier_name, payment_terms_days)')
+    .order('invoice_date', { ascending: false })
+    .limit(200);
+  if (supplier_code) query = query.eq('supplier_code', supplier_code);
+  if (status)        query = query.eq('status', status);
+  if (period_id)     query = query.eq('period_id', period_id);
+  const { data, error } = await query;
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data || []);
+});
+
+// GET /fin/ap/invoices/pending-pos — POs in PENDING_FINANCIAL awaiting invoice capture
+router.get('/ap/invoices/pending-pos', requireFin, async (req, res) => {
+  const { data, error } = await supabase
+    .from('lp_purchase_orders')
+    .select('po_id, po_number, supplier_code, supplier_name, po_description, total_incl_vat, subtotal_excl_vat, vat_amount, created_by, submitted_at, attachment_filename, onedrive_url')
+    .eq('status', 'PENDING_FINANCIAL')
+    .order('submitted_at');
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data || []);
+});
+
+router.post('/ap/invoices', requireFin, async (req, res) => {
+  const {
+    supplier_code, supplier_invoice_no, invoice_date, due_date,
+    period_id, subtotal_excl_vat, vat_amount, total_incl_vat,
+    document_ref, po_id,
+  } = req.body;
+
+  if (!supplier_code)    return res.status(400).json({ error: 'supplier_code is required' });
+  if (!invoice_date)     return res.status(400).json({ error: 'invoice_date is required' });
+  if (!period_id)        return res.status(400).json({ error: 'period_id is required' });
+  if (!total_incl_vat)   return res.status(400).json({ error: 'total_incl_vat is required' });
+
+  // Auto-generate invoice ref: API-YYYYMM-NNNNN
+  const datePart = invoice_date.replace(/-/g,'').slice(0,6);
+  const { count } = await supabase
+    .from('fin_ap_invoices')
+    .select('*', { count: 'exact', head: true })
+    .like('invoice_ref', `API-${datePart}-%`);
+  const seq         = String((count || 0) + 1).padStart(5, '0');
+  const invoice_ref = `API-${datePart}-${seq}`;
+
+  const { data: supplier } = await supabase
+    .from('fin_suppliers')
+    .select('payment_terms_days')
+    .eq('supplier_code', supplier_code)
+    .single();
+
+  const effectiveDueDate = due_date || (() => {
+    const d = new Date(invoice_date);
+    d.setDate(d.getDate() + (supplier?.payment_terms_days || 30));
+    return d.toISOString().slice(0,10);
+  })();
+
+  const { data: invoice, error } = await supabase
+    .from('fin_ap_invoices')
+    .insert({
+      invoice_ref,
+      supplier_code,
+      supplier_invoice_no: supplier_invoice_no || null,
+      invoice_date,
+      due_date:          effectiveDueDate,
+      period_id:         Number(period_id),
+      status:            'UNPOSTED',
+      subtotal_excl_vat: Number(subtotal_excl_vat || 0),
+      vat_amount:        Number(vat_amount || 0),
+      total_incl_vat:    Number(total_incl_vat),
+      amount_paid:       0,
+      balance_due:       Number(total_incl_vat),
+      document_ref:      document_ref || null,
+      entity_id:         1,
+    })
+    .select().single();
+
+  if (error) return res.status(500).json({ error: error.message });
+
+  // If linked to a PO — approve the PO and link the invoice
+  if (po_id) {
+    const now = new Date().toISOString();
+    await supabase
+      .from('lp_purchase_orders')
+      .update({
+        status:               'APPROVED',
+        financial_approver:   req.user.username,
+        financial_approved_at: now,
+        ap_invoice_ref:       invoice_ref,
+        ap_invoice_id:        invoice.invoice_id,
+        updated_at:           now,
+      })
+      .eq('po_id', po_id);
+
+    // Log the PO approval action
+    const { data: po } = await supabase
+      .from('lp_purchase_orders')
+      .select('po_number')
+      .eq('po_id', po_id)
+      .single();
+
+    if (po) {
+      await supabase.from('lp_po_approval_log').insert({
+        po_id,
+        po_number:   po.po_number,
+        action:      'FINANCIAL_APPROVED',
+        actioned_by: req.user.username,
+        from_status: 'PENDING_FINANCIAL',
+        to_status:   'APPROVED',
+        notes:       `Approved via supplier invoice capture — ${invoice_ref}`,
+      });
+    }
+  }
+
+  res.status(201).json(invoice);
+});
+
+router.patch('/ap/invoices/:id', requireFin, async (req, res) => {
+  const allowed = ['status','supplier_invoice_no','due_date','document_ref','amount_paid','balance_due'];
+  const updates = {};
+  allowed.forEach(k => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
+  if (!Object.keys(updates).length) return res.status(400).json({ error: 'No fields to update' });
+
+  const { data, error } = await supabase
+    .from('fin_ap_invoices')
+    .update(updates)
+    .eq('invoice_id', req.params.id)
+    .select().single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DEPRECIATION
+// GET  /fin/depreciation/preview?period_id=X — calculate per-asset depre
+// POST /fin/depreciation/run — create journal + update asset records
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/depreciation/preview', requireFin, async (req, res) => {
+  const { period_id } = req.query;
+  if (!period_id) return res.status(400).json({ error: 'period_id is required' });
+
+  // Check period exists and is open
+  const { data: period } = await supabase
+    .from('fin_periods')
+    .select('period_id, period_name, is_closed')
+    .eq('period_id', period_id)
+    .single();
+  if (!period) return res.status(404).json({ error: 'Period not found' });
+  if (period.is_closed) return res.status(400).json({ error: `Period ${period.period_name} is locked` });
+
+  // Check if already run for this period
+  const { data: existingRun } = await supabase
+    .from('fin_depreciation_runs')
+    .select('run_id')
+    .eq('period_id', period_id)
+    .limit(1);
+  if (existingRun?.length) {
+    return res.status(400).json({ error: `Depreciation has already been run for ${period.period_name}` });
+  }
+
+  // Get all active, not-fully-depreciated assets with their classes
+  const { data: assets, error: aErr } = await supabase
+    .from('fin_assets')
+    .select('*, fin_asset_classes(class_code, class_name, gl_cost_account, gl_accum_account, gl_depre_account, ifrs_useful_life_yr, sars_wt_rate_pct)')
+    .eq('is_active', true)
+    .eq('fully_depreciated', false);
+
+  if (aErr) return res.status(500).json({ error: aErr.message });
+
+  const lines = [];
+  for (const asset of (assets || [])) {
+    const cls = asset.fin_asset_classes;
+    if (!cls) continue;
+
+    const usefulLife = cls.ifrs_useful_life_yr || 5;
+    const cost       = Number(asset.purchase_price || 0);
+    const monthlyDepre = cost / usefulLife / 12;
+
+    // Don't depreciate below zero
+    const currentNBV   = Number(asset.book_nbv || 0);
+    const depreAmount  = Math.min(monthlyDepre, currentNBV);
+    if (depreAmount <= 0) continue;
+
+    const nbvAfter = currentNBV - depreAmount;
+
+    // SARS tax depreciation (W&T)
+    const sarsRate   = Number(cls.sars_wt_rate_pct || 20) / 100;
+    const taxMonthly = Number(asset.purchase_price || 0) * sarsRate / 12;
+    const currentTaxVal = Number(asset.tax_value || 0);
+    const taxDepreAmount = Math.min(taxMonthly, currentTaxVal);
+    const taxValAfter    = currentTaxVal - taxDepreAmount;
+
+    lines.push({
+      asset_id:         asset.asset_id,
+      asset_code:       asset.asset_code,
+      description:      asset.description,
+      class_code:       asset.class_code,
+      class_name:       cls.class_name,
+      gl_depre_account: cls.gl_depre_account,
+      gl_accum_account: cls.gl_accum_account,
+      purchase_price:   cost,
+      book_nbv_before:  currentNBV,
+      book_depre_amount: Math.round(depreAmount * 100) / 100,
+      book_nbv_after:   Math.round(nbvAfter * 100) / 100,
+      tax_depre_amount: Math.round(taxDepreAmount * 100) / 100,
+      tax_value_before: currentTaxVal,
+      tax_value_after:  Math.round(taxValAfter * 100) / 100,
+      fully_depreciated_after: nbvAfter < 0.01,
+    });
+  }
+
+  // Group by asset class for journal summary
+  const byClass = {};
+  for (const l of lines) {
+    if (!byClass[l.class_code]) {
+      byClass[l.class_code] = {
+        class_code: l.class_code, class_name: l.class_name,
+        gl_depre_account: l.gl_depre_account,
+        gl_accum_account: l.gl_accum_account,
+        total_depre: 0, asset_count: 0,
+      };
+    }
+    byClass[l.class_code].total_depre  += l.book_depre_amount;
+    byClass[l.class_code].asset_count  += 1;
+  }
+
+  const journalLines = [];
+  for (const cls of Object.values(byClass)) {
+    const amt = Math.round(cls.total_depre * 100) / 100;
+    // DR Depreciation expense
+    journalLines.push({ account_code: cls.gl_depre_account, description: `Depreciation — ${cls.class_name}`, debit: amt, credit: 0 });
+    // CR Accumulated depreciation
+    journalLines.push({ account_code: cls.gl_accum_account, description: `Accum depre — ${cls.class_name}`, debit: 0, credit: amt });
+  }
+
+  const totalDepre = lines.reduce((s, l) => s + l.book_depre_amount, 0);
+
+  res.json({
+    period_id:     Number(period_id),
+    period_name:   period.period_name,
+    asset_lines:   lines,
+    journal_lines: journalLines,
+    total_depre:   Math.round(totalDepre * 100) / 100,
+    asset_count:   lines.length,
+  });
+});
+
+router.post('/depreciation/run', requireFin, async (req, res) => {
+  const { period_id } = req.body;
+  if (!period_id) return res.status(400).json({ error: 'period_id is required' });
+
+  // Re-run preview to get fresh numbers
+  const previewRes = await fetch(
+    `${process.env.BACKEND_URL || 'http://localhost:3000'}/api/fin/depreciation/preview?period_id=${period_id}`,
+    { headers: { 'Authorization': req.headers.authorization } }
+  );
+  const preview = await previewRes.json();
+  if (preview.error) return res.status(400).json({ error: preview.error });
+  if (!preview.asset_lines?.length) return res.status(400).json({ error: 'No assets to depreciate' });
+
+  // Validate journal is balanced
+  const totalDR = preview.journal_lines.reduce((s, l) => s + (l.debit  || 0), 0);
+  const totalCR = preview.journal_lines.reduce((s, l) => s + (l.credit || 0), 0);
+  if (Math.abs(totalDR - totalCR) > 0.01) {
+    return res.status(500).json({ error: 'Depreciation journal does not balance — contact support' });
+  }
+
+  // Get period date for journal
+  const { data: period } = await supabase
+    .from('fin_periods')
+    .select('period_end, period_name')
+    .eq('period_id', period_id)
+    .single();
+
+  // Create depreciation journal
+  const datePart   = period.period_end.replace(/-/g,'').slice(0,6);
+  const { count }  = await supabase
+    .from('fin_gl_journals')
+    .select('*', { count: 'exact', head: true })
+    .like('journal_ref', `DA-${datePart}-%`);
+  const seq         = String((count || 0) + 1).padStart(5, '0');
+  const journal_ref = `DA-${datePart}-${seq}`;
+
+  const { data: journal, error: jErr } = await supabase
+    .from('fin_gl_journals')
+    .insert({
+      journal_ref,
+      journal_type:  'DA',
+      description:   `Depreciation — ${period.period_name}`,
+      period_id:     Number(period_id),
+      journal_date:  period.period_end,
+      source_module: 'ASSETS',
+      posted:        false, // Leave unposted — user reviews and posts manually
+      created_by:    req.user.username,
+    })
+    .select().single();
+
+  if (jErr) return res.status(500).json({ error: jErr.message });
+
+  await supabase.from('fin_gl_journal_lines').insert(
+    preview.journal_lines.map((l, i) => ({
+      journal_id:  journal.journal_id,
+      line_number: i + 1,
+      account_code: l.account_code,
+      description:  l.description,
+      debit:        l.debit || 0,
+      credit:       l.credit || 0,
+      vat_type:     null,
+      vat_amount:   0,
+    }))
+  );
+
+  // Update each asset and create depreciation run records
+  const runRecords = [];
+  for (const line of preview.asset_lines) {
+    await supabase.from('fin_assets').update({
+      book_depre_period:  line.book_depre_amount,
+      book_depre_curr_yr: supabase.rpc ? line.book_depre_amount : line.book_depre_amount, // will accumulate in future
+      book_nbv:           line.book_nbv_after,
+      tax_depre_period:   line.tax_depre_amount,
+      tax_value:          line.tax_value_after,
+      fully_depreciated:  line.fully_depreciated_after,
+      book_report_date:   period.period_end,
+    }).eq('asset_id', line.asset_id);
+
+    runRecords.push({
+      asset_id:          line.asset_id,
+      period_id:         Number(period_id),
+      run_date:          period.period_end,
+      book_depre_amount: line.book_depre_amount,
+      tax_depre_amount:  line.tax_depre_amount,
+      book_nbv_after:    line.book_nbv_after,
+      tax_value_after:   line.tax_value_after,
+      journal_id:        journal.journal_id,
+    });
+  }
+
+  await supabase.from('fin_depreciation_runs').insert(runRecords);
+
+  res.json({
+    success:       true,
+    journal_ref,
+    journal_id:    journal.journal_id,
+    assets_run:    preview.asset_lines.length,
+    total_depre:   preview.total_depre,
+    note:          'Journal created as UNPOSTED — review and post manually in GL Journals',
+  });
+});
+
+
 module.exports = router;
