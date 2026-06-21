@@ -20,6 +20,12 @@ export default function FinanceVAT() {
     setLoading(false);
   };
 
+  const doExport = () => {
+    const rows = vatTypes.map(v => ({ Code:v.vat_code, Description:v.description, Rate:v.rate_pct+'%', Direction:v.vat_direction, 'VAT201 Field':v.vat201_field||'', AR:v.allowed_on_ar?'✓':'', AP:v.allowed_on_ap?'✓':'', Capital:v.is_capital_goods?'✓':'' }));
+    const h=Object.keys(rows[0]); const csv=[h,...rows.map(r=>h.map(k=>`"${(r[k]??'').toString().replace(/"/g,'""')}"`))].map(r=>r.join(',')).join('\n');
+    const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);a.download='vat_types.csv';a.click();
+  };
+
   return (
     <div>
       <div className="stats-grid">
@@ -41,7 +47,12 @@ export default function FinanceVAT() {
           <table>
             <thead><tr><th>Code</th><th>Description</th><th>Rate</th><th>Direction</th><th>VAT201 Field</th><th>AR</th><th>AP</th><th>Capital</th></tr></thead>
             <tbody>
-              {loading && <tr><td colSpan={8}><div className="loading">Loading VAT types…</div></td></tr>}
+              {/* export bar */}
+          <tr><td colSpan={8} style={{background:'#f9fafb',padding:'4px 8px',textAlign:'right'}}>
+            <button className="btn btn-sm" style={{fontSize:11}} onClick={doExport}>⬇ CSV</button>
+            <button className="btn btn-sm" style={{fontSize:11,marginLeft:4}} onClick={()=>window.print()}>🖨 Print</button>
+          </td></tr>
+          {loading && <tr><td colSpan={8}><div className="loading">Loading VAT types…</div></td></tr>}
               {vatTypes.map(v => (
                 <tr key={v.vat_code}>
                   <td className="mono" style={{fontWeight:600}}>{v.vat_code}</td>
@@ -91,3 +102,4 @@ export default function FinanceVAT() {
     </div>
   );
 }
+
