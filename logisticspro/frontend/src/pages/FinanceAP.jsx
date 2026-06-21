@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../lib/AuthContext';
 
 const API   = `${import.meta.env.VITE_API_URL}/api`;
@@ -16,18 +16,180 @@ function exportCSV(rows, filename) {
   const a = document.createElement('a'); a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv); a.download = filename; a.click();
 }
 
-function ExportBar({ onCSV, onExcel, label }) {
+function ExportBar({ onCSV }) {
   return (
     <div style={{ display: 'flex', gap: 6, marginBottom: 10, justifyContent: 'flex-end' }}>
-      <button className="btn btn-sm" onClick={onCSV} title="Export CSV">⬇ CSV</button>
-      <button className="btn btn-sm" onClick={onExcel} title="Export Excel (CSV)">⬇ Excel</button>
-      <button className="btn btn-sm" onClick={() => window.print()} title="Print / PDF">🖨 Print</button>
+      <button className="btn btn-sm" onClick={onCSV}>⬇ CSV</button>
+      <button className="btn btn-sm" onClick={onCSV}>⬇ Excel</button>
+      <button className="btn btn-sm" onClick={() => window.print()}>🖨 Print</button>
     </div>
   );
 }
 
 const EMPTY_SUPPLIER = { supplier_code: '', supplier_name: '', vat_number: '', telephone: '', email: '', payment_terms_days: 30, gl_control_account: '2000', group_terms: '', city: '' };
 
+// ── SUPPLIER TRANSACTIONS ─────────────────────────────────────
+function SupplierTransactions({ suppliers }) {
+  const [rows, setRows]         = useState([]);
+  const [totals, setTotals]     = useState(null);
+  const [loading, setLoading]   = useState(false);
+  const [searched, setSearched] = useState(false);
+  const [suppFilter, setSupp]   = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo]     = useState('');
+
+  const search = useCallback(async () => {
+    setLoading(true);
+    setSearched(true);
+    const params = new URLSearchParams();
+    if (suppFilter) params.set('supplier_code', suppFilter);
+    if (dateFrom)   params.set('date_from', dateFrom);
+    if (dateTo)     params.set('date_to', dateTo);
+    const data = await req(`/fin/ap-transactions?${params.toString()}`);
+    setRows(data.transactions || []);
+    setTotals(data.totals || null);
+    setLoading(false);
+  }, [suppFilter, dateFrom, dateTo]);
+
+  const clear = () => { setSupp(''); setDateFrom(''); setDateTo(''); setRows([]); setTotals(null); setSearched(false); };
+
+  // Running balance (invoices add, payments subtract)
+  const rowsChron = [...rows].reverse();
+  let runBal = 0;
+  const rowsWithBal = rowsChron.map(r => {
+    runBal += r.debit - r.credit;
+    return { ...r, running_balance: runBal };
+  }).reverse();
+
+  const selectedSupplier = suppliers.find(s => s.supplier_code === suppFilter);
+
+  const doExport = () => {
+    if (!rows.length) return;
+    exportCSV(rows.map(r => ({
+      Date: r.tx_date, Ref: r.tx_ref, Type: r.tx_type,
+      Supplier: r.supplier_code, Description: r.description,
+      Debit: r.debit || 0, Credit: r.credit || 0,
+      Status: r.status, 'Due Date': r.due_date || '', 'Balance Due': r.balance_due || 0,
+    })), `ap_transactions${suppFilter ? '_' + suppFilter : ''}.csv`);
+  };
+
+  const STATUS_COLOR = { POSTED: 'badge-blue', PARTIAL: 'badge-amber', PAID: 'badge-green', DISPUTED: 'badge-red', CANCELLED: 'badge-gray', UNPOSTED: 'badge-gray', RECEIVED: 'badge-green' };
+
+  return (
+    <div>
+      {/* Filter panel */}
+      <div style={{ background: '#f8fafc', border: '1px solid #e8edf2', borderRadius: 8, padding: '14px 16px', marginBottom: 16 }}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <div style={{ flex: '1 1 240px' }}>
+            <label style={{ fontSize: 11, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>Supplier</label>
+            <select value={suppFilter} onChange={e => setSupp(e.target.value)} style={{ width: '100%' }}>
+              <option value="">— All suppliers —</option>
+              {suppliers.map(s => <option key={s.supplier_code} value={s.supplier_code}>{s.supplier_code} — {s.supplier_name}</option>)}
+            </select>
+          </div>
+          <div style={{ flex: '0 0 148px' }}>
+            <label style={{ fontSize: 11, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>Date From</label>
+            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={{ width: '100%' }} />
+          </div>
+          <div style={{ flex: '0 0 148px' }}>
+            <label style={{ fontSize: 11, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>Date To</label>
+            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} style={{ width: '100%' }} />
+          </div>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end', paddingBottom: 1 }}>
+            <button className="btn btn-primary btn-sm" onClick={search} disabled={loading}>{loading ? 'Loading…' : '🔍 Search'}</button>
+            {searched && <button className="btn btn-sm" onClick={clear}>Clear</button>}
+          </div>
+        </div>
+        {selectedSupplier && (
+          <div style={{ marginTop: 10, fontSize: 12, color: '#555' }}>
+            <strong>{selectedSupplier.supplier_code}</strong> — {selectedSupplier.supplier_name}
+            {selectedSupplier.payment_terms_days && <span style={{ marginLeft: 8, color: '#888' }}>Terms: {selectedSupplier.payment_terms_days} days</span>}
+          </div>
+        )}
+      </div>
+
+      {/* Totals */}
+      {totals && (
+        <div className="stats-grid" style={{ marginBottom: 12 }}>
+          <div className="stat-card"><div className="stat-label">Transactions</div><div className="stat-value" style={{ color: '#00AEEF' }}>{rows.length}</div></div>
+          <div className="stat-card"><div className="stat-label">Total Invoiced</div><div className="stat-value" style={{ fontSize: 14, color: '#e53e3e' }}>{fmt(totals.total_invoiced)}</div></div>
+          <div className="stat-card"><div className="stat-label">Total Paid</div><div className="stat-value" style={{ fontSize: 14, color: '#059669' }}>{fmt(totals.total_paid)}</div></div>
+          <div className="stat-card">
+            <div className="stat-label">Outstanding</div>
+            <div className="stat-value" style={{ fontSize: 14, color: totals.outstanding > 0 ? '#e53e3e' : '#059669' }}>{fmt(totals.outstanding)}</div>
+          </div>
+        </div>
+      )}
+
+      {rows.length > 0 && <ExportBar onCSV={doExport} />}
+
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Ref</th>
+              <th>Type</th>
+              {!suppFilter && <th>Supplier</th>}
+              <th>Description</th>
+              <th>Due Date</th>
+              <th style={{ textAlign: 'right' }}>Invoiced</th>
+              <th style={{ textAlign: 'right' }}>Paid</th>
+              {suppFilter && <th style={{ textAlign: 'right' }}>Running Bal</th>}
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading && <tr><td colSpan={suppFilter ? 9 : 9}><div className="loading">Loading transactions…</div></td></tr>}
+            {!loading && !searched && (
+              <tr><td colSpan={10}>
+                <div className="empty-state" style={{ padding: '32px 0' }}>
+                  <div style={{ fontSize: 32, marginBottom: 8 }}>🔍</div>
+                  <div>Select filters above and click <strong>Search</strong> to view supplier transactions.</div>
+                  <div style={{ fontSize: 12, color: '#aaa', marginTop: 4 }}>No supplier filter = all suppliers. No date filter = all dates.</div>
+                </div>
+              </td></tr>
+            )}
+            {!loading && searched && rows.length === 0 && (
+              <tr><td colSpan={10}><div className="empty-state">No transactions found for the selected filters.</div></td></tr>
+            )}
+            {!loading && rowsWithBal.map((r, idx) => (
+              <tr key={r.tx_ref + idx} style={{ background: idx % 2 === 0 ? 'white' : '#fafbfc' }}>
+                <td style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{r.tx_date}</td>
+                <td className="mono" style={{ fontWeight: 600, fontSize: 12 }}>{r.tx_ref}</td>
+                <td>
+                  <span className={`badge ${r.tx_type === 'INVOICE' ? 'badge-blue' : 'badge-green'}`} style={{ fontSize: 10 }}>
+                    {r.tx_type}
+                  </span>
+                </td>
+                {!suppFilter && <td className="mono" style={{ fontSize: 12 }}>{r.supplier_code}</td>}
+                <td style={{ fontSize: 12 }}>{r.description}</td>
+                <td style={{ fontSize: 12, color: r.due_date && r.balance_due > 0 && r.due_date < new Date().toISOString().slice(0, 10) ? '#e53e3e' : '#555' }}>
+                  {r.due_date || '—'}
+                </td>
+                <td style={{ textAlign: 'right', fontFamily: 'monospace', color: r.debit > 0 ? '#e53e3e' : '#ccc' }}>
+                  {r.debit > 0 ? fmt(r.debit) : '—'}
+                </td>
+                <td style={{ textAlign: 'right', fontFamily: 'monospace', color: r.credit > 0 ? '#059669' : '#ccc' }}>
+                  {r.credit > 0 ? fmt(r.credit) : '—'}
+                </td>
+                {suppFilter && (
+                  <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: r.running_balance > 0 ? '#e53e3e' : '#059669' }}>
+                    {fmt(Math.abs(r.running_balance))}
+                    <span style={{ fontSize: 10, fontWeight: 400, marginLeft: 3 }}>{r.running_balance > 0 ? 'OWE' : 'CR'}</span>
+                  </td>
+                )}
+                <td><span className={`badge ${STATUS_COLOR[r.status] || 'badge-gray'}`} style={{ fontSize: 10 }}>{r.status}</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ── MAIN AP PAGE ──────────────────────────────────────────────
 export default function FinanceAP() {
   const { user } = useAuth();
   const [tab, setTab]             = useState('aging');
@@ -41,20 +203,27 @@ export default function FinanceAP() {
   const [saving, setSaving]       = useState(false);
   const [toggling, setToggling]   = useState(null);
 
-  // Roles that can toggle workshop_allowed
   const canToggleWorkshop = ['ADMIN', 'FINANCE', 'WORKSHOP_MANAGER'].includes(user?.role);
 
-  useEffect(() => { load(); }, [tab]);
+  useEffect(() => {
+    // Always keep supplier list loaded (needed for Transactions tab dropdown)
+    loadSuppliers();
+  }, []);
 
-  const load = async () => {
+  useEffect(() => {
+    if (tab === 'aging') loadAging();
+  }, [tab]);
+
+  const loadSuppliers = async () => {
+    const data = await req('/fin/suppliers?active=true');
+    setSuppliers(Array.isArray(data) ? data : []);
+    setLoading(false);
+  };
+
+  const loadAging = async () => {
     setLoading(true);
-    if (tab === 'aging') {
-      const data = await req('/fin/aging/suppliers');
-      setAging(data);
-    } else {
-      const data = await req('/fin/suppliers?active=true');
-      setSuppliers(Array.isArray(data) ? data : []);
-    }
+    const data = await req('/fin/aging/suppliers');
+    setAging(data);
     setLoading(false);
   };
 
@@ -66,10 +235,9 @@ export default function FinanceAP() {
     try {
       const res = await req('/fin/suppliers', { method: 'POST', body: JSON.stringify(form) });
       if (res.error) throw new Error(res.error);
-      setShowAdd(false);
-      setForm(EMPTY_SUPPLIER);
+      setShowAdd(false); setForm(EMPTY_SUPPLIER);
+      loadSuppliers();
       setTab('suppliers');
-      load();
     } catch (e) { alert(e.message); }
     finally { setSaving(false); }
   };
@@ -79,7 +247,7 @@ export default function FinanceAP() {
     setToggling(s.supplier_code);
     await req(`/fin/suppliers/${s.supplier_code}/workshop`, { method: 'PATCH', body: JSON.stringify({ workshop_allowed: val }) });
     setToggling(null);
-    load();
+    loadSuppliers();
   };
 
   const tabStyle = (t) => ({
@@ -107,15 +275,19 @@ export default function FinanceAP() {
     'GL Account': s.gl_control_account, 'Workshop Allowed': s.workshop_allowed ? 'YES' : 'NO',
   })), 'suppliers.csv');
 
+  const STATUS_COLOR = { POSTED: 'badge-blue', PARTIAL: 'badge-amber', PAID: 'badge-green', DISPUTED: 'badge-red', CANCELLED: 'badge-gray', UNPOSTED: 'badge-gray' };
+
   return (
     <div>
       <div style={{ display: 'flex', borderBottom: '1px solid #e8edf2', marginBottom: 16, gap: 4, alignItems: 'center' }}>
-        <div style={tabStyle('aging')}     onClick={() => setTab('aging')}>Supplier Aging</div>
-        <div style={tabStyle('suppliers')} onClick={() => setTab('suppliers')}>Supplier Master ({suppliers.length || '…'})</div>
+        <div style={tabStyle('aging')}       onClick={() => setTab('aging')}>Supplier Aging</div>
+        <div style={tabStyle('suppliers')}   onClick={() => setTab('suppliers')}>Supplier Master ({suppliers.length || '…'})</div>
+        <div style={tabStyle('transactions')}onClick={() => setTab('transactions')}>Transactions</div>
         <div style={{ flex: 1 }} />
         <button className="btn btn-primary btn-sm" onClick={() => { setForm(EMPTY_SUPPLIER); setShowAdd(true); }}>+ New Supplier</button>
       </div>
 
+      {/* ── AGING TAB ── */}
       {tab === 'aging' && (
         <>
           {aging && (
@@ -129,7 +301,7 @@ export default function FinanceAP() {
               ))}
             </div>
           )}
-          <ExportBar onCSV={agingCSV} onExcel={agingCSV} />
+          <ExportBar onCSV={agingCSV} />
           <div className="table-wrap">
             <table>
               <thead><tr><th>Supplier</th><th>Invoice Ref</th><th>Supplier Inv #</th><th>Invoice Date</th><th>Due Date</th><th style={{ textAlign: 'right' }}>Amount</th><th style={{ textAlign: 'right' }}>Balance</th><th>Bucket</th></tr></thead>
@@ -154,12 +326,13 @@ export default function FinanceAP() {
         </>
       )}
 
+      {/* ── SUPPLIERS TAB ── */}
       {tab === 'suppliers' && (
         <>
           <div className="filter-bar">
             <input placeholder="Search supplier code or name…" value={search} onChange={e => setSearch(e.target.value)} />
           </div>
-          <ExportBar onCSV={suppliersCSV} onExcel={suppliersCSV} />
+          <ExportBar onCSV={suppliersCSV} />
           <div className="table-wrap">
             <table>
               <thead><tr><th>Code</th><th>Supplier Name</th><th>Group Terms</th><th>VAT Number</th><th>Telephone</th><th>Terms</th><th>GL Account</th><th style={{ textAlign: 'center' }}>Workshop</th></tr></thead>
@@ -182,7 +355,6 @@ export default function FinanceAP() {
                           style={{ fontSize: 10, padding: '2px 8px', opacity: toggling === s.supplier_code ? 0.5 : 1 }}
                           onClick={() => toggleWorkshop(s, !s.workshop_allowed)}
                           disabled={toggling === s.supplier_code}
-                          title={s.workshop_allowed ? 'Click to remove Workshop access' : 'Click to allow Workshop access'}
                         >
                           {s.workshop_allowed ? '✓ Workshop' : 'Allow'}
                         </button>
@@ -199,6 +371,9 @@ export default function FinanceAP() {
           </div>
         </>
       )}
+
+      {/* ── TRANSACTIONS TAB ── */}
+      {tab === 'transactions' && <SupplierTransactions suppliers={suppliers} />}
 
       {/* Supplier Detail Modal */}
       {selected && (
@@ -241,6 +416,10 @@ export default function FinanceAP() {
               </div>
             </div>
             <div className="modal-footer">
+              <button className="btn btn-sm" style={{ marginRight: 'auto' }}
+                onClick={() => { setSelected(null); setTab('transactions'); }}>
+                View Transactions →
+              </button>
               <button className="btn btn-primary" onClick={() => setSelected(null)}>Close</button>
             </div>
           </div>
@@ -261,8 +440,8 @@ export default function FinanceAP() {
                 <div className="form-group"><label>Supplier Name *</label><input value={form.supplier_name} onChange={e => set('supplier_name', e.target.value)} placeholder="Full supplier name" /></div>
               </div>
               <div className="form-row">
-                <div className="form-group"><label>VAT Number</label><input value={form.vat_number} onChange={e => set('vat_number', e.target.value)} placeholder="4xxxxxxxxx" /></div>
-                <div className="form-group"><label>Group Terms</label><input value={form.group_terms} onChange={e => set('group_terms', e.target.value)} placeholder="e.g. NET30" /></div>
+                <div className="form-group"><label>VAT Number</label><input value={form.vat_number} onChange={e => set('vat_number', e.target.value)} /></div>
+                <div className="form-group"><label>Group Terms</label><input value={form.group_terms} onChange={e => set('group_terms', e.target.value)} /></div>
                 <div className="form-group"><label>Payment Terms (days)</label><input type="number" value={form.payment_terms_days} onChange={e => set('payment_terms_days', e.target.value)} /></div>
               </div>
               <div className="form-row">
