@@ -366,16 +366,22 @@ export default function Users() {
   const [selectedApproval, setSelectedApproval] = useState(null);
   const [rejectionReason, setRejectionReason]   = useState('');
   const [actionSaving, setActionSaving]         = useState(false);
+  const [allRoles, setAllRoles]                 = useState([]);  // built-in + custom from API
 
   const load = async () => {
     setLoading(true);
     try {
-      const [usersRes, approvalsRes] = await Promise.all([
+      const [usersRes, approvalsRes, rolesRes] = await Promise.all([
         req('/users'),
         req('/auth/pending-users').catch(() => []),
+        rolesReq('').catch(() => ({ builtin: [], custom: [] })),
       ]);
       setData(Array.isArray(usersRes) ? usersRes : usersRes.data || []);
       setPendingApprovals(Array.isArray(approvalsRes) ? approvalsRes : []);
+      // Merge built-in + active custom roles for dropdowns
+      const builtin = rolesRes.builtin || [];
+      const custom  = (rolesRes.custom || []).filter(r => r.is_active);
+      setAllRoles([...builtin, ...custom]);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   };
@@ -462,7 +468,8 @@ export default function Users() {
           <div className="filter-bar">
             <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)}>
               <option value="">All Roles</option>
-              {Object.entries(ROLE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              {(allRoles.length > 0 ? allRoles : Object.entries(ROLE_LABELS).map(([k,v]) => ({role_key:k, role_label:v})))
+                .map(r => <option key={r.role_key} value={r.role_key}>{r.role_label}</option>)}
             </select>
             <select value={activeFilter} onChange={e => setActiveFilter(e.target.value)}>
               <option value="">All</option>
@@ -608,9 +615,9 @@ export default function Users() {
                     <div className="form-group">
                       <label>Role</label>
                       <select value={form.u_role} onChange={e => set('u_role', e.target.value)} disabled={!isAdmin && !!editId}>
-                        {Object.entries(ROLE_LABELS)
-                          .filter(([k]) => isAdmin || k !== ROLES.ADMIN)
-                          .map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                        {(allRoles.length > 0 ? allRoles : Object.entries(ROLE_LABELS).map(([k,v]) => ({role_key:k, role_label:v})))
+                          .filter(r => isAdmin || r.role_key !== ROLES.ADMIN)
+                          .map(r => <option key={r.role_key} value={r.role_key}>{r.role_label}</option>)}
                       </select>
                     </div>
                     <div className="form-group">
@@ -647,3 +654,4 @@ export default function Users() {
     </div>
   );
 }
+
