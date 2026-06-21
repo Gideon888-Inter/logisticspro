@@ -1317,6 +1317,7 @@ router.get('/asset-register', requireFin, async (req, res) => {
       purchase_price:     a.purchase_price,           // Cost
       depre_start_date:   a.depre_start_date,
       accumulated_depre:  Math.round((a.book_depre_total || 0) * 100) / 100,
+      curr_yr_depre:      Math.round((a.book_depre_curr_yr || 0) * 100) / 100,
       opening_depre_book: date_from ? Math.round((openingDepre[a.asset_id]?.book || 0) * 100) / 100 : null,
       opening_depre_tax:  date_from ? Math.round((openingDepre[a.asset_id]?.tax  || 0) * 100) / 100 : null,
       period_depre_book:  Math.round(pd.book * 100) / 100,
@@ -1339,12 +1340,13 @@ router.get('/asset-register', requireFin, async (req, res) => {
   const classSummary = {};
   rows.forEach(r => {
     if (!classSummary[r.class_code]) {
-      classSummary[r.class_code] = { class_code: r.class_code, class_name: r.class_name, count: 0, cost: 0, accum_depre: 0, opening_depre: 0, period_depre: 0, closing_depre: 0, book_nbv: 0 };
+      classSummary[r.class_code] = { class_code: r.class_code, class_name: r.class_name, count: 0, cost: 0, accum_depre: 0, curr_yr_depre: 0, opening_depre: 0, period_depre: 0, closing_depre: 0, book_nbv: 0 };
     }
     const cs = classSummary[r.class_code];
     cs.count         += 1;
     cs.cost          += r.purchase_price    || 0;
     cs.accum_depre   += r.accumulated_depre || 0;
+    cs.curr_yr_depre += r.curr_yr_depre     || 0;
     cs.opening_depre += r.opening_depre_book|| 0;
     cs.period_depre  += r.period_depre_book || 0;
     cs.closing_depre += r.closing_depre_book|| 0;
@@ -1355,6 +1357,7 @@ router.get('/asset-register', requireFin, async (req, res) => {
     count:         rows.length,
     total_cost:    Math.round(rows.reduce((s,r) => s + (r.purchase_price    || 0), 0) * 100) / 100,
     total_accum:   Math.round(rows.reduce((s,r) => s + (r.accumulated_depre || 0), 0) * 100) / 100,
+    total_curr_yr: Math.round(rows.reduce((s,r) => s + (r.curr_yr_depre      || 0), 0) * 100) / 100,
     total_opening: date_from ? Math.round(rows.reduce((s,r) => s + (r.opening_depre_book || 0), 0) * 100) / 100 : null,
     total_period:  Math.round(rows.reduce((s,r) => s + (r.period_depre_book || 0), 0) * 100) / 100,
     total_closing: date_from ? Math.round(rows.reduce((s,r) => s + (r.closing_depre_book || 0), 0) * 100) / 100 : null,
@@ -1367,6 +1370,7 @@ router.get('/asset-register', requireFin, async (req, res) => {
       ...cs,
       cost:         Math.round(cs.cost         * 100) / 100,
       accum_depre:  Math.round(cs.accum_depre  * 100) / 100,
+      curr_yr_depre:Math.round(cs.curr_yr_depre* 100) / 100,
       opening_depre:Math.round(cs.opening_depre* 100) / 100,
       period_depre: Math.round(cs.period_depre * 100) / 100,
       closing_depre:Math.round(cs.closing_depre* 100) / 100,
