@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../lib/AuthContext';
+import InvoicesTab from './Invoices';
 
 const API   = `${import.meta.env.VITE_API_URL}/api`;
 const token = () => localStorage.getItem('lp_token');
@@ -297,6 +298,7 @@ export default function FinanceAR() {
         <div style={tabStyle('aging')}       onClick={() => setTab('aging')}>Debtor Aging</div>
         <div style={tabStyle('customers')}   onClick={() => setTab('customers')}>Customer Master ({customers.length || '…'})</div>
         <div style={tabStyle('transactions')}onClick={() => setTab('transactions')}>Transactions</div>
+        <div style={tabStyle('invoices')}   onClick={() => setTab('invoices')}>Invoices</div>
         <div style={{ flex: 1 }} />
         <button className="btn btn-primary btn-sm" onClick={() => { setForm(EMPTY_CUSTOMER); setShowAdd(true); }}>+ New Customer</button>
       </div>
@@ -387,6 +389,7 @@ export default function FinanceAR() {
 
       {/* ── TRANSACTIONS TAB ── */}
       {tab === 'transactions' && <CustomerTransactions customers={customers} />}
+      {tab === 'invoices'      && <InvoicesTab />}
 
       {/* Customer Detail Modal */}
       {selected && (
@@ -475,3 +478,4 @@ export default function FinanceAR() {
     </div>
   );
 }
+
