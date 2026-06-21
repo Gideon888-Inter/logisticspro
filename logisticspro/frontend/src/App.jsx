@@ -5,7 +5,7 @@ import {
   canViewLoads, canViewFleet, canViewWorkshop, canViewRates,
   canManageClients, canManageDrivers, canManageUsers,
   canManageInvoices, canViewApprovals, canViewInventory,
-  canViewPOs, canManageRoles,
+  canViewPOs,
   ROLES,
 } from './lib/roles';
 import Login from './pages/Login';
@@ -18,11 +18,10 @@ import Clients from './pages/Clients';
 import Rates from './pages/Rates';
 import Users from './pages/Users';
 import Invoices from './pages/Invoices';
-import { Maintenance, Inventory as LegacyInventory } from './pages/Entities';
+import { Maintenance } from './pages/Entities';
 import ServiceCards from './pages/ServiceCards';
 import InventoryPage from './pages/Inventory';
 import PurchaseOrders from './pages/PurchaseOrders';
-import RoleManager from './pages/RoleManager';
 
 const MenuIcon = () => (
   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -57,19 +56,13 @@ function buildMenu(user) {
   menu.push({ key: '', label: 'Home', icon: '🏠' });
   if (canViewLoads(user))
     menu.push({ key: 'movement', label: 'Loads', icon: '🚛' });
-  if (canViewWorkshop(user))
+  if (canViewWorkshop(user) || canViewInventory(user))
     menu.push({ key: 'workshop', label: 'Workshop', icon: '🔧',
       sub: [
-        { key: 'workshop-service',     label: 'Service' },
-        { key: 'workshop-maintenance', label: 'Maintenance' },
-        { key: 'workshop-inventory',   label: 'Inventory' },
-      ]
-    });
-  if (canViewInventory(user))
-    menu.push({ key: 'stock', label: 'Stock', icon: '📦',
-      sub: [
-        { key: 'stock-items',  label: 'Inventory Items' },
-        { key: 'stock-pos',    label: 'Purchase Orders' },
+        ...(canViewPOs(user)        ? [{ key: 'workshop-pos',         label: 'Purchase Orders' }] : []),
+        ...(canViewWorkshop(user)   ? [{ key: 'workshop-service',     label: 'Service' }] : []),
+        ...(canViewWorkshop(user)   ? [{ key: 'workshop-maintenance', label: 'Maintenance' }] : []),
+        ...(canViewInventory(user)  ? [{ key: 'workshop-inventory',   label: 'Inventory' }] : []),
       ]
     });
   if (canViewApprovals(user))
@@ -96,8 +89,6 @@ function buildMenu(user) {
     menu.push({ key: 'invoices', label: 'Invoices', icon: '🧾' });
   if (canManageUsers(user))
     menu.push({ key: 'users', label: 'Users', icon: '👥' });
-  if (canManageRoles(user))
-    menu.push({ key: 'roles', label: 'Role Manager', icon: '🔑' });
   return menu;
 }
 
@@ -106,12 +97,11 @@ const PAGE_TITLES = {
   movement: 'Loads',
   vehicles: 'Fleet',
   'drivers-list': 'Drivers', 'drivers-leave': 'Driver Leave',
-  clients: 'Clients', 'workshop-service': 'Service Cards',
-  'workshop-maintenance': 'Maintenance', 'workshop-inventory': 'Inventory',
+  clients: 'Clients',
+  'workshop-service': 'Service Cards', 'workshop-maintenance': 'Maintenance',
+  'workshop-inventory': 'Inventory', 'workshop-pos': 'Purchase Orders',
   approvals: 'Approvals', 'rates-list': 'Client Rates', 'rates-routes': 'Routes',
   users: 'Users', invoices: 'Invoices',
-  'stock-items': 'Inventory Items', 'stock-pos': 'Purchase Orders',
-  roles: 'Role Manager',
 };
 
 const ReadOnlyHome = () => (
@@ -181,10 +171,8 @@ export default function App() {
       case 'drivers-list':        return canManageDrivers(user) ? <Drivers /> : <AccessDenied />;
       case 'workshop-service':    return canViewWorkshop(user) ? <ServiceCards /> : <AccessDenied />;
       case 'workshop-maintenance':return canViewWorkshop(user) ? <Maintenance /> : <AccessDenied />;
-      case 'workshop-inventory':  return canViewWorkshop(user) ? <LegacyInventory /> : <AccessDenied />;
-      case 'stock-items':         return canViewInventory(user) ? <InventoryPage /> : <AccessDenied />;
-      case 'stock-pos':           return canViewPOs(user) ? <PurchaseOrders /> : <AccessDenied />;
-      case 'roles':               return canManageRoles(user) ? <RoleManager /> : <AccessDenied />;
+      case 'workshop-inventory':  return canViewInventory(user) ? <InventoryPage /> : <AccessDenied />;
+      case 'workshop-pos':        return canViewPOs(user) ? <PurchaseOrders /> : <AccessDenied />;
       case 'rates-list':          return canViewRates(user) ? <Rates /> : <AccessDenied />;
       case 'clients':             return canManageClients(user) ? <Clients /> : <AccessDenied />;
       case 'users':               return canManageUsers(user) ? <Users /> : <AccessDenied />;
@@ -316,3 +304,4 @@ export default function App() {
     </div>
   );
 }
+
