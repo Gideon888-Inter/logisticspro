@@ -19,6 +19,12 @@ import Rates from './pages/Rates';
 import Users from './pages/Users';
 import Invoices from './pages/Invoices';
 import { Maintenance } from './pages/Entities';
+import FinanceGL      from './pages/FinanceGL';
+import FinanceAssets  from './pages/FinanceAssets';
+import FinanceAR      from './pages/FinanceAR';
+import FinanceAP      from './pages/FinanceAP';
+import FinanceVAT     from './pages/FinanceVAT';
+import FinancePeriods from './pages/FinancePeriods';
 import ServiceCards from './pages/ServiceCards';
 import InventoryPage from './pages/Inventory';
 import PurchaseOrders from './pages/PurchaseOrders';
@@ -89,13 +95,12 @@ function buildMenu(user) {
     menu.push({ key: 'finance', label: 'Finance', icon: '💰',
       sub: [
         { key: 'finance-invoices',  label: 'Invoices' },
-        { key: 'finance-gl',        label: 'GL Journals' },
+        { key: 'finance-gl',        label: 'GL / Chart of Accounts' },
         { key: 'finance-ar',        label: 'Accounts Receivable' },
         { key: 'finance-ap',        label: 'Accounts Payable' },
         { key: 'finance-assets',    label: 'Fixed Assets' },
-        { key: 'finance-cashbook',  label: 'Cashbook' },
         { key: 'finance-vat',       label: 'VAT Returns' },
-        { key: 'finance-reports',   label: 'Financial Reports' },
+        { key: 'finance-periods',   label: 'Period Management' },
       ]
     });
   if (canManageUsers(user))
@@ -113,10 +118,9 @@ const PAGE_TITLES = {
   'workshop-inventory': 'Inventory', 'workshop-pos': 'Purchase Orders',
   approvals: 'Approvals', 'rates-list': 'Client Rates', 'rates-routes': 'Routes',
   users: 'Users',
-  'finance-invoices': 'Invoices', 'finance-gl': 'GL Journals',
-  'finance-ar': 'Accounts Receivable', 'finance-ap': 'Accounts Payable',
-  'finance-assets': 'Fixed Assets', 'finance-cashbook': 'Cashbook',
-  'finance-vat': 'VAT Returns', 'finance-reports': 'Financial Reports',
+  'finance-invoices':'Invoices','finance-gl':'GL / Chart of Accounts',
+  'finance-ar':'Accounts Receivable','finance-ap':'Accounts Payable',
+  'finance-assets':'Fixed Assets','finance-vat':'VAT Returns','finance-periods':'Period Management',
 };
 
 const ReadOnlyHome = () => (
@@ -192,34 +196,12 @@ export default function App() {
       case 'clients':             return canManageClients(user) ? <Clients /> : <AccessDenied />;
       case 'users':               return canManageUsers(user) ? <Users /> : <AccessDenied />;
       case 'finance-invoices':     return canManageInvoices(user) ? <Invoices /> : <AccessDenied />;
-      case 'finance-gl':
-      case 'finance-ar':
-      case 'finance-ap':
-      case 'finance-assets':
-      case 'finance-cashbook':
-      case 'finance-vat':
-      case 'finance-reports': {
-        if (!canViewFinance(user)) return <AccessDenied />;
-        const finLabels = {
-          'finance-gl':      'GL Journals',      'finance-ar': 'Accounts Receivable',
-          'finance-ap':      'Accounts Payable', 'finance-assets': 'Fixed Assets',
-          'finance-cashbook':'Cashbook',          'finance-vat': 'VAT Returns',
-          'finance-reports': 'Financial Reports',
-        };
-        return (
-          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'50vh', gap:16, textAlign:'center' }}>
-            <div style={{ fontSize:48 }}>🏗️</div>
-            <div style={{ fontSize:20, fontWeight:700, color:'#005A8E' }}>{finLabels[page]}</div>
-            <div style={{ fontSize:13, color:'#666', maxWidth:420, lineHeight:1.7 }}>
-              The LP2.0 Financial Engine (Chart of Accounts, Fixed Assets, Depreciation, VAT, AR/AP, Cashbook)
-              has been built as a standalone Python system and is stored in the repository under
-              <code style={{ background:'#f5f7fa', padding:'2px 6px', borderRadius:4, margin:'0 4px' }}>logisticspro/financial/</code>.
-              <br /><br />
-              This module is being integrated into the web interface in the next development phase.
-            </div>
-          </div>
-        );
-      }
+      case 'finance-gl':      return canViewFinance(user) ? <FinanceGL /> : <AccessDenied />;
+      case 'finance-ar':      return canViewFinance(user) ? <FinanceAR /> : <AccessDenied />;
+      case 'finance-ap':      return canViewFinance(user) ? <FinanceAP /> : <AccessDenied />;
+      case 'finance-assets':  return canViewFinance(user) ? <FinanceAssets /> : <AccessDenied />;
+      case 'finance-vat':     return canViewFinance(user) ? <FinanceVAT /> : <AccessDenied />;
+      case 'finance-periods': return canViewFinance(user) ? <FinancePeriods user={user} /> : <AccessDenied />;
       case 'drivers-leave':
       case 'rates-routes': {
         const labels = { 'drivers-leave': 'Driver Leave', 'rates-routes': 'Routes' };
