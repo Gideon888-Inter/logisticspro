@@ -670,6 +670,371 @@ function GLJournals({ user }) {
   );
 }
 
+
+// ── INCOME STATEMENT ─────────────────────────────────────────
+function IncomeStatement() {
+  // Default to current FY: Mar 2026 → Feb 2027
+  const today = new Date();
+  const defaultFrom = '2026-03-01';
+  const defaultTo   = '2027-02-28';
+
+  const [dateFrom, setDateFrom] = useState(defaultFrom);
+  const [dateTo,   setDateTo]   = useState(defaultTo);
+  const [data,     setData]     = useState(null);
+  const [loading,  setLoading]  = useState(false);
+  const [error,    setError]    = useState('');
+  const [viewMode, setView]     = useState('monthly'); // 'monthly' | 'ytd'
+
+  const fmtN = (n) => {
+    if (n == null || n === 0) return '—';
+    return Number(n).toLocaleString('en-ZA', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  };
+  const fmtPct = (n, d) => {
+    if (!d || d === 0) return '—';
+    return `${((n / d) * 100).toFixed(1)}%`;
+  };
+  const varPct = (curr, prior) => {
+    if (!prior || prior === 0) return null;
+    return ((curr - prior) / Math.abs(prior)) * 100;
+  };
+
+  const load = async () => {
+    if (!dateFrom || !dateTo) return setError('Both dates are required');
+    setError(''); setLoading(true);
+    const params = new URLSearchParams({ date_from: dateFrom, date_to: dateTo });
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/fin/income-statement?${params}`, {
+      headers: { Authorization: 'Bearer ' + localStorage.getItem('lp_token') }
+    }).then(r => r.json());
+    setLoading(false);
+    if (res.error) return setError(res.error);
+    setData(res);
+  };
+
+  const exportCSV = () => {
+    if (!data) return;
+    const { periods, rows } = data;
+    const headers = ['Account', 'Name', 'Section', ...periods.map(p => p.period_name), 'YTD', 'Prior Year'];
+    const csvRows = rows.filter(r => r.ytd !== 0 || periods.some(p => r.period_data[p.period_id] !== 0)).map(r => [
+      r.account_code, r.account_name, r.category,
+      ...periods.map(p => r.period_data[p.period_id] || 0),
+      r.ytd, r.prior_year
+    ]);
+    const csv = [headers, ...csvRows].map(r => r.map(x => `"${String(x).replace(/"/g,'""')}"`).join(',')).join('\n');
+    const a = document.createElement('a');
+    a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+    a.download = `income_statement_${dateFrom}_${dateTo}.csv`;
+    a.click();
+  };
+
+  // Section definitions in order
+  const SECTIONS = [
+    { key: 'Income',       label: 'Revenue',            color: '#005A8E', headerBg: '#005A8E' },
+    { key: 'Cost of Sales',label: 'Cost of Sales',      color: '#e53e3e', headerBg: '#c53030' },
+    { key: 'Other Income', label: 'Other Income',       color: '#059669', headerBg: '#047857' },
+    { key: 'Expenses',     label: 'Other Expenses',     color: '#d97706', headerBg: '#b45309' },
+  ];
+
+  const getAccountsBySection = (cat) =>
+    (data?.rows || []).filter(r => r.category === cat);
+
+  const sectionTotal = (cat, periodId) =>
+    (data?.rows || []).filter(r => r.category === cat)
+      .reduce((s, r) => s + (periodId ? (r.period_data[periodId] || 0) : r.ytd), 0);
+
+  const sectionPrior = (cat) =>
+    (data?.rows || []).filter(r => r.category === cat)
+      .reduce((s, r) => s + (r.prior_year || 0), 0);
+
+  const periods = data?.periods || [];
+
+  // Compute GP and NP per period and YTD
+  const computeGP = (pidOrNull) => {
+    const rev = sectionTotal('Income', pidOrNull);
+    const cos = sectionTotal('Cost of Sales', pidOrNull);
+    return rev - cos;
+  };
+  const computeNP = (pidOrNull) => {
+    const gp   = computeGP(pidOrNull);
+    const oi   = sectionTotal('Other Income', pidOrNull);
+    const exp  = sectionTotal('Expenses', pidOrNull);
+    return gp + oi - exp;
+  };
+
+  const colW = viewMode === 'monthly' ? Math.max(90, Math.floor(600 / Math.max(periods.length, 1))) : 120;
+
+  const ValueCell = ({ value, bold, color, isPercent }) => (
+    <td style={{
+      textAlign: 'right', fontFamily: 'monospace', fontSize: 11,
+      padding: '3px 8px', whiteSpace: 'nowrap',
+      fontWeight: bold ? 700 : 400,
+      color: color || (value < 0 ? '#e53e3e' : value > 0 ? 'inherit' : '#ccc'),
+      minWidth: colW,
+    }}>
+      {isPercent
+        ? (value == null ? '—' : `${value.toFixed(1)}%`)
+        : fmtN(value)}
+    </td>
+  );
+
+  const SectionHeader = ({ label, bg }) => (
+    <tr>
+      <td colSpan={100} style={{ background: bg, color: 'white', fontWeight: 700, fontSize: 12, padding: '5px 10px', letterSpacing: 0.5 }}>
+        {label}
+      </td>
+    </tr>
+  );
+
+  const TotalRow = ({ label, getPeriodVal, ytdVal, priorVal, bold, bg, color, isGP }) => (
+    <tr style={{ background: bg || '#eef4fb', fontWeight: bold ? 700 : 600, borderTop: '2px solid #ccd9e8' }}>
+      <td style={{ padding: '5px 10px', fontSize: 12, fontWeight: bold ? 700 : 600, color: color }}>{label}</td>
+      <td style={{ padding: '5px 8px', fontSize: 11, color: '#888' }}></td>
+      {viewMode === 'monthly' && periods.map(p => {
+        const v = getPeriodVal(p.period_id);
+        return <ValueCell key={p.period_id} value={v} bold={bold} color={v < 0 ? '#e53e3e' : color} />;
+      })}
+      <ValueCell value={ytdVal} bold={bold} color={ytdVal < 0 ? '#e53e3e' : color} />
+      <ValueCell value={priorVal} bold={bold} color={priorVal < 0 ? '#e53e3e' : color} />
+      {isGP && (
+        <>
+          <ValueCell value={ytdVal && sectionTotal('Income', null) ? (ytdVal / sectionTotal('Income', null)) * 100 : 0} bold={bold} color="#005A8E" isPercent />
+          <ValueCell value={priorVal && sectionPrior('Income') ? (priorVal / sectionPrior('Income')) * 100 : 0} color="#888" isPercent />
+        </>
+      )}
+    </tr>
+  );
+
+  const VarRow = ({ numerator, denominator, priorNum, priorDen }) => {
+    const curr = denominator !== 0 ? (numerator / denominator) * 100 : 0;
+    const prior = priorDen !== 0 ? (priorNum / priorDen) * 100 : 0;
+    return (
+      <tr style={{ background: '#f5f7fa' }}>
+        <td style={{ padding: '2px 10px', fontSize: 10, color: '#888', fontStyle: 'italic' }}>% of Revenue</td>
+        <td></td>
+        {viewMode === 'monthly' && periods.map(p => {
+          const rev = sectionTotal('Income', p.period_id);
+          const num = numerator === 'gp'
+            ? computeGP(p.period_id)
+            : numerator === 'np'
+            ? computeNP(p.period_id)
+            : sectionTotal(numerator, p.period_id);
+          const pct = rev !== 0 ? (num / rev) * 100 : 0;
+          return (
+            <td key={p.period_id} style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 10, padding: '2px 8px', color: pct < 0 ? '#e53e3e' : '#059669' }}>
+              {rev !== 0 ? `${pct.toFixed(1)}%` : '—'}
+            </td>
+          );
+        })}
+        <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 10, padding: '2px 8px', color: curr < 0 ? '#e53e3e' : '#059669' }}>
+          {denominator !== 0 ? `${curr.toFixed(1)}%` : '—'}
+        </td>
+        <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 10, padding: '2px 8px', color: '#888' }}>
+          {priorDen !== 0 ? `${prior.toFixed(1)}%` : '—'}
+        </td>
+      </tr>
+    );
+  };
+
+  return (
+    <div>
+      {/* Filter bar */}
+      <div style={{ background: '#f8fafc', border: '1px solid #e8edf2', borderRadius: 8, padding: '12px 16px', marginBottom: 16 }}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>Period From</label>
+            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={{ width: 148 }} />
+          </div>
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>Period To</label>
+            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} style={{ width: 148 }} />
+          </div>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end', paddingBottom: 1 }}>
+            <button className="btn btn-primary btn-sm" onClick={load} disabled={loading}>{loading ? 'Loading…' : '🔍 Generate'}</button>
+            {data && <button className="btn btn-sm" onClick={exportCSV}>⬇ CSV</button>}
+            {data && <button className="btn btn-sm" onClick={() => window.print()}>🖨 Print</button>}
+          </div>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end', marginLeft: 'auto', paddingBottom: 1 }}>
+            <button className={`btn btn-sm ${viewMode === 'monthly' ? 'btn-primary' : ''}`} style={{ fontSize: 11 }} onClick={() => setView('monthly')}>Monthly</button>
+            <button className={`btn btn-sm ${viewMode === 'ytd' ? 'btn-primary' : ''}`} style={{ fontSize: 11 }} onClick={() => setView('ytd')}>YTD Only</button>
+          </div>
+        </div>
+        {error && <div style={{ color: '#e53e3e', fontSize: 13, marginTop: 8 }}>⚠ {error}</div>}
+      </div>
+
+      {!data && !loading && (
+        <div className="empty-state" style={{ padding: '40px 0' }}>
+          <div style={{ fontSize: 32, marginBottom: 8 }}>📊</div>
+          <div>Set the period dates and click <strong>Generate</strong> to build the Income Statement.</div>
+        </div>
+      )}
+
+      {data && (
+        <div style={{ overflowX: 'auto' }}>
+          {/* Report header */}
+          <div style={{ textAlign: 'center', marginBottom: 12 }}>
+            <div style={{ fontWeight: 700, fontSize: 15, color: '#005A8E' }}>Statement of Comprehensive Income</div>
+            <div style={{ fontSize: 12, color: '#555' }}>Interland Distribution Cape (Pty) Ltd</div>
+            <div style={{ fontSize: 11, color: '#888' }}>Period: {dateFrom} to {dateTo}</div>
+          </div>
+
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr style={{ background: '#005A8E', color: 'white' }}>
+                <th style={{ textAlign: 'left', padding: '6px 10px', minWidth: 220 }}>Account</th>
+                <th style={{ textAlign: 'left', padding: '6px 8px', minWidth: 180 }}>Name</th>
+                {viewMode === 'monthly' && periods.map(p => (
+                  <th key={p.period_id} style={{ textAlign: 'right', padding: '6px 8px', minWidth: colW, whiteSpace: 'nowrap', fontSize: 11 }}>
+                    {p.period_name}
+                  </th>
+                ))}
+                <th style={{ textAlign: 'right', padding: '6px 8px', minWidth: colW, background: '#003d6b' }}>YTD</th>
+                <th style={{ textAlign: 'right', padding: '6px 8px', minWidth: colW, background: '#2d6a9f', fontSize: 10 }}>Prior Year</th>
+              </tr>
+            </thead>
+            <tbody>
+              {SECTIONS.map(section => {
+                const sectionRows = getAccountsBySection(section.key).filter(r =>
+                  r.ytd !== 0 || periods.some(p => r.period_data[p.period_id] !== 0)
+                );
+                const ytdTotal   = sectionTotal(section.key, null);
+                const priorTotal = sectionPrior(section.key);
+
+                return [
+                  <SectionHeader key={`h_${section.key}`} label={section.label} bg={section.headerBg} />,
+                  ...sectionRows.map((r, i) => (
+                    <tr key={r.account_code} style={{ background: i % 2 === 0 ? 'white' : '#fafbfc' }}>
+                      <td style={{ padding: '3px 10px', paddingLeft: r.is_sub_account ? 24 : 10, fontFamily: 'monospace', fontSize: 11, color: '#666' }}>
+                        {r.account_code}
+                      </td>
+                      <td style={{ padding: '3px 8px', fontSize: 11 }}>{r.account_name}</td>
+                      {viewMode === 'monthly' && periods.map(p => (
+                        <ValueCell key={p.period_id} value={r.period_data[p.period_id] || 0} />
+                      ))}
+                      <ValueCell value={r.ytd} color={r.ytd < 0 ? '#e53e3e' : undefined} />
+                      <ValueCell value={r.prior_year} color="#888" />
+                    </tr>
+                  )),
+                  <TotalRow
+                    key={`t_${section.key}`}
+                    label={`Total ${section.label}`}
+                    getPeriodVal={(pid) => sectionTotal(section.key, pid)}
+                    ytdVal={ytdTotal}
+                    priorVal={priorTotal}
+                    bold
+                    color={section.color}
+                  />,
+                  // After Revenue: no GP line yet
+                  // After Cost of Sales: show Gross Profit
+                  ...(section.key === 'Cost of Sales' ? [
+                    <tr key="gp_spacer" style={{ height: 4, background: '#f0f0f0' }}><td colSpan={100} /></tr>,
+                    <tr key="gp_row" style={{ background: '#e8f4ff', fontWeight: 700, borderTop: '2px solid #005A8E', borderBottom: '2px solid #005A8E' }}>
+                      <td style={{ padding: '6px 10px', fontSize: 13, fontWeight: 700, color: '#005A8E' }}>GROSS PROFIT</td>
+                      <td></td>
+                      {viewMode === 'monthly' && periods.map(p => {
+                        const gp = computeGP(p.period_id);
+                        return <ValueCell key={p.period_id} value={gp} bold color={gp < 0 ? '#e53e3e' : '#005A8E'} />;
+                      })}
+                      <ValueCell value={computeGP(null)} bold color={computeGP(null) < 0 ? '#e53e3e' : '#005A8E'} />
+                      <ValueCell value={computeGP(null) !== 0 ? sectionPrior('Income') - sectionPrior('Cost of Sales') : 0} bold color="#2d6a9f" />
+                    </tr>,
+                    <tr key="gp_pct" style={{ background: '#f0f7ff' }}>
+                      <td style={{ padding: '2px 10px', fontSize: 10, color: '#888', fontStyle: 'italic' }}>GP %</td>
+                      <td></td>
+                      {viewMode === 'monthly' && periods.map(p => {
+                        const rev = sectionTotal('Income', p.period_id);
+                        const gp  = computeGP(p.period_id);
+                        const pct = rev !== 0 ? (gp / rev) * 100 : 0;
+                        return (
+                          <td key={p.period_id} style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 10, padding: '2px 8px', color: '#005A8E' }}>
+                            {rev !== 0 ? `${pct.toFixed(1)}%` : '—'}
+                          </td>
+                        );
+                      })}
+                      {(() => {
+                        const rev = sectionTotal('Income', null);
+                        const gp  = computeGP(null);
+                        const priorRev = sectionPrior('Income');
+                        const priorGP  = sectionPrior('Income') - sectionPrior('Cost of Sales');
+                        return <>
+                          <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 10, padding: '2px 8px', color: '#005A8E', fontWeight: 700 }}>
+                            {rev !== 0 ? `${((gp/rev)*100).toFixed(1)}%` : '—'}
+                          </td>
+                          <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 10, padding: '2px 8px', color: '#888' }}>
+                            {priorRev !== 0 ? `${((priorGP/priorRev)*100).toFixed(1)}%` : '—'}
+                          </td>
+                        </>;
+                      })()}
+                    </tr>,
+                    <tr key="gp_spacer2" style={{ height: 4, background: '#f0f0f0' }}><td colSpan={100} /></tr>,
+                  ] : []),
+                ];
+              })}
+
+              {/* Net Profit */}
+              <tr style={{ height: 6, background: '#f0f0f0' }}><td colSpan={100} /></tr>
+              <tr style={{ background: '#003d6b', color: 'white', fontWeight: 700 }}>
+                <td style={{ padding: '8px 10px', fontSize: 14, fontWeight: 700 }}>NET PROFIT / (LOSS)</td>
+                <td></td>
+                {viewMode === 'monthly' && periods.map(p => {
+                  const np = computeNP(p.period_id);
+                  return (
+                    <td key={p.period_id} style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 12, padding: '8px', fontWeight: 700, color: np < 0 ? '#fca5a5' : '#86efac', minWidth: colW }}>
+                      {fmtN(np)}
+                    </td>
+                  );
+                })}
+                {(() => {
+                  const np = computeNP(null);
+                  const priorNP = (sectionPrior('Income') - sectionPrior('Cost of Sales') + sectionPrior('Other Income') - sectionPrior('Expenses'));
+                  return <>
+                    <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 12, padding: '8px', fontWeight: 700, color: np < 0 ? '#fca5a5' : '#86efac', minWidth: colW }}>
+                      {fmtN(np)}
+                    </td>
+                    <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 11, padding: '8px', color: '#9ca3af', minWidth: colW }}>
+                      {fmtN(priorNP)}
+                    </td>
+                  </>;
+                })()}
+              </tr>
+              {/* NP % row */}
+              {(() => {
+                const rev = sectionTotal('Income', null);
+                const np  = computeNP(null);
+                const priorRev = sectionPrior('Income');
+                const priorNP  = sectionPrior('Income') - sectionPrior('Cost of Sales') + sectionPrior('Other Income') - sectionPrior('Expenses');
+                return (
+                  <tr style={{ background: '#1a3a5c' }}>
+                    <td style={{ padding: '2px 10px', fontSize: 10, color: '#94a3b8', fontStyle: 'italic' }}>NP %</td>
+                    <td></td>
+                    {viewMode === 'monthly' && periods.map(p => {
+                      const pRev = sectionTotal('Income', p.period_id);
+                      const pNP  = computeNP(p.period_id);
+                      return (
+                        <td key={p.period_id} style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 10, padding: '2px 8px', color: pNP < 0 ? '#fca5a5' : '#86efac' }}>
+                          {pRev !== 0 ? `${((pNP/pRev)*100).toFixed(1)}%` : '—'}
+                        </td>
+                      );
+                    })}
+                    <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 10, padding: '2px 8px', color: np < 0 ? '#fca5a5' : '#86efac', fontWeight: 700 }}>
+                      {rev !== 0 ? `${((np/rev)*100).toFixed(1)}%` : '—'}
+                    </td>
+                    <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 10, padding: '2px 8px', color: '#94a3b8' }}>
+                      {priorRev !== 0 ? `${((priorNP/priorRev)*100).toFixed(1)}%` : '—'}
+                    </td>
+                  </tr>
+                );
+              })()}
+            </tbody>
+          </table>
+
+          <div style={{ fontSize: 10, color: '#aaa', marginTop: 8, textAlign: 'right' }}>
+            Generated by LogisticsPro LP2.0 · {new Date().toLocaleDateString('en-ZA')} · Prior year: {data.prior_date_from} to {data.prior_date_to}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── MAIN FINANCE GL PAGE ──────────────────────────────────────
 export default function FinanceGL() {
   const { user } = useAuth();
@@ -688,11 +1053,13 @@ export default function FinanceGL() {
         <div style={tabStyle('tb')}       onClick={() => setTab('tb')}>Trial Balance</div>
         <div style={tabStyle('ledger')}   onClick={() => setTab('ledger')}>Account Transactions</div>
         <div style={tabStyle('journals')} onClick={() => setTab('journals')}>GL Journals</div>
+        <div style={tabStyle('is')}       onClick={() => setTab('is')}>Income Statement</div>
       </div>
       {tab === 'coa'      && <ChartOfAccounts />}
       {tab === 'tb'       && <TrialBalance />}
       {tab === 'ledger'   && <AccountTransactions />}
       {tab === 'journals' && <GLJournals user={user} />}
+      {tab === 'is'       && <IncomeStatement />}
     </div>
   );
 }
