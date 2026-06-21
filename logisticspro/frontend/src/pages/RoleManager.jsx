@@ -23,7 +23,7 @@ const BUILTIN_ROLE_KEYS = new Set([
 ]);
 
 function apiFetch(path, token, opts = {}) {
-  return fetch(`${API}/roles${path}`, {
+  return fetch(`${API}/api/roles${path}`, {
     ...opts,
     headers: {
       'Content-Type': 'application/json',
@@ -478,3 +478,4 @@ export default function RoleManager() {
     </div>
   );
 }
+
