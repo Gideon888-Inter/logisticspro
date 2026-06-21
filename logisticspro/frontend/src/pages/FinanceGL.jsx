@@ -15,37 +15,61 @@ function exportCSV(rows, filename) {
   const a = document.createElement('a'); a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv); a.download = filename; a.click();
 }
 
-const EMPTY_ACCOUNT = { account_code: '', account_name: '', category: 'EXPENSES', account_type: 'DETAIL', vat_treatment: 'NONE', allowed_vat_codes: '', is_sub_account: false, parent_account: '' };
-const fmt = (n) => n == null ? '—' : `R ${Number(n).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const fmt     = (n) => n == null ? '—' : `R ${Number(n).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const fmtDate = (d) => { if (!d) return '—'; const dt = new Date(d); return dt.toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }); };
 
-// ── CHART OF ACCOUNTS ────────────────────────────────────────
+const EMPTY_ACCOUNT = {
+  account_code: '', account_name: '', category: 'Expenses',
+  ifrs_classification: 'Income Statement', account_type: 'DETAIL',
+  vat_treatment: 'NONE', allowed_vat_codes: '', is_sub_account: false,
+  parent_code: '', allow_journals: true, active: true, notes: '',
+};
+
+// ── CHART OF ACCOUNTS ──────────────────────────────────────────────────────
 function ChartOfAccounts() {
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading]   = useState(true);
   const [search, setSearch]     = useState('');
   const [catFilter, setCat]     = useState('');
   const [showAdd, setShowAdd]   = useState(false);
+  const [editAcct, setEditAcct] = useState(null);
   const [form, setForm]         = useState(EMPTY_ACCOUNT);
   const [saving, setSaving]     = useState(false);
 
   useEffect(() => { load(); }, []);
-
   const load = async () => {
     setLoading(true);
     const data = await req('/fin/accounts');
     setAccounts(Array.isArray(data) ? data : []);
     setLoading(false);
   };
-
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const openEdit = (a) => {
+    setEditAcct(a);
+    setForm({
+      account_code: a.account_code, account_name: a.account_name,
+      category: a.category, ifrs_classification: a.ifrs_classification || 'Income Statement',
+      account_type: a.account_type, vat_treatment: a.vat_treatment || 'NONE',
+      allowed_vat_codes: a.allowed_vat_codes || '', is_sub_account: a.is_sub_account || false,
+      parent_code: a.parent_code || '', allow_journals: a.allow_journals !== false,
+      active: a.active !== false, notes: a.notes || '',
+    });
+    setShowAdd(true);
+  };
 
   const saveAccount = async () => {
     if (!form.account_code.trim() || !form.account_name.trim()) return alert('Account Code and Name are required');
     setSaving(true);
     try {
-      const res = await req('/fin/accounts', { method: 'POST', body: JSON.stringify(form) });
+      let res;
+      if (editAcct) {
+        res = await req(`/fin/accounts/${editAcct.account_id}`, { method: 'PATCH', body: JSON.stringify(form) });
+      } else {
+        res = await req('/fin/accounts', { method: 'POST', body: JSON.stringify(form) });
+      }
       if (res.error) throw new Error(res.error);
-      setShowAdd(false); setForm(EMPTY_ACCOUNT); load();
+      setShowAdd(false); setEditAcct(null); setForm(EMPTY_ACCOUNT); load();
     } catch (e) { alert(e.message); }
     finally { setSaving(false); }
   };
@@ -58,11 +82,16 @@ function ChartOfAccounts() {
   );
 
   const doExportCSV = () => exportCSV(filtered.map(a => ({
-    Code: a.account_code, Name: a.account_name, Category: a.category, Type: a.account_type,
+    Code: a.account_code, Name: a.account_name, Category: a.category,
+    'IFRS Class': a.ifrs_classification || '', Type: a.account_type,
     'VAT Treatment': a.vat_treatment, 'VAT Codes': a.allowed_vat_codes || '', Active: a.active ? 'YES' : 'NO',
   })), 'gl_accounts.csv');
 
   const VAT_BADGE = { OUTPUT: 'badge-green', INPUT: 'badge-blue', CAPITAL: 'badge-amber', BOTH: 'badge-purple', NONE: 'badge-gray' };
+  const CATS = ['Income','Cost of Sales','Other Income','Expenses','Income Tax',
+                'Owners Equity','Current Assets','Non-Current Assets',
+                'Current Liabilities','Non-Current Liabilities'];
+  const IFRS_CLASSES = ['Income Statement','Balance Sheet','Equity Statement'];
 
   return (
     <div>
@@ -78,76 +107,97 @@ function ChartOfAccounts() {
           <option value="">All Categories</option>
           {cats.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
-        <button className="btn btn-primary btn-sm" onClick={() => { setForm(EMPTY_ACCOUNT); setShowAdd(true); }}>+ New Account</button>
-      </div>
-      <div style={{ display: 'flex', gap: 6, marginBottom: 10, justifyContent: 'flex-end' }}>
-        <button className="btn btn-sm" onClick={doExportCSV}>⬇ CSV</button>
-        <button className="btn btn-sm" onClick={doExportCSV}>⬇ Excel</button>
-        <button className="btn btn-sm" onClick={() => window.print()}>🖨 Print</button>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+          <button className="btn btn-sm" onClick={doExportCSV}>⬇ CSV</button>
+          <button className="btn btn-sm" onClick={() => window.print()}>🖨 Print</button>
+          <button className="btn btn-primary btn-sm" onClick={() => { setEditAcct(null); setForm(EMPTY_ACCOUNT); setShowAdd(true); }}>+ New Account</button>
+        </div>
       </div>
       <div className="table-wrap">
         <table>
-          <thead><tr><th>Code</th><th>Account Name</th><th>Category</th><th>Type</th><th>VAT Treatment</th><th>Allowed VAT Codes</th></tr></thead>
+          <thead><tr><th>Code</th><th>Account Name</th><th>Category</th><th>IFRS Class</th><th>Type</th><th>VAT</th><th style={{ width: 40 }}></th></tr></thead>
           <tbody>
-            {loading && <tr><td colSpan={6}><div className="loading">Loading accounts…</div></td></tr>}
-            {!loading && filtered.length === 0 && <tr><td colSpan={6}><div className="empty-state">No accounts found</div></td></tr>}
+            {loading && <tr><td colSpan={7}><div className="loading">Loading accounts…</div></td></tr>}
+            {!loading && filtered.length === 0 && <tr><td colSpan={7}><div className="empty-state">No accounts found</div></td></tr>}
             {!loading && filtered.map(a => (
-              <tr key={a.account_id} style={{ opacity: a.active ? 1 : 0.5 }}>
+              <tr key={a.account_id} style={{ opacity: a.active ? 1 : 0.45 }}>
                 <td className="mono" style={{ fontWeight: 600, paddingLeft: a.is_sub_account ? 24 : 8 }}>{a.account_code}</td>
                 <td style={{ fontWeight: a.is_sub_account ? 400 : 600 }}>{a.account_name}</td>
                 <td style={{ fontSize: 12, color: '#666' }}>{a.category}</td>
+                <td style={{ fontSize: 11, color: '#888' }}>{a.ifrs_classification || '—'}</td>
                 <td style={{ fontSize: 12 }}>{a.account_type}</td>
                 <td><span className={`badge ${VAT_BADGE[a.vat_treatment] || 'badge-gray'}`} style={{ fontSize: 10 }}>{a.vat_treatment}</span></td>
-                <td style={{ fontSize: 11, color: '#888' }}>{a.allowed_vat_codes || '—'}</td>
+                <td>
+                  <button onClick={() => openEdit(a)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#005A8E', fontSize: 14 }} title="Edit account">✏️</button>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
       {showAdd && (
-        <div className="modal-overlay" onClick={() => setShowAdd(false)}>
-          <div className="modal" style={{ maxWidth: 540 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-overlay" onClick={() => { setShowAdd(false); setEditAcct(null); }}>
+          <div className="modal" style={{ maxWidth: 600 }} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>New GL Account</h3>
-              <button onClick={() => setShowAdd(false)} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', fontSize: 18 }}>✕</button>
+              <h3>{editAcct ? `Edit Account — ${editAcct.account_code}` : 'New GL Account'}</h3>
+              <button onClick={() => { setShowAdd(false); setEditAcct(null); }} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', fontSize: 18 }}>✕</button>
             </div>
             <div className="modal-body">
               <div className="form-row">
-                <div className="form-group"><label>Account Code *</label><input value={form.account_code} onChange={e => set('account_code', e.target.value.toUpperCase())} placeholder="e.g. 6100" /></div>
-                <div className="form-group"><label>Account Name *</label><input value={form.account_name} onChange={e => set('account_name', e.target.value)} placeholder="Full account name" /></div>
+                <div className="form-group"><label>Account Code *</label><input value={form.account_code} onChange={e => set('account_code', e.target.value.toUpperCase())} /></div>
+                <div className="form-group"><label>Account Name *</label><input value={form.account_name} onChange={e => set('account_name', e.target.value)} /></div>
               </div>
               <div className="form-row">
                 <div className="form-group"><label>Category</label>
                   <select value={form.category} onChange={e => set('category', e.target.value)}>
-                    {['ASSETS', 'LIABILITIES', 'EQUITY', 'INCOME', 'EXPENSES', 'COST_OF_SALES'].map(c => <option key={c} value={c}>{c}</option>)}
+                    {CATS.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
-                <div className="form-group"><label>Account Type</label>
-                  <select value={form.account_type} onChange={e => set('account_type', e.target.value)}>
-                    <option value="DETAIL">DETAIL</option>
-                    <option value="CONTROL">CONTROL</option>
-                    <option value="HEADER">HEADER</option>
-                  </select>
-                </div>
-                <div className="form-group"><label>VAT Treatment</label>
-                  <select value={form.vat_treatment} onChange={e => set('vat_treatment', e.target.value)}>
-                    {['NONE', 'INPUT', 'OUTPUT', 'CAPITAL', 'BOTH'].map(v => <option key={v} value={v}>{v}</option>)}
+                <div className="form-group"><label>IFRS Classification</label>
+                  <select value={form.ifrs_classification} onChange={e => set('ifrs_classification', e.target.value)}>
+                    {IFRS_CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
               </div>
               <div className="form-row">
-                <div className="form-group"><label>Allowed VAT Codes</label><input value={form.allowed_vat_codes} onChange={e => set('allowed_vat_codes', e.target.value)} placeholder="e.g. S1,Z1" /></div>
-                <div className="form-group"><label>Parent Account</label><input value={form.parent_account} onChange={e => set('parent_account', e.target.value)} placeholder="e.g. 6000" /></div>
+                <div className="form-group"><label>Account Type</label>
+                  <select value={form.account_type} onChange={e => set('account_type', e.target.value)}>
+                    <option value="DETAIL">DETAIL</option><option value="CONTROL">CONTROL</option><option value="HEADER">HEADER</option>
+                  </select>
+                </div>
+                <div className="form-group"><label>VAT Treatment</label>
+                  <select value={form.vat_treatment} onChange={e => set('vat_treatment', e.target.value)}>
+                    {['NONE','INPUT','OUTPUT','CAPITAL','BOTH'].map(v => <option key={v} value={v}>{v}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group"><label>Allowed VAT Codes</label><input value={form.allowed_vat_codes} onChange={e => set('allowed_vat_codes', e.target.value)} placeholder="e.g. IN_STD,IN_ZERO" /></div>
+                <div className="form-group"><label>Parent Account Code</label><input value={form.parent_code} onChange={e => set('parent_code', e.target.value)} placeholder="e.g. 6000" /></div>
+              </div>
+              <div className="form-row">
                 <div className="form-group"><label>Sub-Account?</label>
                   <select value={form.is_sub_account ? 'true' : 'false'} onChange={e => set('is_sub_account', e.target.value === 'true')}>
                     <option value="false">No</option><option value="true">Yes</option>
                   </select>
                 </div>
+                <div className="form-group"><label>Allow Journals?</label>
+                  <select value={form.allow_journals ? 'true' : 'false'} onChange={e => set('allow_journals', e.target.value === 'true')}>
+                    <option value="true">Yes</option><option value="false">No</option>
+                  </select>
+                </div>
+                <div className="form-group"><label>Active?</label>
+                  <select value={form.active ? 'true' : 'false'} onChange={e => set('active', e.target.value === 'true')}>
+                    <option value="true">Yes</option><option value="false">No</option>
+                  </select>
+                </div>
               </div>
+              <div className="form-group"><label>Notes</label><textarea value={form.notes} onChange={e => set('notes', e.target.value)} rows={2} /></div>
             </div>
             <div className="modal-footer">
-              <button className="btn" onClick={() => setShowAdd(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={saveAccount} disabled={saving}>{saving ? 'Saving…' : 'Create Account'}</button>
+              <button className="btn" onClick={() => { setShowAdd(false); setEditAcct(null); }}>Cancel</button>
+              <button className="btn btn-primary" onClick={saveAccount} disabled={saving}>{saving ? 'Saving…' : (editAcct ? 'Save Changes' : 'Create Account')}</button>
             </div>
           </div>
         </div>
@@ -156,7 +206,6 @@ function ChartOfAccounts() {
   );
 }
 
-// ── TRIAL BALANCE ─────────────────────────────────────────────
 function TrialBalance() {
   const [data, setData]       = useState(null);
   const [loading, setLoading] = useState(true);
@@ -436,18 +485,32 @@ function AccountTransactions() {
 }
 
 // ── GL JOURNALS ───────────────────────────────────────────────
+
+// ── GL JOURNALS ────────────────────────────────────────────────────────────
+// New line shape: date, journalRef (display), description, module (AR/AP/GL),
+// account (filtered by module), debit, credit, vatApplicable, vatType, vatAmount
 function GLJournals({ user }) {
-  const isAdmin = user?.role === 'ADMIN';
-  const [journals, setJournals]   = useState([]);
-  const [loading, setLoading]     = useState(true);
-  const [selected, setSelected]   = useState(null);
-  const [detail, setDetail]       = useState(null);
-  const [showNew, setShowNew]     = useState(false);
-  const [periods, setPeriods]     = useState([]);
-  const [accounts, setAccounts]   = useState([]);
-  const [form, setForm]           = useState({ journal_type: 'GL', description: '', period_id: '', journal_date: new Date().toISOString().slice(0, 10), lines: [] });
-  const [saving, setSaving]       = useState(false);
-  const [saveErr, setSaveErr]     = useState('');
+  const isAdmin  = user?.role === 'ADMIN' || user?.role === 'FINANCE';
+  const [journals,  setJournals]  = useState([]);
+  const [loading,   setLoading]   = useState(true);
+  const [selected,  setSelected]  = useState(null);
+  const [detail,    setDetail]    = useState(null);
+  const [showNew,   setShowNew]   = useState(false);
+  const [periods,   setPeriods]   = useState([]);
+  const [glAccounts,setGlAccounts]= useState([]);  // fin_gl_accounts
+  const [customers, setCustomers] = useState([]);  // fin_ar_customers
+  const [suppliers, setSuppliers] = useState([]);  // fin_suppliers
+  const [vatTypes,  setVatTypes]  = useState([]);
+  const [saving,    setSaving]    = useState(false);
+  const [saveErr,   setSaveErr]   = useState('');
+
+  // Journal header
+  const today = new Date().toISOString().slice(0,10);
+  const [hdr, setHdr] = useState({ description: '', period_id: '', journal_date: today });
+
+  // Journal lines — each line is a full sub-ledger entry
+  const EMPTY_LINE = { date: today, description: '', module: 'GL', account_code: '', debit: '', credit: '', vatApplicable: false, vat_type: '', vat_amount: '0' };
+  const [lines, setLines] = useState([{ ...EMPTY_LINE }, { ...EMPTY_LINE }]);
 
   useEffect(() => { load(); loadSupport(); }, []);
 
@@ -459,9 +522,21 @@ function GLJournals({ user }) {
   };
 
   const loadSupport = async () => {
-    const [pRes, aRes] = await Promise.all([req('/fin/periods'), req('/fin/accounts')]);
-    setPeriods(Array.isArray(pRes) ? pRes.filter(p => !p.is_closed) : []);
-    setAccounts(Array.isArray(aRes) ? aRes.filter(a => a.active && a.allow_journals) : []);
+    const [pRes, aRes, cRes, sRes, vRes] = await Promise.all([
+      req('/fin/periods'),
+      req('/fin/accounts'),
+      req('/fin/ar-customers'),
+      req('/fin/suppliers'),
+      req('/fin/vat-types'),
+    ]);
+    const openPeriods = Array.isArray(pRes) ? pRes.filter(p => !p.is_closed) : [];
+    setPeriods(openPeriods);
+    if (openPeriods.length) setHdr(h => ({ ...h, period_id: String(openPeriods[openPeriods.length - 1].period_id) }));
+    // GL accounts: exclude control accounts (account_type === 'CONTROL') from direct posting
+    setGlAccounts(Array.isArray(aRes) ? aRes.filter(a => a.active && a.allow_journals && a.account_type !== 'CONTROL') : []);
+    setCustomers(Array.isArray(cRes) ? cRes.filter(c => c.active) : []);
+    setSuppliers(Array.isArray(sRes) ? sRes.filter(s => s.active) : []);
+    setVatTypes(Array.isArray(vRes) ? vRes.filter(v => v.active) : []);
   };
 
   const openDetail = async (j) => {
@@ -470,119 +545,164 @@ function GLJournals({ user }) {
     setDetail(data);
   };
 
-  const addLine = () => setForm(f => ({
-    ...f, lines: [...f.lines, { account_code: '', description: '', debit: '', credit: '', vat_type: '', vat_amount: '0' }]
-  }));
-
-  const setLine = (i, k, v) => setForm(f => {
-    const lines = [...f.lines];
-    lines[i] = { ...lines[i], [k]: v };
-    if (k === 'debit' || k === 'credit') {
-      const amt = parseFloat(v) || 0;
-      if (lines[i].vat_type && lines[i].vat_type !== 'NONE') {
-        lines[i].vat_amount = (amt * 15 / 115).toFixed(2);
+  // When a line's module changes, clear the account
+  const setLine = (i, k, v) => {
+    setLines(prev => {
+      const next = prev.map((l, idx) => idx !== i ? l : { ...l, [k]: v });
+      const line = next[i];
+      // Auto-copy date and description from the line above
+      if (k === 'module') next[i].account_code = '';
+      // Recalculate VAT amount when debit/credit changes
+      if ((k === 'debit' || k === 'credit') && line.vatApplicable && line.vat_type) {
+        const amt = parseFloat(v) || 0;
+        next[i].vat_amount = (amt * 15 / 115).toFixed(2);
       }
-    }
-    return { ...f, lines };
-  });
+      if (k === 'vatApplicable' && !v) { next[i].vat_type = ''; next[i].vat_amount = '0'; }
+      return next;
+    });
+  };
 
-  const totalDR  = form.lines.reduce((s, l) => s + (parseFloat(l.debit)  || 0), 0);
-  const totalCR  = form.lines.reduce((s, l) => s + (parseFloat(l.credit) || 0), 0);
-  const balanced = Math.abs(totalDR - totalCR) < 0.01;
+  const addLine = () => {
+    setLines(prev => {
+      const last = prev[prev.length - 1];
+      return [...prev, { ...EMPTY_LINE, date: last.date || hdr.journal_date, description: last.description }];
+    });
+  };
+
+  const removeLine = (i) => {
+    if (lines.length <= 2) return;
+    setLines(prev => prev.filter((_, idx) => idx !== i));
+  };
+
+  const totalDR  = lines.reduce((s, l) => s + (parseFloat(l.debit)  || 0), 0);
+  const totalCR  = lines.reduce((s, l) => s + (parseFloat(l.credit) || 0), 0);
+  const balanced = Math.abs(totalDR - totalCR) < 0.01 && totalDR > 0;
+
+  // Build the account dropdown options based on module selection
+  const accountOptions = (module) => {
+    if (module === 'AR') return customers.map(c => ({ value: c.customer_code, label: `${c.customer_code} — ${c.customer_name}` }));
+    if (module === 'AP') return suppliers.map(s => ({ value: s.supplier_code, label: `${s.supplier_code} — ${s.supplier_name}` }));
+    return glAccounts.map(a => ({ value: a.account_code, label: `${a.account_code} — ${a.account_name}` }));
+  };
 
   const save = async () => {
     setSaveErr('');
-    if (!form.description.trim()) return setSaveErr('Description is required');
-    if (!form.period_id)          return setSaveErr('Period is required');
-    if (form.lines.length < 2)    return setSaveErr('At least 2 lines required');
-    if (!balanced)                return setSaveErr(`Not balanced — DR: ${totalDR.toFixed(2)}, CR: ${totalCR.toFixed(2)}`);
+    if (!hdr.description.trim()) return setSaveErr('Journal description is required');
+    if (!hdr.period_id)           return setSaveErr('Period is required');
+    if (!hdr.journal_date)        return setSaveErr('Date is required');
+    if (lines.length < 2)         return setSaveErr('At least 2 lines required');
+    for (let i = 0; i < lines.length; i++) {
+      if (!lines[i].account_code) return setSaveErr(`Line ${i + 1}: account is required`);
+      if (!lines[i].debit && !lines[i].credit) return setSaveErr(`Line ${i + 1}: debit or credit amount required`);
+    }
+    if (!balanced) return setSaveErr(`Journal not balanced — DR: ${fmt(totalDR)}, CR: ${fmt(totalCR)}`);
     setSaving(true);
-    const result = await req('/fin/journals', { method: 'POST', body: JSON.stringify(form) });
+
+    // Map lines to the API format
+    const apiLines = lines.map(l => ({
+      account_code: l.account_code,
+      description:  l.description || hdr.description,
+      debit:        parseFloat(l.debit)  || 0,
+      credit:       parseFloat(l.credit) || 0,
+      vat_type:     l.vatApplicable && l.vat_type ? l.vat_type : null,
+      vat_amount:   l.vatApplicable ? (parseFloat(l.vat_amount) || 0) : 0,
+      // Store module on the line as a reference field
+      reference:    l.module !== 'GL' ? l.module : null,
+    }));
+
+    const result = await req('/fin/journals', {
+      method: 'POST',
+      body: JSON.stringify({ ...hdr, lines: apiLines, journal_type: 'GL' }),
+    });
     setSaving(false);
     if (result.error) return setSaveErr(result.error);
     setShowNew(false);
-    setForm({ journal_type: 'GL', description: '', period_id: '', journal_date: new Date().toISOString().slice(0, 10), lines: [] });
+    setHdr({ description: '', period_id: periods.length ? String(periods[periods.length - 1].period_id) : '', journal_date: today });
+    setLines([{ ...EMPTY_LINE }, { ...EMPTY_LINE }]);
     load();
   };
+
+  const MOD_COLOR = { GL: 'badge-blue', AR: 'badge-green', AP: 'badge-amber' };
 
   return (
     <div>
       <div className="filter-bar">
         <span style={{ fontWeight: 600, fontSize: 14 }}>{journals.length} journals</span>
-        {isAdmin && <button className="btn btn-primary btn-sm" onClick={() => setShowNew(true)}>+ New Journal</button>}
+        {isAdmin && (
+          <button className="btn btn-primary btn-sm" onClick={() => { setSaveErr(''); setShowNew(true); }}>
+            + New Journal
+          </button>
+        )}
       </div>
+
+      {/* Journal list */}
       <div className="table-wrap">
         <table>
-          <thead><tr><th>Ref</th><th>Date</th><th>Type</th><th>Description</th><th style={{ textAlign: 'right' }}>Amount</th><th style={{ textAlign: 'center' }}>Posted</th></tr></thead>
+          <thead>
+            <tr>
+              <th>Journal Ref</th><th>Date</th><th>Description</th>
+              <th style={{ textAlign: 'right' }}>Amount</th><th style={{ textAlign: 'center' }}>Posted</th>
+            </tr>
+          </thead>
           <tbody>
-            {loading && <tr><td colSpan={6}><div className="loading">Loading journals…</div></td></tr>}
-            {!loading && journals.length === 0 && <tr><td colSpan={6}><div className="empty-state">No journals posted yet</div></td></tr>}
+            {loading && <tr><td colSpan={5}><div className="loading">Loading journals…</div></td></tr>}
+            {!loading && journals.length === 0 && <tr><td colSpan={5}><div className="empty-state">No journals yet</div></td></tr>}
             {!loading && journals.map(j => (
-              <tr key={j.journal_id} onClick={() => openDetail(j)} style={{ cursor: 'pointer' }}>
-                <td className="mono" style={{ fontWeight: 600 }}>{j.journal_ref}</td>
-                <td>{j.journal_date}</td>
-                <td><span className="badge badge-blue" style={{ fontSize: 10 }}>{j.journal_type}</span></td>
-                <td>{j.description}</td>
-                <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>—</td>
-                <td style={{ textAlign: 'center' }}><span className={`badge ${j.posted ? 'badge-green' : 'badge-amber'}`} style={{ fontSize: 10 }}>{j.posted ? 'Posted' : 'Draft'}</span></td>
+              <tr key={j.journal_id} onClick={() => openDetail(j)} style={{ cursor: 'pointer' }}
+                  className={selected?.journal_id === j.journal_id ? 'row-selected' : ''}>
+                <td className="mono" style={{ fontWeight: 700, color: '#005A8E' }}>{j.journal_ref}</td>
+                <td style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{fmtDate(j.journal_date)}</td>
+                <td style={{ fontSize: 13 }}>{j.description}</td>
+                <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 13 }}>
+                  {fmt(j.total_debit || 0)}
+                </td>
+                <td style={{ textAlign: 'center' }}>
+                  <span className={`badge ${j.posted ? 'badge-green' : 'badge-amber'}`} style={{ fontSize: 10 }}>
+                    {j.posted ? 'Posted' : 'Draft'}
+                  </span>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
 
-      {/* Journal Detail Modal */}
-      {selected && (
-        <div className="modal-overlay" onClick={() => { setSelected(null); setDetail(null); }}>
-          <div className="modal" style={{ maxWidth: 680 }} onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>{selected.journal_ref}</h3>
-              <button onClick={() => { setSelected(null); setDetail(null); }} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', fontSize: 18 }}>✕</button>
+      {/* Journal detail panel */}
+      {selected && detail && (
+        <div style={{ marginTop: 16, background: '#f8fafc', border: '1px solid #e8edf2', borderRadius: 8, padding: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+            <div>
+              <span style={{ fontWeight: 700, fontSize: 15, color: '#005A8E', marginRight: 12 }}>{selected.journal_ref}</span>
+              <span style={{ fontSize: 13, color: '#555' }}>{fmtDate(selected.journal_date)}</span>
+              <span style={{ marginLeft: 12, fontSize: 13 }}>{selected.description}</span>
             </div>
-            <div className="modal-body">
-              {!detail && <div className="loading">Loading…</div>}
-              {detail && (
-                <>
-                  <div className="form-row">
-                    <div className="form-group"><label>Date</label><div>{detail.journal_date}</div></div>
-                    <div className="form-group"><label>Type</label><span className="badge badge-blue">{detail.journal_type}</span></div>
-                    <div className="form-group"><label>Status</label><span className={`badge ${detail.posted ? 'badge-green' : 'badge-amber'}`}>{detail.posted ? 'Posted' : 'Draft'}</span></div>
-                  </div>
-                  <div className="form-group"><label>Description</label><div>{detail.description}</div></div>
-                  <div style={{ marginTop: 12 }}>
-                    <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
-                      <thead><tr style={{ background: '#005A8E', color: 'white' }}>
-                        <th style={{ padding: '6px 8px', textAlign: 'left' }}>Account</th>
-                        <th style={{ padding: '6px 8px', textAlign: 'left' }}>Description</th>
-                        <th style={{ padding: '6px 8px', textAlign: 'right' }}>Debit</th>
-                        <th style={{ padding: '6px 8px', textAlign: 'right' }}>Credit</th>
-                      </tr></thead>
-                      <tbody>
-                        {(detail.lines || []).map(l => (
-                          <tr key={l.line_id} style={{ borderBottom: '1px solid #f0f0f0' }}>
-                            <td className="mono" style={{ padding: '5px 8px', fontWeight: 600 }}>{l.account_code}</td>
-                            <td style={{ padding: '5px 8px' }}>{l.description}</td>
-                            <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: 'monospace' }}>{l.debit > 0 ? fmt(l.debit) : ''}</td>
-                            <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: 'monospace' }}>{l.credit > 0 ? fmt(l.credit) : ''}</td>
-                          </tr>
-                        ))}
-                        <tr style={{ fontWeight: 700, background: '#f5f7fa' }}>
-                          <td colSpan={2} style={{ padding: '6px 8px' }}>Totals</td>
-                          <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'monospace' }}>{fmt(detail.total_debit)}</td>
-                          <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'monospace' }}>{fmt(detail.total_credit)}</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                  <div style={{ marginTop: 8, fontSize: 12, color: detail.balanced ? '#059669' : '#e53e3e' }}>
-                    {detail.balanced ? '✓ Balanced' : '✗ NOT BALANCED'}
-                  </div>
-                </>
-              )}
-            </div>
-            <div className="modal-footer">
-              <button className="btn btn-primary" onClick={() => { setSelected(null); setDetail(null); }}>Close</button>
-            </div>
+            <button onClick={() => { setSelected(null); setDetail(null); }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: '#888' }}>✕</button>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>#</th><th>Account</th><th>Description</th><th>Ref</th><th style={{ textAlign: 'right' }}>Debit</th><th style={{ textAlign: 'right' }}>Credit</th><th>VAT</th></tr></thead>
+              <tbody>
+                {(detail.lines || []).map((l, i) => (
+                  <tr key={l.line_id || i}>
+                    <td style={{ fontSize: 12, color: '#888' }}>{l.line_number}</td>
+                    <td className="mono" style={{ fontWeight: 600 }}>{l.account_code}</td>
+                    <td style={{ fontSize: 13 }}>{l.description}</td>
+                    <td style={{ fontSize: 11, color: '#888' }}>
+                      {l.reference ? <span className={`badge ${MOD_COLOR[l.reference] || 'badge-gray'}`} style={{ fontSize: 10 }}>{l.reference}</span> : '—'}
+                    </td>
+                    <td style={{ textAlign: 'right', fontFamily: 'monospace', color: '#005A8E' }}>{l.debit > 0 ? fmt(l.debit) : '—'}</td>
+                    <td style={{ textAlign: 'right', fontFamily: 'monospace', color: '#e53e3e' }}>{l.credit > 0 ? fmt(l.credit) : '—'}</td>
+                    <td style={{ fontSize: 11 }}>{l.vat_type ? <span className="badge badge-blue" style={{ fontSize: 10 }}>{l.vat_type}</span> : '—'}</td>
+                  </tr>
+                ))}
+                <tr style={{ background: '#eef2f7', fontWeight: 700 }}>
+                  <td colSpan={4} style={{ textAlign: 'right', fontSize: 12 }}>TOTALS</td>
+                  <td style={{ textAlign: 'right', fontFamily: 'monospace', color: '#005A8E' }}>{fmt((detail.lines || []).reduce((s, l) => s + (l.debit || 0), 0))}</td>
+                  <td style={{ textAlign: 'right', fontFamily: 'monospace', color: '#e53e3e' }}>{fmt((detail.lines || []).reduce((s, l) => s + (l.credit || 0), 0))}</td>
+                  <td></td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
       )}
@@ -590,77 +710,160 @@ function GLJournals({ user }) {
       {/* New Journal Modal */}
       {showNew && (
         <div className="modal-overlay" onClick={() => setShowNew(false)}>
-          <div className="modal" style={{ maxWidth: 720 }} onClick={e => e.stopPropagation()}>
+          <div className="modal" style={{ maxWidth: 960, width: '95vw' }} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h3>New GL Journal</h3>
               <button onClick={() => setShowNew(false)} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', fontSize: 18 }}>✕</button>
             </div>
-            <div className="modal-body">
-              {saveErr && <div style={{ background: '#fff5f5', border: '1px solid #fca5a5', borderRadius: 4, padding: '8px 12px', marginBottom: 12, color: '#e53e3e', fontSize: 13 }}>⚠ {saveErr}</div>}
-              <div className="form-row">
-                <div className="form-group"><label>Journal Type</label>
-                  <select value={form.journal_type} onChange={e => setForm(f => ({ ...f, journal_type: e.target.value }))}>
-                    {['GL', 'AP_INV', 'AR_INV', 'FA_PUR', 'FA_DISP', 'YE'].map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
+            <div className="modal-body" style={{ maxHeight: '75vh', overflowY: 'auto' }}>
+
+              {/* Journal Header */}
+              <div className="form-row" style={{ marginBottom: 12 }}>
+                <div className="form-group" style={{ flex: 2 }}>
+                  <label>Journal Description *</label>
+                  <input value={hdr.description} onChange={e => setHdr(h => ({ ...h, description: e.target.value }))} placeholder="e.g. Monthly accruals — June 2026" />
                 </div>
-                <div className="form-group"><label>Period *</label>
-                  <select value={form.period_id} onChange={e => setForm(f => ({ ...f, period_id: e.target.value }))}>
-                    <option value="">— Select period —</option>
+                <div className="form-group">
+                  <label>Period *</label>
+                  <select value={hdr.period_id} onChange={e => setHdr(h => ({ ...h, period_id: e.target.value }))}>
+                    <option value="">— Select —</option>
                     {periods.map(p => <option key={p.period_id} value={p.period_id}>{p.period_name}</option>)}
                   </select>
                 </div>
-                <div className="form-group"><label>Journal Date *</label>
-                  <input type="date" value={form.journal_date} onChange={e => setForm(f => ({ ...f, journal_date: e.target.value }))} />
+                <div className="form-group">
+                  <label>Journal Date *</label>
+                  <input type="date" value={hdr.journal_date} onChange={e => setHdr(h => ({ ...h, journal_date: e.target.value }))} />
                 </div>
               </div>
-              <div className="form-group"><label>Description *</label>
-                <input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="e.g. Feb 2026 depreciation journal" />
-              </div>
-              <div style={{ marginTop: 12 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <label style={{ fontWeight: 600 }}>Journal Lines</label>
-                  <button className="btn btn-sm" onClick={addLine}>+ Add Line</button>
-                </div>
+
+              {/* Line Entry Table */}
+              <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
-                  <thead><tr style={{ background: '#005A8E', color: 'white' }}>
-                    <th style={{ padding: '6px 8px', textAlign: 'left' }}>Account</th>
-                    <th style={{ padding: '6px 8px', textAlign: 'left' }}>Description</th>
-                    <th style={{ padding: '6px 8px', textAlign: 'right' }}>Debit</th>
-                    <th style={{ padding: '6px 8px', textAlign: 'right' }}>Credit</th>
-                    <th style={{ width: 24 }}></th>
-                  </tr></thead>
+                  <thead>
+                    <tr style={{ background: '#f0f4f8' }}>
+                      <th style={{ padding: '6px 4px', textAlign: 'left', width: 110 }}>Date</th>
+                      <th style={{ padding: '6px 4px', textAlign: 'left', minWidth: 160 }}>Description</th>
+                      <th style={{ padding: '6px 4px', textAlign: 'left', width: 70 }}>Module</th>
+                      <th style={{ padding: '6px 4px', textAlign: 'left', minWidth: 200 }}>Account</th>
+                      <th style={{ padding: '6px 4px', textAlign: 'right', width: 110 }}>Debit</th>
+                      <th style={{ padding: '6px 4px', textAlign: 'right', width: 110 }}>Credit</th>
+                      <th style={{ padding: '6px 4px', textAlign: 'center', width: 50 }}>VAT?</th>
+                      <th style={{ padding: '6px 4px', textAlign: 'left', width: 130 }}>VAT Type</th>
+                      <th style={{ padding: '6px 4px', textAlign: 'right', width: 90 }}>VAT Amt</th>
+                      <th style={{ width: 28 }}></th>
+                    </tr>
+                  </thead>
                   <tbody>
-                    {form.lines.map((l, i) => (
-                      <tr key={i} style={{ borderBottom: '1px solid #f0f0f0' }}>
-                        <td style={{ padding: '4px 6px' }}>
-                          <select value={l.account_code} onChange={e => setLine(i, 'account_code', e.target.value)} style={{ width: '100%', fontSize: 11 }}>
-                            <option value="">— Account —</option>
-                            {accounts.map(a => <option key={a.account_code} value={a.account_code}>{a.account_code} — {a.account_name}</option>)}
+                    {lines.map((l, i) => (
+                      <tr key={i} style={{ borderBottom: '1px solid #e8edf2', background: i % 2 === 0 ? 'white' : '#fafbfc' }}>
+                        {/* Date — auto-copies from above */}
+                        <td style={{ padding: '4px 4px' }}>
+                          <input type="date" value={l.date || hdr.journal_date}
+                            onChange={e => setLine(i, 'date', e.target.value)}
+                            style={{ width: 108, fontSize: 11 }} />
+                        </td>
+                        {/* Description */}
+                        <td style={{ padding: '4px 4px' }}>
+                          <input value={l.description}
+                            onChange={e => setLine(i, 'description', e.target.value)}
+                            placeholder="Line description…"
+                            style={{ width: '100%', fontSize: 12 }} />
+                        </td>
+                        {/* Module */}
+                        <td style={{ padding: '4px 4px' }}>
+                          <select value={l.module} onChange={e => setLine(i, 'module', e.target.value)}
+                            style={{ width: 68, fontSize: 12 }}>
+                            <option value="GL">GL</option>
+                            <option value="AR">AR</option>
+                            <option value="AP">AP</option>
                           </select>
                         </td>
-                        <td style={{ padding: '4px 6px' }}><input value={l.description} onChange={e => setLine(i, 'description', e.target.value)} style={{ width: '100%', fontSize: 11 }} placeholder="Line description" /></td>
-                        <td style={{ padding: '4px 6px' }}><input type="number" value={l.debit} onChange={e => setLine(i, 'debit', e.target.value)} style={{ width: 90, textAlign: 'right', fontSize: 11 }} placeholder="0.00" /></td>
-                        <td style={{ padding: '4px 6px' }}><input type="number" value={l.credit} onChange={e => setLine(i, 'credit', e.target.value)} style={{ width: 90, textAlign: 'right', fontSize: 11 }} placeholder="0.00" /></td>
-                        <td style={{ padding: '4px' }}><button onClick={() => setForm(f => ({ ...f, lines: f.lines.filter((_, j) => j !== i) }))} style={{ background: 'none', border: 'none', color: '#e53e3e', cursor: 'pointer', fontSize: 14 }}>✕</button></td>
+                        {/* Account filtered by module */}
+                        <td style={{ padding: '4px 4px' }}>
+                          <select value={l.account_code} onChange={e => setLine(i, 'account_code', e.target.value)}
+                            style={{ width: '100%', fontSize: 11 }}>
+                            <option value="">— Select account —</option>
+                            {accountOptions(l.module).map(o => (
+                              <option key={o.value} value={o.value}>{o.label}</option>
+                            ))}
+                          </select>
+                        </td>
+                        {/* Debit */}
+                        <td style={{ padding: '4px 4px' }}>
+                          <input type="number" value={l.debit} onChange={e => setLine(i, 'debit', e.target.value)}
+                            placeholder="0.00" min="0" step="0.01"
+                            style={{ width: '100%', textAlign: 'right', fontSize: 12 }} />
+                        </td>
+                        {/* Credit */}
+                        <td style={{ padding: '4px 4px' }}>
+                          <input type="number" value={l.credit} onChange={e => setLine(i, 'credit', e.target.value)}
+                            placeholder="0.00" min="0" step="0.01"
+                            style={{ width: '100%', textAlign: 'right', fontSize: 12 }} />
+                        </td>
+                        {/* VAT applicable toggle */}
+                        <td style={{ padding: '4px 4px', textAlign: 'center' }}>
+                          <input type="checkbox" checked={l.vatApplicable}
+                            onChange={e => setLine(i, 'vatApplicable', e.target.checked)} />
+                        </td>
+                        {/* VAT Type */}
+                        <td style={{ padding: '4px 4px' }}>
+                          {l.vatApplicable ? (
+                            <select value={l.vat_type} onChange={e => setLine(i, 'vat_type', e.target.value)}
+                              style={{ width: '100%', fontSize: 11 }}>
+                              <option value="">— Type —</option>
+                              {vatTypes.map(v => <option key={v.vat_code} value={v.vat_code}>{v.vat_code} ({v.rate_pct}%)</option>)}
+                            </select>
+                          ) : <span style={{ color: '#ccc', fontSize: 11 }}>—</span>}
+                        </td>
+                        {/* VAT Amount */}
+                        <td style={{ padding: '4px 4px' }}>
+                          {l.vatApplicable ? (
+                            <input type="number" value={l.vat_amount}
+                              onChange={e => setLine(i, 'vat_amount', e.target.value)}
+                              style={{ width: '100%', textAlign: 'right', fontSize: 11 }} />
+                          ) : <span style={{ color: '#ccc', fontSize: 11, display: 'block', textAlign: 'right' }}>—</span>}
+                        </td>
+                        {/* Remove line */}
+                        <td style={{ padding: '4px 2px', textAlign: 'center' }}>
+                          <button onClick={() => removeLine(i)}
+                            disabled={lines.length <= 2}
+                            style={{ background: 'none', border: 'none', cursor: lines.length > 2 ? 'pointer' : 'default',
+                                     color: lines.length > 2 ? '#e53e3e' : '#ddd', fontSize: 14 }}>✕</button>
+                        </td>
                       </tr>
                     ))}
-                    {form.lines.length > 0 && (
-                      <tr style={{ fontWeight: 700, background: '#f5f7fa' }}>
-                        <td colSpan={2} style={{ padding: '6px 8px', color: balanced ? '#059669' : '#e53e3e' }}>{balanced ? '✓ Balanced' : '✗ Out of balance'}</td>
-                        <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'monospace' }}>{fmt(totalDR)}</td>
-                        <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'monospace' }}>{fmt(totalCR)}</td>
-                        <td></td>
-                      </tr>
-                    )}
                   </tbody>
+                  {/* Totals row */}
+                  <tfoot>
+                    <tr style={{ background: '#eef2f7', fontWeight: 700 }}>
+                      <td colSpan={4} style={{ padding: '6px 4px', textAlign: 'right', fontSize: 12 }}>TOTALS</td>
+                      <td style={{ padding: '6px 4px', textAlign: 'right', fontFamily: 'monospace', color: '#005A8E' }}>{fmt(totalDR)}</td>
+                      <td style={{ padding: '6px 4px', textAlign: 'right', fontFamily: 'monospace', color: '#e53e3e' }}>{fmt(totalCR)}</td>
+                      <td colSpan={4} style={{ padding: '6px 4px', textAlign: 'right' }}>
+                        {balanced
+                          ? <span className="badge badge-green" style={{ fontSize: 11 }}>✓ Balanced</span>
+                          : <span className="badge badge-red" style={{ fontSize: 11 }}>Not balanced — diff: {fmt(Math.abs(totalDR - totalCR))}</span>
+                        }
+                      </td>
+                    </tr>
+                  </tfoot>
                 </table>
-                {form.lines.length === 0 && <div style={{ padding: 16, textAlign: 'center', color: '#aaa', fontSize: 13 }}>Click "+ Add Line" to add journal lines</div>}
               </div>
+
+              <div style={{ marginTop: 10 }}>
+                <button className="btn btn-sm" onClick={addLine}>+ Add Line</button>
+              </div>
+
+              {saveErr && (
+                <div style={{ marginTop: 10, padding: '8px 12px', background: '#fff5f5', border: '1px solid #fc8181', borderRadius: 6, color: '#c53030', fontSize: 13 }}>
+                  {saveErr}
+                </div>
+              )}
             </div>
             <div className="modal-footer">
               <button className="btn" onClick={() => setShowNew(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={save} disabled={saving || !balanced || form.lines.length < 2}>
-                {saving ? 'Posting…' : 'Post Journal'}
+              <button className="btn btn-primary" onClick={save} disabled={saving || !balanced}>
+                {saving ? 'Saving…' : 'Post Journal'}
               </button>
             </div>
           </div>
@@ -671,53 +874,44 @@ function GLJournals({ user }) {
 }
 
 
-// ── INCOME STATEMENT ─────────────────────────────────────────
+// ── INCOME STATEMENT ───────────────────────────────────────────────────────
+// Shows every individual account under its COA category
 function IncomeStatement() {
-  // Default to current FY: Mar 2026 → Feb 2027
-  const today = new Date();
   const defaultFrom = '2026-03-01';
   const defaultTo   = '2027-02-28';
-
   const [dateFrom, setDateFrom] = useState(defaultFrom);
   const [dateTo,   setDateTo]   = useState(defaultTo);
   const [data,     setData]     = useState(null);
   const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState('');
-  const [viewMode, setView]     = useState('monthly'); // 'monthly' | 'ytd'
+  const [viewMode, setView]     = useState('monthly');
+  const [collapsed, setCollapsed] = useState({});
 
   const fmtN = (n) => {
     if (n == null || n === 0) return '—';
     return Number(n).toLocaleString('en-ZA', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-  };
-  const fmtPct = (n, d) => {
-    if (!d || d === 0) return '—';
-    return `${((n / d) * 100).toFixed(1)}%`;
-  };
-  const varPct = (curr, prior) => {
-    if (!prior || prior === 0) return null;
-    return ((curr - prior) / Math.abs(prior)) * 100;
   };
 
   const load = async () => {
     if (!dateFrom || !dateTo) return setError('Both dates are required');
     setError(''); setLoading(true);
     const params = new URLSearchParams({ date_from: dateFrom, date_to: dateTo });
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/fin/income-statement?${params}`, {
-      headers: { Authorization: 'Bearer ' + localStorage.getItem('lp_token') }
-    }).then(r => r.json());
+    const res = await req(`/fin/income-statement?${params}`);
     setLoading(false);
     if (res.error) return setError(res.error);
     setData(res);
   };
 
+  const toggle = (cat) => setCollapsed(c => ({ ...c, [cat]: !c[cat] }));
+
   const exportCSV = () => {
     if (!data) return;
     const { periods, rows } = data;
-    const headers = ['Account', 'Name', 'Section', ...periods.map(p => p.period_name), 'YTD', 'Prior Year'];
-    const csvRows = rows.filter(r => r.ytd !== 0 || periods.some(p => r.period_data[p.period_id] !== 0)).map(r => [
-      r.account_code, r.account_name, r.category,
-      ...periods.map(p => r.period_data[p.period_id] || 0),
-      r.ytd, r.prior_year
+    const headers = ['Category', 'Account Code', 'Account Name', ...periods.map(p => p.period_name), 'YTD'];
+    const csvRows = rows.map(r => [
+      r.category, r.account_code, r.account_name,
+      ...periods.map(p => r.period_data?.[p.period_id] || 0),
+      r.ytd || 0,
     ]);
     const csv = [headers, ...csvRows].map(r => r.map(x => `"${String(x).replace(/"/g,'""')}"`).join(',')).join('\n');
     const a = document.createElement('a');
@@ -726,342 +920,263 @@ function IncomeStatement() {
     a.click();
   };
 
-  // Section definitions in order
+  // Sections in P&L order
   const SECTIONS = [
-    { key: 'Income',       label: 'Revenue',            color: '#005A8E', headerBg: '#005A8E' },
-    { key: 'Cost of Sales',label: 'Cost of Sales',      color: '#e53e3e', headerBg: '#c53030' },
-    { key: 'Other Income', label: 'Other Income',       color: '#059669', headerBg: '#047857' },
-    { key: 'Expenses',     label: 'Other Expenses',     color: '#d97706', headerBg: '#b45309' },
+    { key: 'Income',         label: 'Revenue',       color: '#005A8E', sign: 1  },
+    { key: 'Cost of Sales',  label: 'Cost of Sales', color: '#c53030', sign: -1 },
+    { key: 'Other Income',   label: 'Other Income',  color: '#059669', sign: 1  },
+    { key: 'Expenses',       label: 'Expenses',      color: '#b45309', sign: -1 },
+    { key: 'Income Tax',     label: 'Income Tax',    color: '#6b7280', sign: -1 },
   ];
 
-  const getAccountsBySection = (cat) =>
-    (data?.rows || []).filter(r => r.category === cat);
+  const getAccounts = (cat) => (data?.rows || []).filter(r => r.category === cat && (r.ytd !== 0 || true));
 
-  const sectionTotal = (cat, periodId) =>
-    (data?.rows || []).filter(r => r.category === cat)
-      .reduce((s, r) => s + (periodId ? (r.period_data[periodId] || 0) : r.ytd), 0);
+  const sectionYTD = (cat) => getAccounts(cat).reduce((s, r) => s + (r.ytd || 0), 0);
 
-  const sectionPrior = (cat) =>
-    (data?.rows || []).filter(r => r.category === cat)
-      .reduce((s, r) => s + (r.prior_year || 0), 0);
+  const sectionPeriod = (cat, pid) =>
+    getAccounts(cat).reduce((s, r) => s + (r.period_data?.[pid] || 0), 0);
 
   const periods = data?.periods || [];
+  const showPeriods = viewMode === 'monthly';
 
-  // Compute GP and NP per period and YTD
-  const computeGP = (pidOrNull) => {
-    const rev = sectionTotal('Income', pidOrNull);
-    const cos = sectionTotal('Cost of Sales', pidOrNull);
-    return rev - cos;
-  };
-  const computeNP = (pidOrNull) => {
-    const gp   = computeGP(pidOrNull);
-    const oi   = sectionTotal('Other Income', pidOrNull);
-    const exp  = sectionTotal('Expenses', pidOrNull);
-    return gp + oi - exp;
-  };
-
-  const colW = viewMode === 'monthly' ? Math.max(90, Math.floor(600 / Math.max(periods.length, 1))) : 120;
-
-  const ValueCell = ({ value, bold, color, isPercent }) => (
-    <td style={{
-      textAlign: 'right', fontFamily: 'monospace', fontSize: 11,
-      padding: '3px 8px', whiteSpace: 'nowrap',
-      fontWeight: bold ? 700 : 400,
-      color: color || (value < 0 ? '#e53e3e' : value > 0 ? 'inherit' : '#ccc'),
-      minWidth: colW,
-    }}>
-      {isPercent
-        ? (value == null ? '—' : `${value.toFixed(1)}%`)
-        : fmtN(value)}
-    </td>
-  );
-
-  const SectionHeader = ({ label, bg }) => (
-    <tr>
-      <td colSpan={100} style={{ background: bg, color: 'white', fontWeight: 700, fontSize: 12, padding: '5px 10px', letterSpacing: 0.5 }}>
-        {label}
-      </td>
-    </tr>
-  );
-
-  const TotalRow = ({ label, getPeriodVal, ytdVal, priorVal, bold, bg, color, isGP }) => (
-    <tr style={{ background: bg || '#eef4fb', fontWeight: bold ? 700 : 600, borderTop: '2px solid #ccd9e8' }}>
-      <td style={{ padding: '5px 10px', fontSize: 12, fontWeight: bold ? 700 : 600, color: color }}>{label}</td>
-      <td style={{ padding: '5px 8px', fontSize: 11, color: '#888' }}></td>
-      {viewMode === 'monthly' && periods.map(p => {
-        const v = getPeriodVal(p.period_id);
-        return <ValueCell key={p.period_id} value={v} bold={bold} color={v < 0 ? '#e53e3e' : color} />;
-      })}
-      <ValueCell value={ytdVal} bold={bold} color={ytdVal < 0 ? '#e53e3e' : color} />
-      <ValueCell value={priorVal} bold={bold} color={priorVal < 0 ? '#e53e3e' : color} />
-      {isGP && (
-        <>
-          <ValueCell value={ytdVal && sectionTotal('Income', null) ? (ytdVal / sectionTotal('Income', null)) * 100 : 0} bold={bold} color="#005A8E" isPercent />
-          <ValueCell value={priorVal && sectionPrior('Income') ? (priorVal / sectionPrior('Income')) * 100 : 0} color="#888" isPercent />
-        </>
-      )}
-    </tr>
-  );
-
-  const VarRow = ({ numerator, denominator, priorNum, priorDen }) => {
-    const curr = denominator !== 0 ? (numerator / denominator) * 100 : 0;
-    const prior = priorDen !== 0 ? (priorNum / priorDen) * 100 : 0;
-    return (
-      <tr style={{ background: '#f5f7fa' }}>
-        <td style={{ padding: '2px 10px', fontSize: 10, color: '#888', fontStyle: 'italic' }}>% of Revenue</td>
-        <td></td>
-        {viewMode === 'monthly' && periods.map(p => {
-          const rev = sectionTotal('Income', p.period_id);
-          const num = numerator === 'gp'
-            ? computeGP(p.period_id)
-            : numerator === 'np'
-            ? computeNP(p.period_id)
-            : sectionTotal(numerator, p.period_id);
-          const pct = rev !== 0 ? (num / rev) * 100 : 0;
-          return (
-            <td key={p.period_id} style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 10, padding: '2px 8px', color: pct < 0 ? '#e53e3e' : '#059669' }}>
-              {rev !== 0 ? `${pct.toFixed(1)}%` : '—'}
-            </td>
-          );
-        })}
-        <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 10, padding: '2px 8px', color: curr < 0 ? '#e53e3e' : '#059669' }}>
-          {denominator !== 0 ? `${curr.toFixed(1)}%` : '—'}
-        </td>
-        <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 10, padding: '2px 8px', color: '#888' }}>
-          {priorDen !== 0 ? `${prior.toFixed(1)}%` : '—'}
-        </td>
-      </tr>
-    );
-  };
+  const revenue  = sectionYTD('Income') + sectionYTD('Other Income');
+  const cos      = sectionYTD('Cost of Sales');
+  const expenses = sectionYTD('Expenses');
+  const tax      = sectionYTD('Income Tax');
+  const grossProfit = revenue - Math.abs(cos);
+  const netProfit   = grossProfit - Math.abs(expenses) - Math.abs(tax);
 
   return (
     <div>
       {/* Filter bar */}
-      <div style={{ background: '#f8fafc', border: '1px solid #e8edf2', borderRadius: 8, padding: '12px 16px', marginBottom: 16 }}>
+      <div style={{ background: '#f8fafc', border: '1px solid #e8edf2', borderRadius: 8, padding: '12px 14px', marginBottom: 14 }}>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          <div>
-            <label style={{ fontSize: 11, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>Period From</label>
-            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={{ width: 148 }} />
+          <div><label style={{ fontSize: 11, fontWeight: 600, color: '#555', display: 'block', marginBottom: 3 }}>Date From</label>
+            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} /></div>
+          <div><label style={{ fontSize: 11, fontWeight: 600, color: '#555', display: 'block', marginBottom: 3 }}>Date To</label>
+            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} /></div>
+          <div><label style={{ fontSize: 11, fontWeight: 600, color: '#555', display: 'block', marginBottom: 3 }}>View</label>
+            <select value={viewMode} onChange={e => setView(e.target.value)}>
+              <option value="monthly">Monthly columns</option>
+              <option value="ytd">YTD only</option>
+            </select>
           </div>
-          <div>
-            <label style={{ fontSize: 11, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>Period To</label>
-            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} style={{ width: 148 }} />
-          </div>
-          <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end', paddingBottom: 1 }}>
-            <button className="btn btn-primary btn-sm" onClick={load} disabled={loading}>{loading ? 'Loading…' : '🔍 Generate'}</button>
+          <div style={{ display: 'flex', gap: 6, paddingBottom: 1 }}>
+            <button className="btn btn-primary btn-sm" onClick={load} disabled={loading}>{loading ? 'Loading…' : '🔍 Run'}</button>
             {data && <button className="btn btn-sm" onClick={exportCSV}>⬇ CSV</button>}
             {data && <button className="btn btn-sm" onClick={() => window.print()}>🖨 Print</button>}
           </div>
-          <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end', marginLeft: 'auto', paddingBottom: 1 }}>
-            <button className={`btn btn-sm ${viewMode === 'monthly' ? 'btn-primary' : ''}`} style={{ fontSize: 11 }} onClick={() => setView('monthly')}>Monthly</button>
-            <button className={`btn btn-sm ${viewMode === 'ytd' ? 'btn-primary' : ''}`} style={{ fontSize: 11 }} onClick={() => setView('ytd')}>YTD Only</button>
-          </div>
         </div>
-        {error && <div style={{ color: '#e53e3e', fontSize: 13, marginTop: 8 }}>⚠ {error}</div>}
+        {error && <div style={{ marginTop: 8, color: '#c53030', fontSize: 13 }}>{error}</div>}
       </div>
 
       {!data && !loading && (
-        <div className="empty-state" style={{ padding: '40px 0' }}>
+        <div className="empty-state" style={{ padding: '32px 0' }}>
           <div style={{ fontSize: 32, marginBottom: 8 }}>📊</div>
-          <div>Set the period dates and click <strong>Generate</strong> to build the Income Statement.</div>
+          <div>Select date range and click <strong>Run</strong> to generate the Income Statement.</div>
         </div>
       )}
 
       {data && (
         <div style={{ overflowX: 'auto' }}>
-          {/* Report header */}
-          <div style={{ textAlign: 'center', marginBottom: 12 }}>
-            <div style={{ fontWeight: 700, fontSize: 15, color: '#005A8E' }}>Statement of Comprehensive Income</div>
-            <div style={{ fontSize: 12, color: '#555' }}>Interland Distribution Cape (Pty) Ltd</div>
-            <div style={{ fontSize: 11, color: '#888' }}>Period: {dateFrom} to {dateTo}</div>
-          </div>
-
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
-              <tr style={{ background: '#005A8E', color: 'white' }}>
-                <th style={{ textAlign: 'left', padding: '6px 10px', minWidth: 220 }}>Account</th>
-                <th style={{ textAlign: 'left', padding: '6px 8px', minWidth: 180 }}>Name</th>
-                {viewMode === 'monthly' && periods.map(p => (
-                  <th key={p.period_id} style={{ textAlign: 'right', padding: '6px 8px', minWidth: colW, whiteSpace: 'nowrap', fontSize: 11 }}>
-                    {p.period_name}
-                  </th>
+              <tr style={{ background: '#f0f4f8', borderBottom: '2px solid #cbd5e0' }}>
+                <th style={{ padding: '8px 10px', textAlign: 'left', minWidth: 80 }}>Code</th>
+                <th style={{ padding: '8px 10px', textAlign: 'left', minWidth: 200 }}>Account</th>
+                {showPeriods && periods.map(p => (
+                  <th key={p.period_id} style={{ padding: '8px 6px', textAlign: 'right', minWidth: 100, whiteSpace: 'nowrap' }}>{p.period_name}</th>
                 ))}
-                <th style={{ textAlign: 'right', padding: '6px 8px', minWidth: colW, background: '#003d6b' }}>YTD</th>
-                <th style={{ textAlign: 'right', padding: '6px 8px', minWidth: colW, background: '#2d6a9f', fontSize: 10 }}>Prior Year</th>
+                <th style={{ padding: '8px 10px', textAlign: 'right', minWidth: 120, fontWeight: 700 }}>YTD</th>
               </tr>
             </thead>
             <tbody>
-              {SECTIONS.map(section => {
-                const sectionRows = getAccountsBySection(section.key).filter(r =>
-                  r.ytd !== 0 || periods.some(p => r.period_data[p.period_id] !== 0)
-                );
-                const ytdTotal   = sectionTotal(section.key, null);
-                const priorTotal = sectionPrior(section.key);
-
-                return [
-                  <SectionHeader key={`h_${section.key}`} label={section.label} bg={section.headerBg} />,
-                  ...sectionRows.map((r, i) => (
-                    <tr key={r.account_code} style={{ background: i % 2 === 0 ? 'white' : '#fafbfc' }}>
-                      <td style={{ padding: '3px 10px', paddingLeft: r.is_sub_account ? 24 : 10, fontFamily: 'monospace', fontSize: 11, color: '#666' }}>
-                        {r.account_code}
+              {SECTIONS.map(sec => {
+                const accts = getAccounts(sec.key);
+                if (accts.length === 0) return null;
+                const secYTD = sectionYTD(sec.key);
+                const isCollapsed = collapsed[sec.key];
+                return (
+                  <>
+                    {/* Section header row */}
+                    <tr key={`hdr-${sec.key}`}
+                      onClick={() => toggle(sec.key)}
+                      style={{ background: sec.color, color: 'white', cursor: 'pointer', userSelect: 'none' }}>
+                      <td colSpan={showPeriods ? periods.length + 2 : 2}
+                          style={{ padding: '7px 10px', fontWeight: 700, fontSize: 13 }}>
+                        {isCollapsed ? '▶' : '▼'} {sec.label}
                       </td>
-                      <td style={{ padding: '3px 8px', fontSize: 11 }}>{r.account_name}</td>
-                      {viewMode === 'monthly' && periods.map(p => (
-                        <ValueCell key={p.period_id} value={r.period_data[p.period_id] || 0} />
-                      ))}
-                      <ValueCell value={r.ytd} color={r.ytd < 0 ? '#e53e3e' : undefined} />
-                      <ValueCell value={r.prior_year} color="#888" />
+                      <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, fontSize: 13 }}>
+                        {fmtN(Math.abs(secYTD))}
+                      </td>
                     </tr>
-                  )),
-                  <TotalRow
-                    key={`t_${section.key}`}
-                    label={`Total ${section.label}`}
-                    getPeriodVal={(pid) => sectionTotal(section.key, pid)}
-                    ytdVal={ytdTotal}
-                    priorVal={priorTotal}
-                    bold
-                    color={section.color}
-                  />,
-                  // After Revenue: no GP line yet
-                  // After Cost of Sales: show Gross Profit
-                  ...(section.key === 'Cost of Sales' ? [
-                    <tr key="gp_spacer" style={{ height: 4, background: '#f0f0f0' }}><td colSpan={100} /></tr>,
-                    <tr key="gp_row" style={{ background: '#e8f4ff', fontWeight: 700, borderTop: '2px solid #005A8E', borderBottom: '2px solid #005A8E' }}>
-                      <td style={{ padding: '6px 10px', fontSize: 13, fontWeight: 700, color: '#005A8E' }}>GROSS PROFIT</td>
-                      <td></td>
-                      {viewMode === 'monthly' && periods.map(p => {
-                        const gp = computeGP(p.period_id);
-                        return <ValueCell key={p.period_id} value={gp} bold color={gp < 0 ? '#e53e3e' : '#005A8E'} />;
-                      })}
-                      <ValueCell value={computeGP(null)} bold color={computeGP(null) < 0 ? '#e53e3e' : '#005A8E'} />
-                      <ValueCell value={computeGP(null) !== 0 ? sectionPrior('Income') - sectionPrior('Cost of Sales') : 0} bold color="#2d6a9f" />
-                    </tr>,
-                    <tr key="gp_pct" style={{ background: '#f0f7ff' }}>
-                      <td style={{ padding: '2px 10px', fontSize: 10, color: '#888', fontStyle: 'italic' }}>GP %</td>
-                      <td></td>
-                      {viewMode === 'monthly' && periods.map(p => {
-                        const rev = sectionTotal('Income', p.period_id);
-                        const gp  = computeGP(p.period_id);
-                        const pct = rev !== 0 ? (gp / rev) * 100 : 0;
-                        return (
-                          <td key={p.period_id} style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 10, padding: '2px 8px', color: '#005A8E' }}>
-                            {rev !== 0 ? `${pct.toFixed(1)}%` : '—'}
+                    {/* Account detail rows */}
+                    {!isCollapsed && accts.map(r => (
+                      <tr key={r.account_code}
+                        style={{ borderBottom: '1px solid #f0f4f8', background: 'white' }}>
+                        <td className="mono" style={{ padding: '5px 10px', paddingLeft: r.is_sub_account ? 28 : 10, color: '#666', fontSize: 11 }}>{r.account_code}</td>
+                        <td style={{ padding: '5px 10px', paddingLeft: r.is_sub_account ? 28 : 10 }}>{r.account_name}</td>
+                        {showPeriods && periods.map(p => (
+                          <td key={p.period_id} style={{ padding: '5px 6px', textAlign: 'right', fontFamily: 'monospace', color: r.period_data?.[p.period_id] ? '#333' : '#ccc' }}>
+                            {fmtN(r.period_data?.[p.period_id] || 0)}
                           </td>
-                        );
-                      })}
-                      {(() => {
-                        const rev = sectionTotal('Income', null);
-                        const gp  = computeGP(null);
-                        const priorRev = sectionPrior('Income');
-                        const priorGP  = sectionPrior('Income') - sectionPrior('Cost of Sales');
-                        return <>
-                          <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 10, padding: '2px 8px', color: '#005A8E', fontWeight: 700 }}>
-                            {rev !== 0 ? `${((gp/rev)*100).toFixed(1)}%` : '—'}
-                          </td>
-                          <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 10, padding: '2px 8px', color: '#888' }}>
-                            {priorRev !== 0 ? `${((priorGP/priorRev)*100).toFixed(1)}%` : '—'}
-                          </td>
-                        </>;
-                      })()}
-                    </tr>,
-                    <tr key="gp_spacer2" style={{ height: 4, background: '#f0f0f0' }}><td colSpan={100} /></tr>,
-                  ] : []),
-                ];
+                        ))}
+                        <td style={{ padding: '5px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: r.ytd ? sec.color : '#ccc' }}>
+                          {fmtN(r.ytd || 0)}
+                        </td>
+                      </tr>
+                    ))}
+                    {/* Section subtotal */}
+                    {!isCollapsed && (
+                      <tr key={`sub-${sec.key}`} style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                        <td colSpan={showPeriods ? periods.length + 2 : 2}
+                            style={{ padding: '5px 10px', textAlign: 'right', fontWeight: 600, fontSize: 12, color: '#555' }}>
+                          Total {sec.label}
+                        </td>
+                        <td style={{ padding: '5px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: sec.color }}>
+                          {fmtN(Math.abs(secYTD))}
+                        </td>
+                      </tr>
+                    )}
+                  </>
+                );
               })}
 
-              {/* Net Profit */}
-              <tr style={{ height: 6, background: '#f0f0f0' }}><td colSpan={100} /></tr>
-              <tr style={{ background: '#003d6b', color: 'white', fontWeight: 700 }}>
-                <td style={{ padding: '8px 10px', fontSize: 14, fontWeight: 700 }}>NET PROFIT / (LOSS)</td>
-                <td></td>
-                {viewMode === 'monthly' && periods.map(p => {
-                  const np = computeNP(p.period_id);
-                  return (
-                    <td key={p.period_id} style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 12, padding: '8px', fontWeight: 700, color: np < 0 ? '#fca5a5' : '#86efac', minWidth: colW }}>
-                      {fmtN(np)}
-                    </td>
-                  );
-                })}
-                {(() => {
-                  const np = computeNP(null);
-                  const priorNP = (sectionPrior('Income') - sectionPrior('Cost of Sales') + sectionPrior('Other Income') - sectionPrior('Expenses'));
-                  return <>
-                    <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 12, padding: '8px', fontWeight: 700, color: np < 0 ? '#fca5a5' : '#86efac', minWidth: colW }}>
-                      {fmtN(np)}
-                    </td>
-                    <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 11, padding: '8px', color: '#9ca3af', minWidth: colW }}>
-                      {fmtN(priorNP)}
-                    </td>
-                  </>;
-                })()}
+              {/* Gross Profit */}
+              <tr style={{ background: '#dbeafe', borderBottom: '2px solid #93c5fd' }}>
+                <td colSpan={showPeriods ? periods.length + 2 : 2}
+                    style={{ padding: '7px 10px', fontWeight: 700, fontSize: 13, color: '#1e40af' }}>
+                  GROSS PROFIT
+                </td>
+                <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, fontSize: 13, color: grossProfit >= 0 ? '#059669' : '#c53030' }}>
+                  {fmtN(Math.abs(grossProfit))} {grossProfit < 0 ? '(Loss)' : ''}
+                </td>
               </tr>
-              {/* NP % row */}
-              {(() => {
-                const rev = sectionTotal('Income', null);
-                const np  = computeNP(null);
-                const priorRev = sectionPrior('Income');
-                const priorNP  = sectionPrior('Income') - sectionPrior('Cost of Sales') + sectionPrior('Other Income') - sectionPrior('Expenses');
-                return (
-                  <tr style={{ background: '#1a3a5c' }}>
-                    <td style={{ padding: '2px 10px', fontSize: 10, color: '#94a3b8', fontStyle: 'italic' }}>NP %</td>
-                    <td></td>
-                    {viewMode === 'monthly' && periods.map(p => {
-                      const pRev = sectionTotal('Income', p.period_id);
-                      const pNP  = computeNP(p.period_id);
-                      return (
-                        <td key={p.period_id} style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 10, padding: '2px 8px', color: pNP < 0 ? '#fca5a5' : '#86efac' }}>
-                          {pRev !== 0 ? `${((pNP/pRev)*100).toFixed(1)}%` : '—'}
-                        </td>
-                      );
-                    })}
-                    <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 10, padding: '2px 8px', color: np < 0 ? '#fca5a5' : '#86efac', fontWeight: 700 }}>
-                      {rev !== 0 ? `${((np/rev)*100).toFixed(1)}%` : '—'}
-                    </td>
-                    <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 10, padding: '2px 8px', color: '#94a3b8' }}>
-                      {priorRev !== 0 ? `${((priorNP/priorRev)*100).toFixed(1)}%` : '—'}
-                    </td>
-                  </tr>
-                );
-              })()}
+
+              {/* Net Profit */}
+              <tr style={{ background: netProfit >= 0 ? '#f0fdf4' : '#fff5f5', borderTop: '2px solid #cbd5e0' }}>
+                <td colSpan={showPeriods ? periods.length + 2 : 2}
+                    style={{ padding: '9px 10px', fontWeight: 700, fontSize: 14, color: netProfit >= 0 ? '#059669' : '#c53030' }}>
+                  NET PROFIT {netProfit < 0 ? '(LOSS)' : ''}
+                </td>
+                <td style={{ padding: '9px 10px', textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, fontSize: 14, color: netProfit >= 0 ? '#059669' : '#c53030' }}>
+                  {fmtN(Math.abs(netProfit))}
+                </td>
+              </tr>
             </tbody>
           </table>
-
-          <div style={{ fontSize: 10, color: '#aaa', marginTop: 8, textAlign: 'right' }}>
-            Generated by LogisticsPro LP2.0 · {new Date().toLocaleDateString('en-ZA')} · Prior year: {data.prior_date_from} to {data.prior_date_to}
-          </div>
         </div>
       )}
     </div>
   );
 }
 
+// ── AUDIT LOG EXPORT ───────────────────────────────────────────────────────
+function AuditLog() {
+  const [rows, setRows]       = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [dateFrom, setFrom]   = useState('');
+  const [dateTo,   setTo]     = useState('');
+  const [tableFlt, setTable]  = useState('');
 
+  const load = async () => {
+    setLoading(true);
+    const params = new URLSearchParams({ limit: 500 });
+    if (dateFrom) params.set('date_from', dateFrom);
+    if (dateTo)   params.set('date_to', dateTo);
+    if (tableFlt) params.set('table_name', tableFlt);
+    const data = await req(`/fin/audit-log?${params}`);
+    setRows(Array.isArray(data) ? data : []);
+    setLoading(false);
+  };
 
-// ── MAIN FINANCE GL PAGE ──────────────────────────────────────
+  const doExport = () => {
+    if (!rows.length) return;
+    exportCSV(rows.map(r => ({
+      Time: r.event_time, Table: r.table_name, 'Record ID': r.record_id,
+      Action: r.action, 'Changed By': r.changed_by || '',
+      'Old Values': r.old_values ? JSON.stringify(r.old_values) : '',
+      'New Values': r.new_values ? JSON.stringify(r.new_values) : '',
+    })), 'gl_audit_trail.csv');
+  };
+
+  const TABLES = ['fin_gl_journals','fin_gl_journal_lines','fin_gl_accounts','fin_periods','fin_assets'];
+
+  return (
+    <div>
+      <div style={{ background: '#f8fafc', border: '1px solid #e8edf2', borderRadius: 8, padding: '12px 14px', marginBottom: 14 }}>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <div><label style={{ fontSize: 11, fontWeight: 600, color: '#555', display: 'block', marginBottom: 3 }}>Date From</label>
+            <input type="date" value={dateFrom} onChange={e => setFrom(e.target.value)} /></div>
+          <div><label style={{ fontSize: 11, fontWeight: 600, color: '#555', display: 'block', marginBottom: 3 }}>Date To</label>
+            <input type="date" value={dateTo} onChange={e => setTo(e.target.value)} /></div>
+          <div><label style={{ fontSize: 11, fontWeight: 600, color: '#555', display: 'block', marginBottom: 3 }}>Table</label>
+            <select value={tableFlt} onChange={e => setTable(e.target.value)}>
+              <option value="">All tables</option>
+              {TABLES.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+          <div style={{ display: 'flex', gap: 6, paddingBottom: 1 }}>
+            <button className="btn btn-primary btn-sm" onClick={load} disabled={loading}>{loading ? 'Loading…' : '🔍 Search'}</button>
+            {rows.length > 0 && <button className="btn btn-sm" onClick={doExport}>⬇ Export CSV</button>}
+          </div>
+        </div>
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th>Time</th><th>Table</th><th>Record</th><th>Action</th><th>Changed By</th><th>Old Values</th><th>New Values</th></tr></thead>
+          <tbody>
+            {loading && <tr><td colSpan={7}><div className="loading">Loading…</div></td></tr>}
+            {!loading && rows.length === 0 && <tr><td colSpan={7}><div className="empty-state">No audit records found. Try adjusting filters.</div></td></tr>}
+            {!loading && rows.map(r => (
+              <tr key={r.log_id}>
+                <td style={{ fontSize: 11, whiteSpace: 'nowrap' }}>{fmtDate(r.event_time)}</td>
+                <td className="mono" style={{ fontSize: 11 }}>{r.table_name}</td>
+                <td style={{ fontSize: 11 }}>{r.record_id}</td>
+                <td><span className={`badge ${r.action === 'DELETE' ? 'badge-red' : r.action === 'INSERT' ? 'badge-green' : 'badge-blue'}`} style={{ fontSize: 10 }}>{r.action}</span></td>
+                <td style={{ fontSize: 12 }}>{r.changed_by || '—'}</td>
+                <td style={{ fontSize: 11, color: '#888', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {r.old_values ? JSON.stringify(r.old_values).slice(0, 80) : '—'}
+                </td>
+                <td style={{ fontSize: 11, color: '#333', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {r.new_values ? JSON.stringify(r.new_values).slice(0, 80) : '—'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ── MAIN EXPORT ────────────────────────────────────────────────────────────
 export default function FinanceGL() {
   const { user } = useAuth();
   const [tab, setTab] = useState('coa');
 
   const tabStyle = (t) => ({
-    padding: '8px 16px', cursor: 'pointer', fontSize: 13, fontWeight: 600,
+    padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: 600,
     borderBottom: tab === t ? '2px solid #005A8E' : '2px solid transparent',
     color: tab === t ? '#005A8E' : '#666', whiteSpace: 'nowrap',
   });
 
   return (
     <div>
-      <div style={{ display: 'flex', borderBottom: '1px solid #e8edf2', marginBottom: 16, gap: 4, overflowX: 'auto' }}>
+      <div style={{ display: 'flex', borderBottom: '1px solid #e8edf2', marginBottom: 14, gap: 2, flexWrap: 'wrap' }}>
         <div style={tabStyle('coa')}      onClick={() => setTab('coa')}>Chart of Accounts</div>
         <div style={tabStyle('tb')}       onClick={() => setTab('tb')}>Trial Balance</div>
         <div style={tabStyle('ledger')}   onClick={() => setTab('ledger')}>Account Transactions</div>
         <div style={tabStyle('journals')} onClick={() => setTab('journals')}>GL Journals</div>
         <div style={tabStyle('is')}       onClick={() => setTab('is')}>Income Statement</div>
+        <div style={tabStyle('audit')}    onClick={() => setTab('audit')}>Audit Trail</div>
       </div>
       {tab === 'coa'      && <ChartOfAccounts />}
       {tab === 'tb'       && <TrialBalance />}
       {tab === 'ledger'   && <AccountTransactions />}
       {tab === 'journals' && <GLJournals user={user} />}
       {tab === 'is'       && <IncomeStatement />}
+      {tab === 'audit'    && <AuditLog />}
     </div>
   );
 }
