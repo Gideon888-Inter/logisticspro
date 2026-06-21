@@ -32,10 +32,17 @@ const fs        = require('fs');
 const { createClient } = require('@supabase/supabase-js');
 const { authMiddleware, requireRole, ROLES } = require('../middleware/auth');
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_KEY
-);
+// Lazy supabase client — avoids crash if env vars not loaded at require() time
+let _supabase = null;
+function supabase() {
+  if (!_supabase) {
+    _supabase = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_KEY
+    );
+  }
+  return _supabase;
+}
 
 // ── Multer: temp disk storage for attachments ──────────────────────────────
 const TEMP_UPLOAD_DIR = path.join(__dirname, '../../temp_attachments');
@@ -76,7 +83,7 @@ async function getConfig(...keys) {
 
 /** Send notification to a role or user */
 async function notify({ user, role, type, title, message, po_id }) {
-  await supabase.from('lp_notifications').insert({
+  await supabase().from('lp_notifications').insert({
     n_user:    user  || null,
     n_role:    role  || null,
     n_type:    type,
@@ -88,7 +95,7 @@ async function notify({ user, role, type, title, message, po_id }) {
 
 /** Log PO approval action */
 async function logPOAction({ po_id, po_number, action, by, from_status, to_status, notes, attachment_url }) {
-  await supabase.from('lp_po_approval_log').insert({
+  await supabase().from('lp_po_approval_log').insert({
     po_id, po_number, action,
     actioned_by: by,
     from_status: from_status || null,
@@ -142,7 +149,7 @@ router.get('/items',
              ROLES.WORKSHOP_MANAGER, ROLES.WORKSHOP_ASSISTANT, ROLES.STOCK_CONTROLLER, ROLES.WORKSHOP),
   async (req, res) => {
     const { role } = req.user;
-    let query = supabase.from('lp_inventory_items').select('*').order('item_code');
+    let query = supabase().from('lp_inventory_items').select('*').order('item_code');
     // Non-workshop users only see ACTIVE items
     if (![ROLES.ADMIN, ROLES.WORKSHOP_MANAGER, ROLES.WORKSHOP_ASSISTANT, ROLES.STOCK_CONTROLLER].includes(role)) {
       query = query.eq('status', 'ACTIVE');
@@ -169,7 +176,7 @@ router.post('/items',
 
     const config = await getConfig('workshop_assistant_username');
 
-    const { data, error } = await supabase.from('lp_inventory_items').insert({
+    const { data, error } = await supabase().from('lp_inventory_items').insert({
       item_code:        codeData,
       item_name,
       item_description: item_description || null,
@@ -349,7 +356,7 @@ router.post('/po',
     }
 
     // Generate PO number
-    const { data: poNum } = await supabase.rpc('next_po_number');
+    const { data: poNum } = await supabase().rpc('next_po_number');
 
     const { data: po, error: poErr } = await supabase
       .from('lp_purchase_orders')
@@ -390,7 +397,7 @@ router.post('/po',
         line_total_incl: l.line_total_incl || 0,
         qty_outstanding: l.quantity || 1,
       }));
-      await supabase.from('lp_po_lines').insert(lineRows);
+      await supabase().from('lp_po_lines').insert(lineRows);
     }
 
     await logPOAction({
@@ -417,8 +424,8 @@ router.get('/po/:id',
     if (error || !po) return res.status(404).json({ error: 'PO not found' });
 
     const [{ data: lines }, { data: log }] = await Promise.all([
-      supabase.from('lp_po_lines').select('*').eq('po_id', po.po_id).order('line_number'),
-      supabase.from('lp_po_approval_log').select('*').eq('po_id', po.po_id).order('actioned_at'),
+      supabase().from('lp_po_lines').select('*').eq('po_id', po.po_id).order('line_number'),
+      supabase().from('lp_po_approval_log').select('*').eq('po_id', po.po_id).order('actioned_at'),
     ]);
 
     res.json({ po, lines: lines || [], log: log || [] });
@@ -820,7 +827,7 @@ router.post('/po/:id/receive',
       const oldQty    = Number(item.qty_on_hand || 0);
       const avgCost   = newQty > 0 ? (oldCost * oldQty + cost * qty) / newQty : cost;
 
-      await supabase.from('lp_inventory_items').update({
+      await supabase().from('lp_inventory_items').update({
         qty_on_hand:  newQty,
         qty_on_order: newOnOrder,
         last_cost:    cost,
@@ -829,13 +836,13 @@ router.post('/po/:id/receive',
       }).eq('item_id', line.item_id);
 
       // Update line qty_received
-      await supabase.from('lp_po_lines').update({
+      await supabase().from('lp_po_lines').update({
         qty_received:   (Number(line.qty_received || 0)) + qty,
         qty_outstanding: Math.max(0, Number(line.qty_outstanding || line.quantity) - qty),
       }).eq('po_line_id', recv.po_line_id);
 
       // Create inventory transaction
-      const { data: txn } = await supabase.from('lp_inventory_transactions').insert({
+      const { data: txn } = await supabase().from('lp_inventory_transactions').insert({
         txn_type:      'PO_RECEIPT',
         item_id:       line.item_id,
         qty,
@@ -852,7 +859,7 @@ router.post('/po/:id/receive',
     }
 
     // Update PO status to GOODS_RECEIVED
-    await supabase.from('lp_purchase_orders').update({
+    await supabase().from('lp_purchase_orders').update({
       status:    'GOODS_RECEIVED',
       updated_at: new Date().toISOString(),
     }).eq('po_id', po.po_id);
@@ -880,7 +887,7 @@ router.post('/po/:id/close',
 
     if (!po) return res.status(404).json({ error: 'PO not found' });
 
-    await supabase.from('lp_purchase_orders').update({
+    await supabase().from('lp_purchase_orders').update({
       status:     'PAID',
       updated_at: new Date().toISOString(),
     }).eq('po_id', po.po_id);
@@ -902,7 +909,7 @@ router.post('/po/:id/close',
         try { fs.unlinkSync(tempFilePath); } catch (e) { /* non-fatal */ }
       }
 
-      await supabase.from('lp_purchase_orders').update({
+      await supabase().from('lp_purchase_orders').update({
         onedrive_url:       onedriveUrl,
         onedrive_offloaded: 'Y',
         offloaded_at:       new Date().toISOString(),
@@ -946,3 +953,4 @@ router.get('/po/pending-approval',
 );
 
 module.exports = router;
+
