@@ -622,6 +622,7 @@ export default function Users() {
                       <label>Role</label>
                       <select value={form.u_role} onChange={e => set('u_role', e.target.value)} disabled={!isAdmin && !!editId}>
                         {(allRoles.length > 0 ? allRoles : Object.entries(ROLE_LABELS).map(([k,v]) => ({role_key:k, role_label:v})))
+                          .filter(r => BUILTIN_ROLE_KEYS.has(r.role_key))
                           .filter(r => isAdmin || r.role_key !== ROLES.ADMIN)
                           .map(r => <option key={r.role_key} value={r.role_key}>{r.role_label}</option>)}
                       </select>
