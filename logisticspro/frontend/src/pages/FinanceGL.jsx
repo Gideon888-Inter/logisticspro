@@ -9,6 +9,15 @@ const req = (path, opts = {}) =>
     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token(), ...(opts.headers || {}) },
   }).then(r => r.json());
 
+
+function exportCSV(rows, filename) {
+  const headers = Object.keys(rows[0] || {});
+  const csv = [headers, ...rows.map(r => headers.map(h => `"${(r[h] ?? '').toString().replace(/"/g, '""')}"`))].map(r => r.join(',')).join('\n');
+  const a = document.createElement('a'); a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv); a.download = filename; a.click();
+}
+
+const EMPTY_ACCOUNT = { account_code: '', account_name: '', category: 'EXPENSES', account_type: 'DETAIL', vat_treatment: 'NONE', allowed_vat_codes: '', is_sub_account: false, parent_account: '' };
+
 const fmt = (n) => n == null ? '—' : `R ${Number(n).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 // ── CHART OF ACCOUNTS ────────────────────────────────────────
@@ -17,6 +26,9 @@ function ChartOfAccounts() {
   const [loading, setLoading]   = useState(true);
   const [search, setSearch]     = useState('');
   const [catFilter, setCat]     = useState('');
+  const [showAdd, setShowAdd]   = useState(false);
+  const [form, setForm]         = useState(EMPTY_ACCOUNT);
+  const [saving, setSaving]     = useState(false);
 
   useEffect(() => { load(); }, []);
 
@@ -26,6 +38,24 @@ function ChartOfAccounts() {
     setAccounts(Array.isArray(data) ? data : []);
     setLoading(false);
   };
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const saveAccount = async () => {
+    if (!form.account_code.trim() || !form.account_name.trim()) return alert('Account Code and Name are required');
+    setSaving(true);
+    try {
+      const res = await req('/fin/accounts', { method: 'POST', body: JSON.stringify(form) });
+      if (res.error) throw new Error(res.error);
+      setShowAdd(false); setForm(EMPTY_ACCOUNT); load();
+    } catch (e) { alert(e.message); }
+    finally { setSaving(false); }
+  };
+
+  const doExportCSV = () => exportCSV(filtered.map(a => ({
+    Code: a.account_code, Name: a.account_name, Category: a.category, Type: a.account_type,
+    'VAT Treatment': a.vat_treatment, 'VAT Codes': a.allowed_vat_codes || '', Active: a.active ? 'YES' : 'NO',
+  })), 'gl_accounts.csv');
 
   const cats = [...new Set(accounts.map(a => a.category))].sort();
   const filtered = accounts.filter(a =>
@@ -50,6 +80,12 @@ function ChartOfAccounts() {
           <option value="">All Categories</option>
           {cats.map(c=><option key={c} value={c}>{c}</option>)}
         </select>
+        <button className="btn btn-primary btn-sm" onClick={() => { setForm(EMPTY_ACCOUNT); setShowAdd(true); }}>+ New Account</button>
+      </div>
+      <div style={{ display:'flex', gap:6, marginBottom:10, justifyContent:'flex-end' }}>
+        <button className="btn btn-sm" onClick={doExportCSV}>⬇ CSV</button>
+        <button className="btn btn-sm" onClick={doExportCSV}>⬇ Excel</button>
+        <button className="btn btn-sm" onClick={() => window.print()}>🖨 Print</button>
       </div>
       <div className="table-wrap">
         <table>
@@ -70,8 +106,57 @@ function ChartOfAccounts() {
           </tbody>
         </table>
       </div>
+      {showAdd && (
+        <div className="modal-overlay" onClick={() => setShowAdd(false)}>
+          <div className="modal" style={{ maxWidth: 540 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>New GL Account</h3>
+              <button onClick={() => setShowAdd(false)} style={{ background:'none',border:'none',color:'white',cursor:'pointer',fontSize:18 }}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div className="form-row">
+                <div className="form-group"><label>Account Code *</label><input value={form.account_code} onChange={e=>set('account_code',e.target.value.toUpperCase())} placeholder="e.g. 6100" /></div>
+                <div className="form-group"><label>Account Name *</label><input value={form.account_name} onChange={e=>set('account_name',e.target.value)} placeholder="Full account name" /></div>
+              </div>
+              <div className="form-row">
+                <div className="form-group"><label>Category</label>
+                  <select value={form.category} onChange={e=>set('category',e.target.value)}>
+                    {['ASSETS','LIABILITIES','EQUITY','INCOME','EXPENSES','COST_OF_SALES'].map(c=><option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div className="form-group"><label>Account Type</label>
+                  <select value={form.account_type} onChange={e=>set('account_type',e.target.value)}>
+                    <option value="DETAIL">DETAIL</option>
+                    <option value="CONTROL">CONTROL</option>
+                    <option value="HEADER">HEADER</option>
+                  </select>
+                </div>
+                <div className="form-group"><label>VAT Treatment</label>
+                  <select value={form.vat_treatment} onChange={e=>set('vat_treatment',e.target.value)}>
+                    {['NONE','INPUT','OUTPUT','CAPITAL','BOTH'].map(v=><option key={v} value={v}>{v}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group"><label>Allowed VAT Codes</label><input value={form.allowed_vat_codes} onChange={e=>set('allowed_vat_codes',e.target.value)} placeholder="e.g. S1,Z1" /></div>
+                <div className="form-group"><label>Parent Account</label><input value={form.parent_account} onChange={e=>set('parent_account',e.target.value)} placeholder="e.g. 6000" /></div>
+                <div className="form-group"><label>Sub-Account?</label>
+                  <select value={form.is_sub_account?'true':'false'} onChange={e=>set('is_sub_account',e.target.value==='true')}>
+                    <option value="false">No</option><option value="true">Yes</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn" onClick={() => setShowAdd(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={saveAccount} disabled={saving}>{saving ? 'Saving…' : 'Create Account'}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
+
 }
 
 // ── TRIAL BALANCE ─────────────────────────────────────────────
@@ -109,6 +194,8 @@ function TrialBalance() {
           <option value="">All Sections</option>
           {groups.map(g=><option key={g} value={g}>{g}</option>)}
         </select>
+        <button className="btn btn-sm" onClick={()=>exportCSV(filtered.map(a=>({Code:a.account_code,Name:a.account_name,Classification:a.ifrs_classification,Debit:a.total_debit,Credit:a.total_credit,Balance:a.balance})),'trial_balance.csv')}>⬇ CSV</button>
+        <button className="btn btn-sm" onClick={()=>window.print()}>🖨 Print</button>
         <span style={{fontSize:12,color:'#888',marginLeft:'auto'}}>Showing accounts with non-zero balances</span>
       </div>
       <div className="table-wrap">
@@ -395,3 +482,4 @@ export default function FinanceGL() {
     </div>
   );
 }
+
