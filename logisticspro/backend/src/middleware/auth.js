@@ -183,8 +183,9 @@ async function loadUserPermissions(req, res, next) {
     return next();
   }
 
-  // Built-in roles: derive from hardcoded map
+  // Built-in roles: start from hardcoded map, then apply any DB overrides set by Admin
   if (BUILTIN_ROLES.has(role)) {
+    // Start with hardcoded defaults
     req.permissions = {};
     for (const [module, actions] of Object.entries(BUILTIN_PERMISSION_MAP)) {
       req.permissions[module] = {
@@ -193,6 +194,23 @@ async function loadUserPermissions(req, res, next) {
         delete:  (actions.delete || []).includes(role),
         approve: (actions.approve || []).includes(role),
       };
+    }
+    // Apply any Admin overrides stored in lp_role_permissions
+    try {
+      const { data: overrides } = await supabase()
+        .from('lp_role_permissions')
+        .select('module_key, can_view, can_edit, can_delete, can_approve')
+        .eq('role_key', role);
+      for (const p of (overrides || [])) {
+        req.permissions[p.module_key] = {
+          view:    p.can_view,
+          edit:    p.can_edit,
+          delete:  p.can_delete,
+          approve: p.can_approve,
+        };
+      }
+    } catch (_) {
+      // If DB check fails, hardcoded defaults remain — safe fallback
     }
     return next();
   }
@@ -324,3 +342,4 @@ module.exports = {
   CAN_MARK_POD,
   CAN_MANAGE_ROLES,
 };
+
