@@ -6,7 +6,7 @@ import {
   ROLES,
 } from '../lib/roles';
 
-const API = import.meta.env.VITE_API_URL;
+const API = `${import.meta.env.VITE_API_URL}/api`;
 
 const CATEGORIES = ['Tyres','Lubricants','Filters','Belts & Hoses','Brakes',
                     'Electrical','Bodywork','Tools','Safety','Consumables','Other'];
@@ -44,7 +44,7 @@ function NewItemModal({ onClose, onSaved, token }) {
     if (!form.item_name.trim()) { setError('Item name is required'); return; }
     setSaving(true); setError('');
     try {
-      const res = await fetch(`${API}/inventory/items`, {
+      const res = await fetch(`${API}/stock/items`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify(form),
@@ -152,7 +152,7 @@ function ItemDetailPanel({ itemId, token, user, onClose, onUpdated }) {
   const [acting, setActing] = useState(false);
 
   useEffect(() => {
-    fetch(`${API}/inventory/items/${itemId}`, {
+    fetch(`${API}/stock/items/${itemId}`, {
       headers: { Authorization: `Bearer ${token}` },
     }).then(r => r.json()).then(d => { setDetail(d); setLoading(false); });
   }, [itemId, token]);
@@ -162,7 +162,7 @@ function ItemDetailPanel({ itemId, token, user, onClose, onUpdated }) {
       alert('Please enter a rejection reason'); return;
     }
     setActing(true);
-    const res = await fetch(`${API}/inventory/items/${itemId}/approve`, {
+    const res = await fetch(`${API}/stock/items/${itemId}/approve`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ action, rejection_reason: rejReason }),
@@ -293,7 +293,7 @@ export default function Inventory() {
 
   const loadItems = useCallback(async () => {
     setLoading(true);
-    const res = await fetch(`${API}/inventory/items`, {
+    const res = await fetch(`${API}/stock/items`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (res.ok) setItems(await res.json());
