@@ -84,7 +84,7 @@ router.post('/accounts', requireFin, async (req, res) => {
     vat_treatment:     vat_treatment || 'NONE',
     allowed_vat_codes: allowed_vat_codes || null,
     is_sub_account:    is_sub_account || false,
-    parent_account:    parent_account || null,
+    parent_code:       parent_account || null,
     active:            true,
     created_by:        req.user.username,
   }).select().single();
@@ -1388,7 +1388,7 @@ router.get('/income-statement', requireFin, async (req, res) => {
   // 1. Get all IS accounts (Income Statement only, active)
   const { data: accounts, error: accErr } = await supabase
     .from('fin_gl_accounts')
-    .select('account_code, account_name, category, account_type, is_sub_account, parent_account')
+    .select('account_code, account_name, category, account_type, is_sub_account, parent_code')
     .eq('ifrs_classification', 'Income Statement')
     .eq('active', true)
     .order('account_code');
@@ -1523,7 +1523,7 @@ router.get('/income-statement', requireFin, async (req, res) => {
       category:       a.category,
       account_type:   a.account_type,
       is_sub_account: a.is_sub_account,
-      parent_account: a.parent_account,
+      parent_account: a.parent_code,
       period_data:    periodData,
       ytd:            Math.round((ytdTotals[a.account_code] || 0) * 100) / 100,
       prior_year:     Math.round((priorTotals[a.account_code] || 0) * 100) / 100,
