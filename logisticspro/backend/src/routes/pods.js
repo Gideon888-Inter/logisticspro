@@ -62,11 +62,11 @@ router.get('/pending', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
 
   let q = supabase
     .from('lp_movement')
-    .select('m_load_no, m_date, m_customer, m_truck, m_from, m_to, m_rate, m_order_no, m_bus_unit')
+    .select('m_load_no, m_date, m_customer, m_truck, m_from, m_to, m_rate, m_order_no')
     .eq('m_status', 'WAIT_POD_SCAN')
     .order('m_date', { ascending: false });
 
-  if (bus_unit) q = q.eq('m_bus_unit', bus_unit);
+  // bus_unit filter removed — column dropped
 
   const { data, error } = await q;
   if (error) return res.status(500).json({ error: error.message });
@@ -89,12 +89,12 @@ router.get('/received', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
 
   let q = supabase
     .from('lp_movement')
-    .select('m_load_no, m_date, m_customer, m_truck, m_from, m_to, m_rate, m_status, m_order_no, m_bus_unit')
+    .select('m_load_no, m_date, m_customer, m_truck, m_from, m_to, m_rate, m_status, m_order_no')
     .eq('m_pod_received', true)
     .neq('m_status', 'DELETED')
     .order('m_date', { ascending: false });
 
-  if (bus_unit) q = q.eq('m_bus_unit', bus_unit);
+  // bus_unit filter removed — column dropped
   if (search)   q = q.or(`m_load_no.ilike.%${search}%,m_customer.ilike.%${search}%,m_truck.ilike.%${search}%`);
 
   const { data, error } = await q;
@@ -171,4 +171,5 @@ router.post('/:loadNo/mark-received', requireRole(...CAN_MARK_POD), async (req, 
 
 
 module.exports = router;
+
 
