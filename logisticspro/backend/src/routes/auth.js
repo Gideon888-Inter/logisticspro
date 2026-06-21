@@ -75,9 +75,11 @@ router.post('/register', authMiddleware, requireRole(...CAN_MANAGE_USERS), async
   if (!u_password || u_password.length < 8)
     return res.status(400).json({ error: 'Password must be at least 8 characters' });
 
-  // Manager cannot create Admin users
+  // Manager cannot create Admin or Finance users (Finance is Admin-only)
   if (req.user.role === ROLES.MANAGER && u_role === ROLES.ADMIN)
     return res.status(403).json({ error: 'Only Administrators can create Admin users' });
+  if (req.user.role === ROLES.MANAGER && u_role === ROLES.FINANCE)
+    return res.status(403).json({ error: 'Only Administrators can create Finance users' });
 
   // Check username not already taken (also check pending approvals)
   const { data: existing } = await supabase
@@ -102,7 +104,11 @@ router.post('/register', authMiddleware, requireRole(...CAN_MANAGE_USERS), async
   const hashed = await bcrypt.hash(u_password, 10);
 
   // Determine if approval is required
-  const NEEDS_APPROVAL_ROLES = [ROLES.OPERATOR, ROLES.OPS_ASSISTANT, ROLES.CONTROL_ROOM, ROLES.WORKSHOP, ROLES.MANAGER];
+  const NEEDS_APPROVAL_ROLES = [
+    ROLES.OPERATOR, ROLES.OPS_ASSISTANT, ROLES.CONTROL_ROOM, ROLES.MANAGER,
+    ROLES.WORKSHOP_MANAGER, ROLES.WORKSHOP_ASSISTANT, ROLES.STOCK_CONTROLLER, ROLES.WORKSHOP,
+    // FINANCE users require Admin approval only (not Manager)
+  ];
   const needsApproval = req.user.role === ROLES.MANAGER && NEEDS_APPROVAL_ROLES.includes(u_role);
 
   if (!needsApproval) {
@@ -129,8 +135,10 @@ router.post('/register', authMiddleware, requireRole(...CAN_MANAGE_USERS), async
 
   // Determine the correct approver from config
   let approverKey = 'approver_ops_users';
-  if (u_role === ROLES.WORKSHOP)  approverKey = 'approver_workshop_users';
-  if (u_role === ROLES.MANAGER)   approverKey = null; // goes to any Admin
+  if ([ROLES.WORKSHOP_MANAGER, ROLES.WORKSHOP_ASSISTANT, ROLES.STOCK_CONTROLLER, ROLES.WORKSHOP].includes(u_role))
+    approverKey = 'approver_workshop_users';
+  if (u_role === ROLES.FINANCE)   approverKey = null; // Finance users → any Admin
+  if (u_role === ROLES.MANAGER)   approverKey = null; // Manager users → any Admin
 
   let approverUsername;
   if (approverKey) {
