@@ -710,4 +710,91 @@ router.get('/dashboard', requireFin, async (req, res) => {
   });
 });
 
+
+// ─────────────────────────────────────────────────────────────
+// GL ACCOUNT TRANSACTIONS (Account Enquiry / Ledger)
+// ─────────────────────────────────────────────────────────────
+
+// GET /fin/account-transactions
+// Query params: account_code, date_from, date_to, limit (all optional)
+// Returns journal lines joined to journal header, ordered by date desc
+router.get('/account-transactions', requireFin, async (req, res) => {
+  const { account_code, date_from, date_to, limit = 500 } = req.query;
+
+  // Fetch journal lines with journal header data
+  let query = supabase
+    .from('fin_gl_journal_lines')
+    .select(`
+      line_id,
+      line_number,
+      account_code,
+      description,
+      debit,
+      credit,
+      vat_type,
+      vat_amount,
+      reference,
+      fin_gl_journals!inner (
+        journal_id,
+        journal_ref,
+        journal_date,
+        journal_type,
+        description,
+        posted,
+        source_module,
+        source_document
+      )
+    `)
+    .eq('fin_gl_journals.posted', true)
+    .order('fin_gl_journals(journal_date)', { ascending: false })
+    .limit(parseInt(limit));
+
+  if (account_code) {
+    query = query.eq('account_code', account_code);
+  }
+  if (date_from) {
+    query = query.gte('fin_gl_journals.journal_date', date_from);
+  }
+  if (date_to) {
+    query = query.lte('fin_gl_journals.journal_date', date_to);
+  }
+
+  const { data, error } = await query;
+  if (error) return res.status(500).json({ error: error.message });
+
+  // Flatten the nested join for easy frontend consumption
+  const rows = (data || []).map(l => ({
+    line_id:         l.line_id,
+    account_code:    l.account_code,
+    line_desc:       l.description,
+    debit:           l.debit || 0,
+    credit:          l.credit || 0,
+    vat_type:        l.vat_type,
+    vat_amount:      l.vat_amount || 0,
+    reference:       l.reference,
+    journal_id:      l.fin_gl_journals?.journal_id,
+    journal_ref:     l.fin_gl_journals?.journal_ref,
+    journal_date:    l.fin_gl_journals?.journal_date,
+    journal_type:    l.fin_gl_journals?.journal_type,
+    journal_desc:    l.fin_gl_journals?.description,
+    source_module:   l.fin_gl_journals?.source_module,
+    source_document: l.fin_gl_journals?.source_document,
+  }));
+
+  // Compute running totals
+  const totalDebit  = rows.reduce((s, r) => s + r.debit,  0);
+  const totalCredit = rows.reduce((s, r) => s + r.credit, 0);
+  const netBalance  = totalDebit - totalCredit;
+
+  res.json({
+    transactions: rows,
+    totals: {
+      total_debit:  Math.round(totalDebit  * 100) / 100,
+      total_credit: Math.round(totalCredit * 100) / 100,
+      net_balance:  Math.round(netBalance  * 100) / 100,
+    },
+    count: rows.length,
+  });
+});
+
 module.exports = router;
