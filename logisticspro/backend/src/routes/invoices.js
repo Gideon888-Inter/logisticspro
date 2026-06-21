@@ -41,7 +41,7 @@ router.get('/drafts', requireRole(...CAN_MANAGE_INVOICES), async (req, res) => {
   try {
     const { data: loads, error: loadErr } = await supabase
       .from('lp_movement')
-      .select('m_load_no, m_date, m_customer, m_from, m_to, m_rate, m_load_total, m_order_no, m_bus_unit')
+      .select('m_load_no, m_date, m_customer, m_from, m_to, m_rate, m_load_total, m_order_no')
       .eq('m_status', 'WAIT_INVOICE_NO')
       .order('m_date', { ascending: false });
 
@@ -332,3 +332,4 @@ router.post('/:id/credit-note', requireRole(...CAN_CREATE_CREDIT_NOTE), async (r
 
 
 module.exports = router;
+
