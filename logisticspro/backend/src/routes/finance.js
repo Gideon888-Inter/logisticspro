@@ -1540,4 +1540,198 @@ router.get('/income-statement', requireFin, async (req, res) => {
   });
 });
 
+
+// ─────────────────────────────────────────────────────────────
+// CASHBOOK
+// ─────────────────────────────────────────────────────────────
+
+// GET /fin/cashbook/entries
+// All posted cashbook journal lines (actual GL transactions on bank accounts)
+router.get('/cashbook/entries', requireFin, async (req, res) => {
+  const { bank_account, date_from, date_to, direction } = req.query;
+
+  // Bank account codes: 8400 (Nedbank), 8410 (Call), 8420 (Petty Cash)
+  // Get journal lines for bank GL accounts
+  const bankAccounts = bank_account
+    ? [bank_account]
+    : ['8400', '8410', '8420', '8499'];
+
+  // Get posted journals in range
+  let jQ = supabase
+    .from('fin_gl_journals')
+    .select('journal_id, journal_ref, journal_date, journal_type, description, source_module, source_document')
+    .eq('posted', true)
+    .order('journal_date', { ascending: false })
+    .limit(1000);
+
+  if (date_from) jQ = jQ.gte('journal_date', date_from);
+  if (date_to)   jQ = jQ.lte('journal_date', date_to);
+
+  const { data: journals, error: jErr } = await jQ;
+  if (jErr) return res.status(500).json({ error: jErr.message });
+
+  const journalIds = (journals || []).map(j => j.journal_id);
+  const jMap = {};
+  (journals || []).forEach(j => { jMap[j.journal_id] = j; });
+
+  if (!journalIds.length) {
+    return res.json({ entries: [], totals: { receipts: 0, payments: 0, net: 0 } });
+  }
+
+  // Get lines on bank accounts
+  const { data: lines, error: lErr } = await supabase
+    .from('fin_gl_journal_lines')
+    .select('line_id, journal_id, account_code, description, debit, credit')
+    .in('journal_id', journalIds)
+    .in('account_code', bankAccounts);
+
+  if (lErr) return res.status(500).json({ error: lErr.message });
+
+  // For each bank line, also get the contra account(s) from same journal
+  const entries = (lines || []).map(l => {
+    const j = jMap[l.journal_id] || {};
+    // Bank: debit = receipt (money in), credit = payment (money out)
+    const isReceipt = (l.debit || 0) > 0;
+    const amount    = isReceipt ? (l.debit || 0) : (l.credit || 0);
+    const dir       = isReceipt ? 'RECEIPT' : 'PAYMENT';
+    return {
+      line_id:       l.line_id,
+      journal_id:    l.journal_id,
+      journal_ref:   j.journal_ref,
+      journal_date:  j.journal_date,
+      journal_type:  j.journal_type,
+      description:   l.description || j.description,
+      bank_account:  l.account_code,
+      amount,
+      direction:     dir,
+      source_module: j.source_module,
+    };
+  }).filter(e => !direction || e.direction === direction)
+    .sort((a, b) => (b.journal_date || '').localeCompare(a.journal_date || ''));
+
+  const receipts = entries.filter(e => e.direction === 'RECEIPT').reduce((s, e) => s + e.amount, 0);
+  const payments = entries.filter(e => e.direction === 'PAYMENT').reduce((s, e) => s + e.amount, 0);
+
+  res.json({
+    entries,
+    totals: {
+      receipts: Math.round(receipts * 100) / 100,
+      payments: Math.round(payments * 100) / 100,
+      net:      Math.round((receipts - payments) * 100) / 100,
+    },
+  });
+});
+
+// GET /fin/cashbook/staging — existing, enhanced with direction filter
+// Already exists above, keeping for backwards compat
+
+// POST /fin/cashbook/entry — manual cashbook entry (posts a GL journal)
+router.post('/cashbook/entry', requireFin, async (req, res) => {
+  const {
+    bank_account, contra_account, description, amount,
+    direction, transaction_date, period_id, reference, vat_type,
+  } = req.body;
+
+  if (!bank_account)     return res.status(400).json({ error: 'bank_account is required' });
+  if (!contra_account)   return res.status(400).json({ error: 'contra_account is required' });
+  if (!description?.trim()) return res.status(400).json({ error: 'description is required' });
+  if (!amount || amount <= 0) return res.status(400).json({ error: 'amount must be positive' });
+  if (!direction || !['RECEIPT','PAYMENT'].includes(direction)) {
+    return res.status(400).json({ error: 'direction must be RECEIPT or PAYMENT' });
+  }
+  if (!transaction_date) return res.status(400).json({ error: 'transaction_date is required' });
+  if (!period_id)        return res.status(400).json({ error: 'period_id is required' });
+
+  // Check period not locked
+  const { data: period } = await supabase
+    .from('fin_periods')
+    .select('is_closed, period_name')
+    .eq('period_id', period_id)
+    .single();
+  if (!period)          return res.status(404).json({ error: 'Period not found' });
+  if (period.is_closed) return res.status(400).json({ error: `Period ${period.period_name} is locked` });
+
+  // Generate ref
+  const datePart = transaction_date.replace(/-/g, '').slice(0, 6);
+  const prefix   = direction === 'RECEIPT' ? 'CB-REC' : 'CB-PAY';
+  const { count } = await supabase
+    .from('fin_gl_journals')
+    .select('*', { count: 'exact', head: true })
+    .like('journal_ref', `${prefix}-${datePart}-%`);
+  const seq         = String((count || 0) + 1).padStart(5, '0');
+  const journal_ref = `${prefix}-${datePart}-${seq}`;
+
+  // Build lines:
+  // RECEIPT: DR bank, CR contra
+  // PAYMENT: CR bank, DR contra
+  const vatAmount = vat_type && vat_type !== 'NONE'
+    ? Math.round(amount * 15 / 115 * 100) / 100
+    : 0;
+
+  const lines = direction === 'RECEIPT'
+    ? [
+        { account_code: bank_account,   description, debit: amount, credit: 0, vat_type: null, vat_amount: 0 },
+        { account_code: contra_account, description, debit: 0, credit: amount, vat_type: vat_type || null, vat_amount: vatAmount },
+      ]
+    : [
+        { account_code: contra_account, description, debit: amount, credit: 0, vat_type: vat_type || null, vat_amount: vatAmount },
+        { account_code: bank_account,   description, debit: 0, credit: amount, vat_type: null, vat_amount: 0 },
+      ];
+
+  // Post journal
+  const { data: journal, error: jErr } = await supabase
+    .from('fin_gl_journals')
+    .insert({
+      journal_ref,
+      journal_type:  direction === 'RECEIPT' ? 'CB_REC' : 'CB_PAY',
+      description,
+      period_id,
+      journal_date:  transaction_date,
+      source_module: 'CASHBOOK',
+      source_document: reference || null,
+      posted:        true,
+      posted_at:     new Date().toISOString(),
+      posted_by:     req.user.username,
+      created_by:    req.user.username,
+    })
+    .select()
+    .single();
+
+  if (jErr) return res.status(500).json({ error: jErr.message });
+
+  const lineRows = lines.map((l, i) => ({
+    journal_id:   journal.journal_id,
+    line_number:  i + 1,
+    account_code: l.account_code,
+    description:  l.description,
+    debit:        l.debit,
+    credit:       l.credit,
+    vat_type:     l.vat_type,
+    vat_amount:   l.vat_amount,
+  }));
+
+  const { error: lErr } = await supabase
+    .from('fin_gl_journal_lines')
+    .insert(lineRows);
+
+  if (lErr) {
+    await supabase.from('fin_gl_journals').delete().eq('journal_id', journal.journal_id);
+    return res.status(500).json({ error: lErr.message });
+  }
+
+  res.json({ success: true, journal_ref, journal_id: journal.journal_id });
+});
+
+// GET /fin/cashbook/bank-accounts — GL accounts classified as bank/cash
+router.get('/cashbook/bank-accounts', requireFin, async (req, res) => {
+  const { data, error } = await supabase
+    .from('fin_gl_accounts')
+    .select('account_code, account_name')
+    .in('account_code', ['8400', '8410', '8420', '8490', '8495', '8499'])
+    .eq('active', true)
+    .order('account_code');
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+});
+
 module.exports = router;
