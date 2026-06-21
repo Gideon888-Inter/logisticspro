@@ -6,7 +6,7 @@ import {
   PO_STATUS_LABELS, PO_STATUS_COLORS, ROLES,
 } from '../lib/roles';
 
-const API = import.meta.env.VITE_API_URL;
+const API = `${import.meta.env.VITE_API_URL}/api`;
 
 function Badge({ status }) {
   const color = PO_STATUS_COLORS[status] || 'bg-gray-100 text-gray-600';
@@ -124,7 +124,7 @@ function POForm({ po, token, user, suppliers, vehicles, inventoryItems, onClose,
           unit_price_excl: Number(l.unit_price_excl || 0),
         })),
       };
-      const res = await fetch(`${API}/inventory/po`, {
+      const res = await fetch(`${API}/stock/po`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify(body),
@@ -136,7 +136,7 @@ function POForm({ po, token, user, suppliers, vehicles, inventoryItems, onClose,
       if (attachment && data.po_id) {
         const fd = new FormData();
         fd.append('attachment', attachment);
-        await fetch(`${API}/inventory/po/${data.po_id}/attachment`, {
+        await fetch(`${API}/stock/po/${data.po_id}/attachment`, {
           method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd,
         });
       }
@@ -387,7 +387,7 @@ function PODetailPanel({ poId, token, user, onClose, onUpdated }) {
   const [acting, setActing] = useState(false);
 
   const load = useCallback(async () => {
-    const res = await fetch(`${API}/inventory/po/${poId}`, {
+    const res = await fetch(`${API}/stock/po/${poId}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (res.ok) setDetail(await res.json());
@@ -398,7 +398,7 @@ function PODetailPanel({ poId, token, user, onClose, onUpdated }) {
 
   const doSubmit = async () => {
     setActing(true);
-    const res = await fetch(`${API}/inventory/po/${poId}/submit`, {
+    const res = await fetch(`${API}/stock/po/${poId}/submit`, {
       method: 'POST', headers: { Authorization: `Bearer ${token}` },
     });
     const d = await res.json();
@@ -409,7 +409,7 @@ function PODetailPanel({ poId, token, user, onClose, onUpdated }) {
   const doApprove = async (action) => {
     if (action === 'REJECT' && !rejReason.trim()) { alert('Rejection reason required'); return; }
     setActing(true);
-    const res = await fetch(`${API}/inventory/po/${poId}/approve`, {
+    const res = await fetch(`${API}/stock/po/${poId}/approve`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ action, notes: rejReason }),
@@ -423,7 +423,7 @@ function PODetailPanel({ poId, token, user, onClose, onUpdated }) {
   const uploadAttachment = async (file) => {
     if (!file) return;
     const fd = new FormData(); fd.append('attachment', file);
-    const res = await fetch(`${API}/inventory/po/${poId}/attachment`, {
+    const res = await fetch(`${API}/stock/po/${poId}/attachment`, {
       method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd,
     });
     const d = await res.json();
@@ -628,7 +628,7 @@ export default function PurchaseOrders() {
 
   const loadPOs = useCallback(async () => {
     setLoading(true);
-    const res = await fetch(`${API}/inventory/po`, {
+    const res = await fetch(`${API}/stock/po`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (res.ok) setPos(await res.json());
@@ -642,7 +642,7 @@ export default function PurchaseOrders() {
     Promise.all([
       fetch(`${API}/suppliers`, { headers }).then(r => r.ok ? r.json() : []),
       fetch(`${API}/vehicles`, { headers }).then(r => r.ok ? r.json() : []),
-      fetch(`${API}/inventory/items`, { headers }).then(r => r.ok ? r.json() : []),
+      fetch(`${API}/stock/items`, { headers }).then(r => r.ok ? r.json() : []),
     ]).then(([s, v, i]) => {
       setSuppliers(Array.isArray(s) ? s : s.data || []);
       setVehicles(Array.isArray(v) ? v : v.data || []);
