@@ -410,10 +410,4 @@ export function canManageRoles(user) {
   return user?.role === ROLES.ADMIN;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// FINANCE MODULE visibility
-// ─────────────────────────────────────────────────────────────────────────────
 
-export function canViewFinance(user) {
-  return [ROLES.ADMIN, ROLES.FINANCE].includes(user?.role);
-}
