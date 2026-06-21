@@ -508,7 +508,9 @@ function AssetRegister({ classes }) {
           <div className="stat-card"><div className="stat-label">Assets</div><div className="stat-value" style={{ color: '#00AEEF' }}>{t.count}</div></div>
           <div className="stat-card"><div className="stat-label">Total Cost</div><div className="stat-value" style={{ fontSize: 14 }}>{fmt(t.total_cost)}</div></div>
           <div className="stat-card"><div className="stat-label">Accum Depreciation</div><div className="stat-value" style={{ fontSize: 14, color: '#e53e3e' }}>{fmt(t.total_accum)}</div></div>
+          {periodLabel && <div className="stat-card"><div className="stat-label">Opening Accum Depre</div><div className="stat-value" style={{ fontSize: 13, color: '#e53e3e' }}>{fmt(t.total_opening)}</div></div>}
           {periodLabel && <div className="stat-card"><div className="stat-label">Period Depreciation</div><div className="stat-value" style={{ fontSize: 14, color: '#d97706' }}>{fmt(t.total_period)}</div></div>}
+          {periodLabel && <div className="stat-card"><div className="stat-label">Closing Accum Depre</div><div className="stat-value" style={{ fontSize: 13, color: '#e53e3e' }}>{fmt(t.total_closing)}</div></div>}
           <div className="stat-card"><div className="stat-label">Total Book NBV</div><div className="stat-value" style={{ fontSize: 14, color: '#005A8E' }}>{fmt(t.total_nbv)}</div></div>
         </div>
       )}
@@ -534,7 +536,9 @@ function AssetRegister({ classes }) {
                 <th style={{ textAlign: 'center' }}>Assets</th>
                 <th style={{ textAlign: 'right' }}>Cost</th>
                 <th style={{ textAlign: 'right' }}>Accum Depre</th>
+                {periodLabel && <th style={{ textAlign: 'right' }}>Opening Accum</th>}
                 {periodLabel && <th style={{ textAlign: 'right' }}>Period Depre</th>}
+                {periodLabel && <th style={{ textAlign: 'right' }}>Closing Accum</th>}
                 <th style={{ textAlign: 'right' }}>Book NBV</th>
               </tr>
             </thead>
@@ -548,7 +552,9 @@ function AssetRegister({ classes }) {
                   <td style={{ textAlign: 'center' }}>{c.count}</td>
                   <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>{fmt(c.cost)}</td>
                   <td style={{ textAlign: 'right', fontFamily: 'monospace', color: '#e53e3e' }}>{fmt(c.accum_depre)}</td>
+                  {periodLabel && <td style={{ textAlign: 'right', fontFamily: 'monospace', color: '#e53e3e' }}>{fmt(c.opening_depre)}</td>}
                   {periodLabel && <td style={{ textAlign: 'right', fontFamily: 'monospace', color: '#d97706' }}>{fmt(c.period_depre)}</td>}
+                  {periodLabel && <td style={{ textAlign: 'right', fontFamily: 'monospace', color: '#e53e3e' }}>{fmt(c.closing_depre)}</td>}
                   <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: '#005A8E' }}>{fmt(c.book_nbv)}</td>
                 </tr>
               ))}
@@ -581,7 +587,9 @@ function AssetRegister({ classes }) {
                 {showDisposals && <th style={{ textAlign: 'right', color: '#e53e3e' }}>Disposal Date</th>}
                 {showDisposals && <th style={{ textAlign: 'right', color: '#e53e3e' }}>Proceeds</th>}
                 <th style={{ textAlign: 'right' }}>Accum Depre</th>
+                {periodLabel && <th style={{ textAlign: 'right' }}>Opening Accum</th>}
                 {periodLabel && <th style={{ textAlign: 'right' }}>Period Depre</th>}
+                {periodLabel && <th style={{ textAlign: 'right' }}>Closing Accum</th>}
                 <th style={{ textAlign: 'right' }}>Book NBV</th>
                 <th style={{ textAlign: 'right' }}>Tax Value</th>
                 <th>Status</th>
@@ -615,7 +623,9 @@ function AssetRegister({ classes }) {
                       {showDisposals && <td style={{ textAlign: 'right', fontSize: 12, color: '#e53e3e' }}>{r.disposal_date || '—'}</td>}
                       {showDisposals && <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 12, color: '#e53e3e' }}>{r.disposal_proceeds ? fmt(r.disposal_proceeds) : '—'}</td>}
                       <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 12, color: '#e53e3e' }}>{fmt(r.accumulated_depre)}</td>
+                      {periodLabel && <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 12, color: '#e53e3e' }}>{fmt(r.opening_depre_book)}</td>}
                       {periodLabel && <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 12, color: '#d97706' }}>{fmt(r.period_depre_book)}</td>}
+                      {periodLabel && <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 12, color: '#e53e3e' }}>{fmt(r.closing_depre_book)}</td>}
                       <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 600, color: '#005A8E', fontSize: 12 }}>{fmt(r.book_nbv)}</td>
                       <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 12 }}>{fmt(r.tax_value)}</td>
                       <td>
@@ -635,7 +645,9 @@ function AssetRegister({ classes }) {
                     {showDisposals && <td />}
                     {showDisposals && <td style={{ textAlign: 'right', fontFamily: 'monospace', padding: '5px 8px', fontSize: 12, color: '#e53e3e' }}>{fmt(g.rows.reduce((s, r) => s + (r.disposal_proceeds || 0), 0))}</td>}
                     <td style={{ textAlign: 'right', fontFamily: 'monospace', padding: '5px 8px', fontSize: 12, color: '#e53e3e' }}>{fmt(g.rows.reduce((s, r) => s + (r.accumulated_depre || 0), 0))}</td>
+                    {periodLabel && <td style={{ textAlign: 'right', fontFamily: 'monospace', padding: '5px 8px', fontSize: 12, color: '#e53e3e' }}>{fmt(g.rows.reduce((s, r) => s + (r.opening_depre_book || 0), 0))}</td>}
                     {periodLabel && <td style={{ textAlign: 'right', fontFamily: 'monospace', padding: '5px 8px', fontSize: 12, color: '#d97706' }}>{fmt(g.rows.reduce((s, r) => s + (r.period_depre_book || 0), 0))}</td>}
+                    {periodLabel && <td style={{ textAlign: 'right', fontFamily: 'monospace', padding: '5px 8px', fontSize: 12, color: '#e53e3e' }}>{fmt(g.rows.reduce((s, r) => s + (r.closing_depre_book || 0), 0))}</td>}
                     <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, color: '#005A8E', padding: '5px 8px', fontSize: 12 }}>{fmt(g.rows.reduce((s, r) => s + (r.book_nbv || 0), 0))}</td>
                     <td style={{ textAlign: 'right', fontFamily: 'monospace', padding: '5px 8px', fontSize: 12 }}>{fmt(g.rows.reduce((s, r) => s + (r.tax_value || 0), 0))}</td>
                     <td />
@@ -651,7 +663,9 @@ function AssetRegister({ classes }) {
                   {showDisposals && <td />}
                   {showDisposals && <td />}
                   <td style={{ textAlign: 'right', fontFamily: 'monospace', padding: '7px 10px' }}>{fmt(t.total_accum)}</td>
+                  {periodLabel && <td style={{ textAlign: 'right', fontFamily: 'monospace', padding: '7px 10px' }}>{fmt(t.total_opening)}</td>}
                   {periodLabel && <td style={{ textAlign: 'right', fontFamily: 'monospace', padding: '7px 10px' }}>{fmt(t.total_period)}</td>}
+                  {periodLabel && <td style={{ textAlign: 'right', fontFamily: 'monospace', padding: '7px 10px' }}>{fmt(t.total_closing)}</td>}
                   <td style={{ textAlign: 'right', fontFamily: 'monospace', fontWeight: 700, padding: '7px 10px' }}>{fmt(t.total_nbv)}</td>
                   <td colSpan={2} />
                 </tr>
