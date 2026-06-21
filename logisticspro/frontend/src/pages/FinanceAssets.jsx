@@ -684,6 +684,152 @@ function AssetRegister({ classes }) {
 }
 
 // ── MAIN FIXED ASSETS PAGE ────────────────────────────────────
+
+// ── PROCESS DEPRECIATION ──────────────────────────────────────────────────
+function ProcessDepreciation() {
+  const [periods, setPeriods]     = useState([]);
+  const [periodId, setPeriodId]   = useState('');
+  const [preview, setPreview]     = useState(null);
+  const [loading, setLoading]     = useState(false);
+  const [running, setRunning]     = useState(false);
+  const [result, setResult]       = useState(null);
+  const [err, setErr]             = useState('');
+
+  const fmt    = (n) => n == null ? '—' : `R ${Number(n).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const fmtNum = (n) => n == null ? '—' : Number(n).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  useEffect(() => {
+    req('/fin/periods').then(d => setPeriods(Array.isArray(d) ? d.filter(p => !p.is_closed) : []));
+  }, []);
+
+  const runPreview = async () => {
+    if (!periodId) return setErr('Select a period first');
+    setErr(''); setLoading(true); setPreview(null); setResult(null);
+    const d = await req(`/fin/depreciation/preview?period_id=${periodId}`);
+    setLoading(false);
+    if (d.error) return setErr(d.error);
+    setPreview(d);
+  };
+
+  const runDepreciation = async () => {
+    if (!preview) return;
+    if (!confirm(`Run depreciation for ${preview.period_name}? This will update ${preview.asset_count} assets and create an UNPOSTED journal.`)) return;
+    setRunning(true); setErr('');
+    const d = await req('/fin/depreciation/run', { method: 'POST', body: JSON.stringify({ period_id: periodId }) });
+    setRunning(false);
+    if (d.error) return setErr(d.error);
+    setResult(d);
+    setPreview(null);
+  };
+
+  return (
+    <div>
+      {/* Period selector */}
+      <div style={{ background: '#f8fafc', border: '1px solid #e8edf2', borderRadius: 8, padding: '14px 16px', marginBottom: 16 }}>
+        <div style={{ fontWeight: 700, fontSize: 13, color: '#005A8E', marginBottom: 10 }}>⚙️ Run Monthly Depreciation</div>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <div className="form-group" style={{ marginBottom: 0, minWidth: 200 }}>
+            <label>Period *</label>
+            <select value={periodId} onChange={e => { setPeriodId(e.target.value); setPreview(null); setResult(null); setErr(''); }}>
+              <option value="">— Select open period —</option>
+              {periods.map(p => <option key={p.period_id} value={p.period_id}>{p.period_name}</option>)}
+            </select>
+          </div>
+          <button className="btn btn-primary btn-sm" onClick={runPreview} disabled={loading || !periodId}>
+            {loading ? 'Calculating…' : '🔍 Preview Depreciation'}
+          </button>
+        </div>
+        {err && <div style={{ marginTop: 10, color: '#c53030', fontSize: 13 }}>⚠ {err}</div>}
+      </div>
+
+      {/* Success result */}
+      {result && (
+        <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+          <div style={{ fontWeight: 700, fontSize: 14, color: '#059669', marginBottom: 8 }}>✅ Depreciation Run Complete</div>
+          <div style={{ fontSize: 13 }}>Assets processed: <strong>{result.assets_run}</strong></div>
+          <div style={{ fontSize: 13 }}>Total depreciation: <strong>{fmt(result.total_depre)}</strong></div>
+          <div style={{ fontSize: 13 }}>Journal created: <strong style={{ color: '#005A8E' }}>{result.journal_ref}</strong> (UNPOSTED)</div>
+          <div style={{ marginTop: 8, fontSize: 12, color: '#555' }}>
+            ℹ️ Review the journal in <strong>GL → GL Journals</strong> and post it when ready.
+          </div>
+        </div>
+      )}
+
+      {/* Preview table */}
+      {preview && (
+        <>
+          {/* Summary stats */}
+          <div className="stats-grid" style={{ marginBottom: 14 }}>
+            <div className="stat-card"><div className="stat-label">Period</div><div className="stat-value" style={{ fontSize: 14 }}>{preview.period_name}</div></div>
+            <div className="stat-card"><div className="stat-label">Assets</div><div className="stat-value" style={{ color: '#00AEEF' }}>{preview.asset_count}</div></div>
+            <div className="stat-card"><div className="stat-label">Total Depreciation</div><div className="stat-value" style={{ fontSize: 14, color: '#e53e3e' }}>{fmt(preview.total_depre)}</div></div>
+          </div>
+
+          {/* Journal preview */}
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontWeight: 600, fontSize: 13, color: '#555', marginBottom: 6 }}>Journal to be created (UNPOSTED — review before posting)</div>
+            <div style={{ background: '#f8fafc', border: '1px solid #e8edf2', borderRadius: 6, padding: 12 }}>
+              {preview.journal_lines.map((l, i) => (
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', borderBottom: i < preview.journal_lines.length - 1 ? '1px solid #f0f4f8' : 'none', fontSize: 13 }}>
+                  <span className="mono" style={{ color: '#005A8E', marginRight: 12 }}>{l.account_code}</span>
+                  <span style={{ flex: 1, color: '#555' }}>{l.description}</span>
+                  <span style={{ fontFamily: 'monospace', color: '#005A8E', width: 120, textAlign: 'right' }}>{l.debit > 0 ? fmt(l.debit) + ' DR' : ''}</span>
+                  <span style={{ fontFamily: 'monospace', color: '#e53e3e', width: 120, textAlign: 'right' }}>{l.credit > 0 ? fmt(l.credit) + ' CR' : ''}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Asset detail table */}
+          <div style={{ fontWeight: 600, fontSize: 13, color: '#555', marginBottom: 6 }}>Asset Detail</div>
+          <div className="table-wrap" style={{ marginBottom: 16 }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Asset Code</th><th>Description</th><th>Class</th>
+                  <th style={{ textAlign: 'right' }}>Cost</th>
+                  <th style={{ textAlign: 'right' }}>NBV Before</th>
+                  <th style={{ textAlign: 'right' }}>Depre Amount</th>
+                  <th style={{ textAlign: 'right' }}>NBV After</th>
+                  <th style={{ textAlign: 'center' }}>Fully Depr?</th>
+                </tr>
+              </thead>
+              <tbody>
+                {preview.asset_lines.map(a => (
+                  <tr key={a.asset_id} style={{ background: a.fully_depreciated_after ? '#fef9c3' : 'white' }}>
+                    <td className="mono" style={{ fontWeight: 700 }}>{a.asset_code}</td>
+                    <td style={{ fontSize: 12 }}>{a.description}</td>
+                    <td><span className="badge badge-gray" style={{ fontSize: 10 }}>{a.class_code}</span></td>
+                    <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 12 }}>{fmtNum(a.purchase_price)}</td>
+                    <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 12, color: '#005A8E' }}>{fmtNum(a.book_nbv_before)}</td>
+                    <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 12, color: '#e53e3e' }}>{fmtNum(a.book_depre_amount)}</td>
+                    <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 12, fontWeight: 700, color: a.fully_depreciated_after ? '#d97706' : '#059669' }}>{fmtNum(a.book_nbv_after)}</td>
+                    <td style={{ textAlign: 'center' }}>
+                      {a.fully_depreciated_after ? <span className="badge badge-amber" style={{ fontSize: 10 }}>YES</span> : <span style={{ color: '#ccc' }}>—</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <button className="btn btn-primary" onClick={runDepreciation} disabled={running}>
+            {running ? 'Running…' : `▶ Run Depreciation for ${preview.period_name}`}
+          </button>
+        </>
+      )}
+
+      {!preview && !result && !loading && !err && (
+        <div className="empty-state" style={{ padding: '32px 0' }}>
+          <div style={{ fontSize: 32, marginBottom: 8 }}>📅</div>
+          <div>Select an open period and click <strong>Preview Depreciation</strong> to calculate monthly asset depreciation.</div>
+          <div style={{ fontSize: 12, color: '#aaa', marginTop: 6 }}>Depreciation is calculated as Cost ÷ Useful Life (years) ÷ 12 per month. The system creates an UNPOSTED journal for your review.</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function FinanceAssets() {
   const [tab, setTab]                     = useState('list');
   const [classes, setClasses]             = useState([]);
@@ -715,10 +861,13 @@ export default function FinanceAssets() {
         <div style={tabStyle('transactions')} onClick={() => setTab('transactions')}>
           Asset Transactions{txAssetLabel ? ` — ${txAssetCode}` : ''}
         </div>
+        <div style={tabStyle('depreciation')} onClick={() => setTab('depreciation')}>Process Depreciation</div>
       </div>
       {tab === 'list'         && <AssetList classes={classes} onViewTransactions={viewTransactions} />}
       {tab === 'register'     && <AssetRegister classes={classes} />}
       {tab === 'transactions' && <AssetTransactions preselectedCode={txAssetCode} classes={classes} key={txAssetCode} />}
+      {tab === 'depreciation'  && <ProcessDepreciation />}
     </div>
   );
 }
+
