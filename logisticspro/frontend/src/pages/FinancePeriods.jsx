@@ -9,7 +9,7 @@ const req   = (path, opts = {}) => fetch(API + path, {
 
 // Financial year range: 2020 → 2027 (current), generated client-side
 // Backend returns real fy data; we also show a year selector to filter
-const YEAR_RANGE = Array.from({ length: 8 }, (_, i) => 2020 + i).reverse(); // 2027 → 2020
+const YEAR_RANGE = Array.from({ length: 9 }, (_, i) => 2020 + i).reverse(); // 2028 → 2020, current is 2027
 
 export default function FinancePeriods({ user }) {
   const isAdmin   = user?.role === 'ADMIN';
@@ -113,7 +113,7 @@ export default function FinancePeriods({ user }) {
               ))
             : YEAR_RANGE.map(yr => (
                 <option key={yr} value={String(yr)}>
-                  FY{yr}{yr === 2027 ? ' (Current)' : ''}
+                  FY{yr}{yr === 2027 ? ' ★ Current' : ''}
                 </option>
               ))
           }
