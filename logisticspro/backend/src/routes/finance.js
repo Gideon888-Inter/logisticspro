@@ -1017,23 +1017,7 @@ router.get('/vat-transactions', requireFin, async (req, res) => {
 
   let query = supabase
     .from('fin_vat_transactions')
-    .select(`
-      vat_id,
-      vat_code,
-      vat_direction,
-      vat_period,
-      transaction_date,
-      tax_invoice_no,
-      counterparty_vat_no,
-      counterparty_name,
-      exclusive_amount,
-      vat_amount,
-      inclusive_amount,
-      gl_account_code,
-      source_module,
-      is_capital_goods,
-      fin_vat_types!inner(description, rate_pct, vat201_field)
-    `)
+    .select('vat_id, vat_code, vat_direction, vat_period, transaction_date, tax_invoice_no, counterparty_vat_no, counterparty_name, exclusive_amount, vat_amount, inclusive_amount, gl_account_code, source_module, is_capital_goods')
     .order('transaction_date', { ascending: false })
     .limit(1000);
 
@@ -1045,13 +1029,24 @@ router.get('/vat-transactions', requireFin, async (req, res) => {
   const { data, error } = await query;
   if (error) return res.status(500).json({ error: error.message });
 
-  // Flatten join
+  // Lookup vat types separately
+  const vatCodes = [...new Set((data || []).map(r => r.vat_code).filter(Boolean))];
+  let vatTypesMap = {};
+  if (vatCodes.length > 0) {
+    const { data: vtData } = await supabase
+      .from('fin_vat_types')
+      .select('vat_code, description, rate_pct, vat201_field')
+      .in('vat_code', vatCodes);
+    (vtData || []).forEach(v => { vatTypesMap[v.vat_code] = v; });
+  }
+
+  // Flatten
   const rows = (data || []).map(r => ({
     vat_id:              r.vat_id,
     vat_code:            r.vat_code,
-    vat_description:     r.fin_vat_types?.description,
-    rate_pct:            r.fin_vat_types?.rate_pct,
-    vat201_field:        r.fin_vat_types?.vat201_field,
+    vat_description:     vatTypesMap[r.vat_code]?.description,
+    rate_pct:            vatTypesMap[r.vat_code]?.rate_pct,
+    vat201_field:        vatTypesMap[r.vat_code]?.vat201_field,
     vat_direction:       r.vat_direction,
     vat_period:          r.vat_period,
     transaction_date:    r.transaction_date,
@@ -1089,29 +1084,32 @@ router.get('/vat-return/:period', requireFin, async (req, res) => {
 
   const { data, error } = await supabase
     .from('fin_vat_transactions')
-    .select(`
-      vat_code,
-      vat_direction,
-      exclusive_amount,
-      vat_amount,
-      inclusive_amount,
-      is_capital_goods,
-      fin_vat_types!inner(description, rate_pct, vat201_field)
-    `)
+    .select('vat_code, vat_direction, exclusive_amount, vat_amount, inclusive_amount, is_capital_goods')
     .eq('vat_period', vat_period);
 
   if (error) return res.status(500).json({ error: error.message });
 
-  const rows = data || [];
+  // Lookup vat types for this period separately
+  const vatCodesReturn = [...new Set((data || []).map(r => r.vat_code).filter(Boolean))];
+  let vatTypesReturnMap = {};
+  if (vatCodesReturn.length > 0) {
+    const { data: vtRet } = await supabase
+      .from('fin_vat_types')
+      .select('vat_code, description, rate_pct, vat201_field')
+      .in('vat_code', vatCodesReturn);
+    (vtRet || []).forEach(v => { vatTypesReturnMap[v.vat_code] = v; });
+  }
+
+  const rows = (data || []).map(r => ({ ...r, _vt: vatTypesReturnMap[r.vat_code] || {} }));
 
   // Helper to sum
   const sum = (arr, field) => arr.reduce((s, r) => s + (r[field] || 0), 0);
 
   // Output rows
-  const output_std    = rows.filter(r => r.vat_direction === 'OUTPUT' && !r.is_capital_goods && r.fin_vat_types?.rate_pct === 15);
+  const output_std    = rows.filter(r => r.vat_direction === 'OUTPUT' && !r.is_capital_goods && r._vt.rate_pct === 15);
   const output_cap    = rows.filter(r => r.vat_direction === 'OUTPUT' && r.is_capital_goods);
-  const output_zero   = rows.filter(r => r.vat_direction === 'OUTPUT' && r.fin_vat_types?.rate_pct === 0 && r.fin_vat_types?.vat201_field === '2');
-  const output_zeroex = rows.filter(r => r.vat_direction === 'OUTPUT' && r.fin_vat_types?.rate_pct === 0 && r.fin_vat_types?.vat201_field === '2A');
+  const output_zero   = rows.filter(r => r.vat_direction === 'OUTPUT' && r._vt.rate_pct === 0 && r._vt.vat201_field === '2');
+  const output_zeroex = rows.filter(r => r.vat_direction === 'OUTPUT' && r._vt.rate_pct === 0 && r._vt.vat201_field === '2A');
 
   // Input rows
   const input_cap     = rows.filter(r => r.vat_direction === 'INPUT' && r.is_capital_goods);
@@ -1171,18 +1169,7 @@ router.get('/asset-transactions/:asset_code', requireFin, async (req, res) => {
   // Get depreciation runs joined to periods
   let runsQ = supabase
     .from('fin_depreciation_runs')
-    .select(`
-      run_id,
-      run_date,
-      book_depre_amount,
-      tax_depre_amount,
-      book_nbv_after,
-      tax_value_after,
-      timing_difference,
-      deferred_tax,
-      journal_id,
-      fin_periods(period_name, period_start, period_end)
-    `)
+    .select('run_id, run_date, book_depre_amount, tax_depre_amount, book_nbv_after, tax_value_after, timing_difference, deferred_tax, journal_id, period_id')
     .eq('asset_id', asset.asset_id)
     .order('run_date', { ascending: false });
 
@@ -1192,12 +1179,23 @@ router.get('/asset-transactions/:asset_code', requireFin, async (req, res) => {
   const { data: runs, error: runsErr } = await runsQ;
   if (runsErr) return res.status(500).json({ error: runsErr.message });
 
+  // Lookup period names separately
+  const periodIds = [...new Set((runs || []).map(r => r.period_id).filter(Boolean))];
+  let periodsMap = {};
+  if (periodIds.length > 0) {
+    const { data: periods } = await supabase
+      .from('fin_periods')
+      .select('period_id, period_name, period_start, period_end')
+      .in('period_id', periodIds);
+    (periods || []).forEach(p => { periodsMap[p.period_id] = p; });
+  }
+
   const rows = (runs || []).map(r => ({
     run_id:            r.run_id,
     run_date:          r.run_date,
-    period_name:       r.fin_periods?.period_name,
-    period_start:      r.fin_periods?.period_start,
-    period_end:        r.fin_periods?.period_end,
+    period_name:       periodsMap[r.period_id]?.period_name,
+    period_start:      periodsMap[r.period_id]?.period_start,
+    period_end:        periodsMap[r.period_id]?.period_end,
     book_depre_amount: r.book_depre_amount,
     tax_depre_amount:  r.tax_depre_amount,
     book_nbv_after:    r.book_nbv_after,
@@ -1230,30 +1228,17 @@ router.get('/asset-transactions/:asset_code', requireFin, async (req, res) => {
 router.get('/asset-register', requireFin, async (req, res) => {
   const { class_code, asset_code, date_from, date_to, show_additions, show_disposals } = req.query;
 
-  // Build asset filter
+  // Fetch asset classes separately — avoid unreliable PostgREST join shorthand
+  const { data: classData } = await supabase
+    .from('fin_asset_classes')
+    .select('class_code, class_name, gl_cost_account, gl_accum_account, sars_wt_rate_pct, ifrs_useful_life_yr');
+  const classMap = {};
+  (classData || []).forEach(c => { classMap[c.class_code] = c; });
+
+  // Build asset filter — flat select only
   let assetsQ = supabase
     .from('fin_assets')
-    .select(`
-      asset_id,
-      asset_code,
-      description,
-      class_code,
-      purchase_date,
-      purchase_price,
-      depre_start_date,
-      book_depre_total,
-      book_depre_prior,
-      book_depre_curr_yr,
-      book_nbv,
-      tax_value,
-      is_active,
-      fully_depreciated,
-      disposal_date,
-      disposal_proceeds,
-      location,
-      reg_number,
-      fin_asset_classes(class_name, gl_cost_account, gl_accum_account, sars_wt_rate_pct, ifrs_useful_life_yr)
-    `)
+    .select('asset_id, asset_code, description, class_code, purchase_date, purchase_price, depre_start_date, book_depre_total, book_depre_prior, book_depre_curr_yr, book_nbv, tax_value, is_active, fully_depreciated, disposal_date, disposal_proceeds, location, reg_number')
     .order('class_code')
     .order('asset_code');
 
@@ -1323,11 +1308,11 @@ router.get('/asset-register', requireFin, async (req, res) => {
       asset_code:         a.asset_code,
       description:        a.description,
       class_code:         a.class_code,
-      class_name:         a.fin_asset_classes?.class_name,
-      gl_cost_account:    a.fin_asset_classes?.gl_cost_account,
-      gl_accum_account:   a.fin_asset_classes?.gl_accum_account,
-      sars_wt_rate_pct:   a.fin_asset_classes?.sars_wt_rate_pct,
-      ifrs_useful_life_yr:a.fin_asset_classes?.ifrs_useful_life_yr,
+      class_name:         classMap[a.class_code]?.class_name,
+      gl_cost_account:    classMap[a.class_code]?.gl_cost_account,
+      gl_accum_account:   classMap[a.class_code]?.gl_accum_account,
+      sars_wt_rate_pct:   classMap[a.class_code]?.sars_wt_rate_pct,
+      ifrs_useful_life_yr:classMap[a.class_code]?.ifrs_useful_life_yr,
       purchase_date:      a.purchase_date,
       purchase_price:     a.purchase_price,           // Cost
       depre_start_date:   a.depre_start_date,
