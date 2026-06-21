@@ -980,4 +980,172 @@ router.get('/ar-transactions', requireFin, async (req, res) => {
   });
 });
 
+
+// ─────────────────────────────────────────────────────────────
+// FINANCIAL YEARS — for period dropdown in Periods page
+// ─────────────────────────────────────────────────────────────
+
+// GET /fin/financial-years — list all financial years
+router.get('/financial-years', requireFin, async (req, res) => {
+  const { data, error } = await supabase
+    .from('fin_financial_years')
+    .select('fy_id,fy_code,fy_start,fy_end,is_current')
+    .order('fy_start', { ascending: false });
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+});
+
+// GET /fin/periods-by-year/:fy_id — periods for a specific financial year
+router.get('/periods-by-year/:fy_id', requireFin, async (req, res) => {
+  const { data, error } = await supabase
+    .from('fin_periods')
+    .select('*')
+    .eq('fy_id', req.params.fy_id)
+    .order('period_id');
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+});
+
+// ─────────────────────────────────────────────────────────────
+// VAT TRANSACTIONS — detailed ledger by period / direction
+// ─────────────────────────────────────────────────────────────
+
+// GET /fin/vat-transactions
+// Query params: vat_period (optional), direction OUTPUT|INPUT (optional), date_from, date_to
+router.get('/vat-transactions', requireFin, async (req, res) => {
+  const { vat_period, direction, date_from, date_to } = req.query;
+
+  let query = supabase
+    .from('fin_vat_transactions')
+    .select(`
+      vat_id,
+      vat_code,
+      vat_direction,
+      vat_period,
+      transaction_date,
+      tax_invoice_no,
+      counterparty_vat_no,
+      counterparty_name,
+      exclusive_amount,
+      vat_amount,
+      inclusive_amount,
+      gl_account_code,
+      source_module,
+      is_capital_goods,
+      fin_vat_types!inner(description, rate_pct, vat201_field)
+    `)
+    .order('transaction_date', { ascending: false })
+    .limit(1000);
+
+  if (vat_period) query = query.eq('vat_period', vat_period);
+  if (direction)  query = query.eq('vat_direction', direction);
+  if (date_from)  query = query.gte('transaction_date', date_from);
+  if (date_to)    query = query.lte('transaction_date', date_to);
+
+  const { data, error } = await query;
+  if (error) return res.status(500).json({ error: error.message });
+
+  // Flatten join
+  const rows = (data || []).map(r => ({
+    vat_id:              r.vat_id,
+    vat_code:            r.vat_code,
+    vat_description:     r.fin_vat_types?.description,
+    rate_pct:            r.fin_vat_types?.rate_pct,
+    vat201_field:        r.fin_vat_types?.vat201_field,
+    vat_direction:       r.vat_direction,
+    vat_period:          r.vat_period,
+    transaction_date:    r.transaction_date,
+    tax_invoice_no:      r.tax_invoice_no,
+    counterparty_vat_no: r.counterparty_vat_no,
+    counterparty_name:   r.counterparty_name,
+    exclusive_amount:    r.exclusive_amount,
+    vat_amount:          r.vat_amount,
+    inclusive_amount:    r.inclusive_amount,
+    gl_account_code:     r.gl_account_code,
+    source_module:       r.source_module,
+    is_capital_goods:    r.is_capital_goods,
+  }));
+
+  // Totals by direction
+  const output = rows.filter(r => r.vat_direction === 'OUTPUT');
+  const input  = rows.filter(r => r.vat_direction === 'INPUT');
+
+  res.json({
+    transactions: rows,
+    totals: {
+      output_excl:  Math.round(output.reduce((s,r) => s + r.exclusive_amount, 0) * 100) / 100,
+      output_vat:   Math.round(output.reduce((s,r) => s + r.vat_amount, 0)       * 100) / 100,
+      input_excl:   Math.round(input.reduce((s,r) => s + r.exclusive_amount, 0)  * 100) / 100,
+      input_vat:    Math.round(input.reduce((s,r) => s + r.vat_amount, 0)        * 100) / 100,
+      net_vat:      Math.round((output.reduce((s,r) => s + r.vat_amount, 0) - input.reduce((s,r) => s + r.vat_amount, 0)) * 100) / 100,
+    },
+    count: rows.length,
+  });
+});
+
+// GET /fin/vat-return/:period — VAT201-format summary for a specific VAT period
+router.get('/vat-return/:period', requireFin, async (req, res) => {
+  const vat_period = req.params.period; // e.g. '202605'
+
+  const { data, error } = await supabase
+    .from('fin_vat_transactions')
+    .select(`
+      vat_code,
+      vat_direction,
+      exclusive_amount,
+      vat_amount,
+      inclusive_amount,
+      is_capital_goods,
+      fin_vat_types!inner(description, rate_pct, vat201_field)
+    `)
+    .eq('vat_period', vat_period);
+
+  if (error) return res.status(500).json({ error: error.message });
+
+  const rows = data || [];
+
+  // Helper to sum
+  const sum = (arr, field) => arr.reduce((s, r) => s + (r[field] || 0), 0);
+
+  // Output rows
+  const output_std    = rows.filter(r => r.vat_direction === 'OUTPUT' && !r.is_capital_goods && r.fin_vat_types?.rate_pct === 15);
+  const output_cap    = rows.filter(r => r.vat_direction === 'OUTPUT' && r.is_capital_goods);
+  const output_zero   = rows.filter(r => r.vat_direction === 'OUTPUT' && r.fin_vat_types?.rate_pct === 0 && r.fin_vat_types?.vat201_field === '2');
+  const output_zeroex = rows.filter(r => r.vat_direction === 'OUTPUT' && r.fin_vat_types?.rate_pct === 0 && r.fin_vat_types?.vat201_field === '2A');
+
+  // Input rows
+  const input_cap     = rows.filter(r => r.vat_direction === 'INPUT' && r.is_capital_goods);
+  const input_std     = rows.filter(r => r.vat_direction === 'INPUT' && !r.is_capital_goods);
+
+  const field1   = Math.round(sum(output_std, 'exclusive_amount')  * 100) / 100;
+  const field4   = Math.round(sum(output_std, 'vat_amount')        * 100) / 100;
+  const field1A  = Math.round(sum(output_cap, 'exclusive_amount')  * 100) / 100;
+  const field4A  = Math.round(sum(output_cap, 'vat_amount')        * 100) / 100;
+  const field2   = Math.round(sum(output_zero, 'exclusive_amount') * 100) / 100;
+  const field2A  = Math.round(sum(output_zeroex, 'exclusive_amount') * 100) / 100;
+  const field13  = Math.round((field4 + field4A) * 100) / 100;  // Total Output Tax
+  const field14  = Math.round(sum(input_cap, 'exclusive_amount')   * 100) / 100;
+  const field14_vat = Math.round(sum(input_cap, 'vat_amount')      * 100) / 100;
+  const field15  = Math.round(sum(input_std, 'exclusive_amount')   * 100) / 100;
+  const field15_vat = Math.round(sum(input_std, 'vat_amount')      * 100) / 100;
+  const field19  = Math.round((field14_vat + field15_vat)          * 100) / 100;  // Total Input Tax
+  const field20  = Math.round((field13 - field19)                  * 100) / 100;  // VAT Payable/Refundable
+
+  res.json({
+    vat_period,
+    fields: {
+      field1,  field4,
+      field1A, field4A,
+      field2,  field2A,
+      field13,
+      field14, field14_vat,
+      field15, field15_vat,
+      field19,
+      field20,
+    },
+    payable:    field20 > 0,
+    refundable: field20 < 0,
+  });
+});
+
 module.exports = router;
