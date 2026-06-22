@@ -306,6 +306,44 @@ router.post('/journals', requireFin, async (req, res) => {
     return res.status(500).json({ error: lErr.message });
   }
 
+  // ── Write VAT transactions for any lines with a vat_type ──────────────────
+  const vatRows = [];
+  for (const l of lineRows) {
+    if (!l.vat_type || !l.vat_amount) continue;
+
+    // Determine direction from the VAT type
+    const { data: vtData } = await supabase
+      .from('fin_vat_types')
+      .select('vat_direction, rate_pct')
+      .eq('vat_code', l.vat_type)
+      .single();
+
+    if (!vtData) continue;
+
+    const grossAmt  = (l.debit || 0) > 0 ? l.debit : l.credit;
+    const exclAmt   = grossAmt - l.vat_amount;
+
+    vatRows.push({
+      vat_code:          l.vat_type,
+      vat_direction:     vtData.vat_direction,
+      vat_period:        journal_date.replace(/-/g, '').slice(0, 6),
+      transaction_date:  journal_date,
+      tax_invoice_no:    source_document || journal_ref,
+      counterparty_name: null,
+      exclusive_amount:  Math.round(exclAmt  * 100) / 100,
+      vat_amount:        Math.round(l.vat_amount * 100) / 100,
+      inclusive_amount:  Math.round(grossAmt * 100) / 100,
+      gl_account_code:   l.account_code,
+      source_module:     'GL',
+      journal_id:        journal.journal_id,
+      is_capital_goods:  false,
+    });
+  }
+
+  if (vatRows.length > 0) {
+    await supabase.from('fin_vat_transactions').insert(vatRows);
+  }
+
   res.json({ success: true, journal_id: journal.journal_id, journal_ref });
 });
 
@@ -338,12 +376,42 @@ router.get('/trial-balance', requireFin, async (req, res) => {
 // ─────────────────────────────────────────────────────────────
 
 router.get('/vat-types', requireFin, async (req, res) => {
-  const { data, error } = await supabase
-    .from('fin_vat_types')
-    .select('*')
-    .eq('active', true)
-    .order('vat_code');
+  const { all } = req.query;
+  let q = supabase.from('fin_vat_types').select('*').order('vat_code');
+  if (!all) q = q.eq('active', true);
+  const { data, error } = await q;
   if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+});
+
+// POST /fin/vat-types — create a new VAT type (Admin/Finance only)
+router.post('/vat-types', requireRole(ROLES.ADMIN, ROLES.FINANCE), async (req, res) => {
+  const { vat_code, description, rate_pct, vat_direction, vat201_field, is_capital_goods } = req.body;
+  if (!vat_code?.trim())    return res.status(400).json({ error: 'vat_code is required' });
+  if (!description?.trim()) return res.status(400).json({ error: 'description is required' });
+  if (rate_pct == null)     return res.status(400).json({ error: 'rate_pct is required' });
+  const { data, error } = await supabase.from('fin_vat_types').insert({
+    vat_code:         vat_code.trim().toUpperCase(),
+    description:      description.trim(),
+    rate_pct:         Number(rate_pct),
+    vat_direction:    vat_direction || 'OUTPUT',
+    vat201_field:     vat201_field || null,
+    is_capital_goods: !!is_capital_goods,
+    active:           true,
+  }).select().single();
+  if (error) return res.status(400).json({ error: error.message });
+  res.status(201).json(data);
+});
+
+// PATCH /fin/vat-types/:code — update VAT type (Admin/Finance only)
+router.patch('/vat-types/:code', requireRole(ROLES.ADMIN, ROLES.FINANCE), async (req, res) => {
+  const allowed = ['description','rate_pct','vat_direction','vat201_field','is_capital_goods','active'];
+  const updates = {};
+  allowed.forEach(k => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
+  if (!Object.keys(updates).length) return res.status(400).json({ error: 'No fields to update' });
+  const { data, error } = await supabase.from('fin_vat_types')
+    .update(updates).eq('vat_code', req.params.code).select().single();
+  if (error) return res.status(400).json({ error: error.message });
   res.json(data);
 });
 
@@ -1664,9 +1732,13 @@ router.post('/cashbook/entry', requireFin, async (req, res) => {
   // Build lines:
   // RECEIPT: DR bank, CR contra
   // PAYMENT: CR bank, DR contra
-  const vatAmount = vat_type && vat_type !== 'NONE'
-    ? Math.round(amount * 15 / 115 * 100) / 100
-    : 0;
+  let vatAmount = 0;
+  if (vat_type && vat_type !== 'NONE') {
+    const { data: vtRow } = await supabase
+      .from('fin_vat_types').select('rate_pct').eq('vat_code', vat_type).single();
+    const rate = vtRow ? Number(vtRow.rate_pct) : 15;
+    vatAmount = Math.round((amount - amount / (1 + rate / 100)) * 100) / 100;
+  }
 
   const lines = direction === 'RECEIPT'
     ? [
@@ -2199,6 +2271,33 @@ router.post('/ap/invoices', requireFin, async (req, res) => {
 
   if (error) return res.status(500).json({ error: error.message });
 
+  // ── Write VAT transaction for AP invoice if VAT amount > 0 ─────────────────
+  if (Number(vat_amount) > 0) {
+    const vatPeriod = invoice_date.replace(/-/g, '').slice(0, 6);
+    // Look up supplier VAT number
+    const { data: supData } = await supabase
+      .from('fin_suppliers')
+      .select('vat_number, supplier_name')
+      .eq('supplier_code', supplier_code)
+      .single();
+
+    await supabase.from('fin_vat_transactions').insert({
+      vat_code:           'IN_STD',
+      vat_direction:      'INPUT',
+      vat_period:         vatPeriod,
+      transaction_date:   invoice_date,
+      tax_invoice_no:     supplier_invoice_no || invoice_ref,
+      counterparty_vat_no: supData?.vat_number || null,
+      counterparty_name:  supData?.supplier_name || supplier_code,
+      exclusive_amount:   Math.round(Number(subtotal_excl_vat || 0) * 100) / 100,
+      vat_amount:         Math.round(Number(vat_amount) * 100) / 100,
+      inclusive_amount:   Math.round(Number(total_incl_vat) * 100) / 100,
+      gl_account_code:    '9500',
+      source_module:      'AP',
+      is_capital_goods:   false,
+    });
+  }
+
   // If linked to a PO — approve the PO and link the invoice
   if (po_id) {
     const now = new Date().toISOString();
@@ -2471,3 +2570,4 @@ router.post('/depreciation/run', requireFin, async (req, res) => {
 
 
 module.exports = router;
+
