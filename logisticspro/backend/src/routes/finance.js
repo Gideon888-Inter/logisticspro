@@ -2368,14 +2368,32 @@ router.get('/ap/invoices', requireFin, async (req, res) => {
 });
 
 // GET /fin/ap/invoices/pending-pos — POs in PENDING_FINANCIAL awaiting invoice capture
+// Includes line items so the UI can show Category/Item/Description exactly like the PO card
 router.get('/ap/invoices/pending-pos', requireFin, async (req, res) => {
-  const { data, error } = await supabase
+  const { data: pos, error } = await supabase
     .from('lp_purchase_orders')
     .select('po_id, po_number, supplier_code, supplier_name, po_description, total_incl_vat, subtotal_excl_vat, vat_amount, supplier_invoice_no, created_by, submitted_at, attachment_filename, onedrive_url')
     .eq('status', 'PENDING_FINANCIAL')
     .order('submitted_at');
   if (error) return res.status(500).json({ error: error.message });
-  res.json(data || []);
+  if (!pos || !pos.length) return res.json([]);
+
+  // Fetch lines for all pending POs in one query
+  const poIds = pos.map(p => p.po_id);
+  const { data: lines } = await supabase
+    .from('lp_po_lines')
+    .select('po_id, line_number, line_type, item_code, item_name, description, line_total_excl, vat_amount, line_total_incl')
+    .in('po_id', poIds)
+    .order('line_number');
+
+  // Attach lines to each PO
+  const linesByPo = {};
+  (lines || []).forEach(l => {
+    if (!linesByPo[l.po_id]) linesByPo[l.po_id] = [];
+    linesByPo[l.po_id].push(l);
+  });
+
+  res.json(pos.map(p => ({ ...p, lines: linesByPo[p.po_id] || [] })));
 });
 
 router.post('/ap/invoices', requireFin, async (req, res) => {
@@ -2388,7 +2406,21 @@ router.post('/ap/invoices', requireFin, async (req, res) => {
   if (!supplier_code)       return res.status(400).json({ error: 'supplier_code is required' });
   if (!supplier_invoice_no) return res.status(400).json({ error: 'Supplier invoice number is required' });
   if (!invoice_date)        return res.status(400).json({ error: 'invoice_date is required' });
-  if (!period_id)           return res.status(400).json({ error: 'period_id is required' });
+  // period_id is auto-resolved from invoice_date if not supplied (PO capture flow)
+  let resolvedPeriodId = period_id;
+  if (!resolvedPeriodId && invoice_date) {
+    const invoiceYM = invoice_date.slice(0, 7); // "YYYY-MM"
+    const { data: matchedPeriod } = await supabase
+      .from('fin_periods')
+      .select('period_id')
+      .lte('start_date', invoice_date)
+      .gte('end_date', invoice_date)
+      .eq('is_closed', false)
+      .limit(1)
+      .single();
+    if (matchedPeriod) resolvedPeriodId = matchedPeriod.period_id;
+  }
+  if (!resolvedPeriodId) return res.status(400).json({ error: 'No open GL period found for this invoice date. Please select a period manually.' });
   if (!total_incl_vat)      return res.status(400).json({ error: 'total_incl_vat is required' });
 
   // Duplicate supplier invoice number check
@@ -2436,7 +2468,7 @@ router.post('/ap/invoices', requireFin, async (req, res) => {
       supplier_invoice_no: supplier_invoice_no || null,
       invoice_date,
       due_date:          effectiveDueDate,
-      period_id:         Number(period_id),
+      period_id:         Number(resolvedPeriodId),
       status:            'UNPOSTED',
       subtotal_excl_vat: Number(subtotal_excl_vat || 0),
       vat_amount:        Number(vat_amount || 0),
@@ -2735,7 +2767,7 @@ router.post('/depreciation/run', requireFin, async (req, res) => {
 
     runRecords.push({
       asset_id:          line.asset_id,
-      period_id:         Number(period_id),
+      period_id:         Number(resolvedPeriodId),
       run_date:          period.period_end,
       book_depre_amount: line.book_depre_amount,
       tax_depre_amount:  line.tax_depre_amount,
