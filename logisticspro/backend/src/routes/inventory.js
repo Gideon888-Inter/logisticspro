@@ -502,6 +502,8 @@ router.patch('/po/:id',
           line_total_excl: l.line_total_excl || 0,
           line_total_incl: l.line_total_incl || 0,
           qty_outstanding: l.quantity || 1,
+          item_code:       l.item_code || null,
+          item_name:       l.item_name || null,
         }));
         await supabase().from('lp_po_lines').insert(lineRows);
       }
