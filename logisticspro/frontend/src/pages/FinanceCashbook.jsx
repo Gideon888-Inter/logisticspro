@@ -93,6 +93,26 @@ function Cashbook() {
     a.download = 'cashbook.csv'; a.click();
   };
 
+  const exportCSV = (rows, filename) => {
+    if (!rows.length) return;
+    const headers = Object.keys(rows[0]);
+    const csv = [headers, ...rows.map(r => headers.map(h => `"${String(r[h] ?? '').replace(/"/g,'""')}"`))].map(r => r.join(',')).join('\n');
+    const a = document.createElement('a');
+    a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+    a.download = filename; a.click();
+  };
+
+  const doStagingExport = () => {
+    if (!staging.length) return;
+    exportCSV(staging.map(s => ({
+      Date: s.transaction_date, Description: s.description,
+      Reference: s.reference || '', 'Bank Account': s.bank_account,
+      Amount: s.amount, Direction: s.direction || '',
+      Status: s.status, 'GL Account': s.gl_account_code || '',
+      'VAT Type': s.vat_type || '', 'Journal Ref': s.journal_ref || '',
+    })), 'cashbook_staging.csv');
+  };
+
   const tabStyle = (t) => ({
     padding: '6px 14px', cursor: 'pointer', fontSize: 12, fontWeight: 600,
     borderBottom: tab === t ? '2px solid #005A8E' : '2px solid transparent',
@@ -252,6 +272,7 @@ function Cashbook() {
                 <button className="btn btn-primary btn-sm" onClick={search} disabled={loading}>{loading ? 'Loading…' : '🔍 Search'}</button>
                 {searched && <button className="btn btn-sm" onClick={doExport}>⬇ CSV</button>}
                 {searched && <button className="btn btn-sm" onClick={() => window.print()}>🖨 Print</button>}
+                {searched && entries.length > 0 && <span style={{fontSize:12,color:'#aaa',marginLeft:4}}>{entries.length} entries</span>}
               </div>
               <div style={{ marginLeft: 'auto', alignSelf: 'flex-end', paddingBottom: 1 }}>
                 <button className="btn btn-primary btn-sm" onClick={() => { setSaveErr(''); setShowNew(true); }}>+ New Entry</button>
@@ -326,14 +347,19 @@ function Cashbook() {
             Entries with status <strong>MATCHED</strong> have a GL account assigned and are ready to post.
           </div>
 
-          {matchedCount > 0 && (
-            <div style={{ marginBottom: 10, display: 'flex', gap: 8, alignItems: 'center' }}>
-              <span style={{ fontSize: 13, color: '#555' }}>{matchedCount} matched {matchedCount === 1 ? 'entry' : 'entries'} ready to post</span>
-              <button className="btn btn-primary btn-sm" onClick={postBulk} disabled={postingBulk}>
-                {postingBulk ? 'Posting…' : `⬆ Post All Matched (${matchedCount})`}
-              </button>
-            </div>
-          )}
+          <div style={{ display:'flex', gap:8, marginBottom:10, alignItems:'center', flexWrap:'wrap' }}>
+            {matchedCount > 0 && (
+              <>
+                <span style={{ fontSize: 13, color: '#555' }}>{matchedCount} matched {matchedCount === 1 ? 'entry' : 'entries'} ready to post</span>
+                <button className="btn btn-primary btn-sm" onClick={postBulk} disabled={postingBulk}>
+                  {postingBulk ? 'Posting…' : `⬆ Post All Matched (${matchedCount})`}
+                </button>
+              </>
+            )}
+            {staging.length > 0 && (
+              <button className="btn btn-sm" onClick={doStagingExport}>⬇ CSV ({staging.length})</button>
+            )}
+          </div>
 
           <div className="table-wrap">
             <table>
@@ -636,3 +662,4 @@ function Cashbook() {
 export default function FinanceCashbook() {
   return <Cashbook />;
 }
+
