@@ -145,7 +145,7 @@ function InlinePOEditor({ po, lines: existingLines, suppliers, vehicles, onSave,
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, minWidth: 660 }}>
             <thead>
-              <tr style={{ background: '#1e3a5f', color: 'white' }}>
+              <tr style={{ background: '#2d6a96', color: 'white' }}>
                 <th style={{ padding: '6px 7px', textAlign: 'left', width: 100 }}>Type</th>
                 <th style={{ padding: '6px 7px', textAlign: 'left', width: 175 }}>Item</th>
                 <th style={{ padding: '6px 7px', textAlign: 'left' }}>Description *</th>
@@ -216,7 +216,7 @@ function InlinePOEditor({ po, lines: existingLines, suppliers, vehicles, onSave,
               ))}
             </tbody>
             <tfoot>
-              <tr style={{ background: '#1e3a5f', color: 'white', fontWeight: 700 }}>
+              <tr style={{ background: '#2d6a96', color: 'white', fontWeight: 700 }}>
                 <td colSpan={3} style={{ padding: '6px 7px', textAlign: 'right', fontSize: 11 }}>TOTALS</td>
                 <td style={{ padding: '6px 7px', textAlign: 'right', fontFamily: 'monospace', fontSize: 11 }}>R {totalExcl.toFixed(2)}</td>
                 <td style={{ padding: '6px 7px', textAlign: 'right', fontFamily: 'monospace', fontSize: 11, color: '#fbd38d' }}>{totalVat > 0 ? 'R ' + totalVat.toFixed(2) : '—'}</td>
@@ -328,9 +328,14 @@ export default function PurchaseOrders() {
     setSaving(true);
     try {
       const apiLines = lines.map((l, i) => ({
-        line_number: i + 1, line_type: l.typeCategory === 'INVENTORY' ? 'INVENTORY' : 'COST',
+        line_number: i + 1,
+        // Store the actual category so it round-trips correctly
+        line_type: l.typeCategory === 'INVENTORY' ? 'INVENTORY'
+                 : l.typeCategory === 'TRAILER'   ? 'TRAILER'
+                 : 'HORSE',
         description: l.description, quantity: 1,
         item_code: (l.typeCategory !== 'INVENTORY' && l.type && !['GENERAL_HORSE','GENERAL_TRAILER'].includes(l.type)) ? l.type : null,
+        item_name: (l.typeCategory !== 'INVENTORY' && l.type && !['GENERAL_HORSE','GENERAL_TRAILER'].includes(l.type)) ? l.type : null,
         unit_price_excl: parseFloat(l.excl) || 0,
         vat_type: form.supplier_vat ? 'IN_STD' : null,
         vat_amount: parseFloat(l.vat) || 0,
@@ -362,9 +367,13 @@ export default function PurchaseOrders() {
     setSaving(true);
     try {
       const apiLines = lines.map((l, i) => ({
-        line_number: i + 1, line_type: l.typeCategory === 'INVENTORY' ? 'INVENTORY' : 'COST',
+        line_number: i + 1,
+        line_type: l.typeCategory === 'INVENTORY' ? 'INVENTORY'
+                 : l.typeCategory === 'TRAILER'   ? 'TRAILER'
+                 : 'HORSE',
         description: l.description, quantity: 1,
         item_code: (l.typeCategory !== 'INVENTORY' && l.type && !['GENERAL_HORSE','GENERAL_TRAILER'].includes(l.type)) ? l.type : null,
+        item_name: (l.typeCategory !== 'INVENTORY' && l.type && !['GENERAL_HORSE','GENERAL_TRAILER'].includes(l.type)) ? l.type : null,
         unit_price_excl: parseFloat(l.excl) || 0,
         vat_type: form.supplier_vat ? 'IN_STD' : null,
         vat_amount: parseFloat(l.vat) || 0,
@@ -546,7 +555,7 @@ export default function PurchaseOrders() {
                   <div className="table-wrap" style={{ marginBottom: 10 }}>
                     <table>
                       <thead>
-                        <tr>
+                        <tr style={{ background: '#4a90b8', color: 'white' }}>
                           <th style={{ width: 28 }}>#</th>
                           <th style={{ width: 100 }}>Category</th>
                           <th style={{ width: 130 }}>Item</th>
