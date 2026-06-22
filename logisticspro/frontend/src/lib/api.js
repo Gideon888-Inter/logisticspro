@@ -70,11 +70,9 @@ export const api = {
   createMaintenance:   (body)        => request('/maintenance', { method: 'POST', body: JSON.stringify(body) }),
   updateMaintenance:   (id, body)    => request(`/maintenance/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
 
-  // ── Inventory ───────────────────────────────────────────────
-  getInventory:        ()            => request('/inventory'),
-  getLowStockParts:    ()            => request('/inventory/low-stock'),
-  createPart:          (body)        => request('/inventory', { method: 'POST', body: JSON.stringify(body) }),
-  updatePart:          (id, body)    => request(`/inventory/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  // ── Inventory / Stock (LP2.0) ─────────────────────────────
+  // Full inventory & PO management is handled via /api/stock in inventory.js
+  // (Inventory.jsx and PurchaseOrders.jsx call /api/stock/... directly)
 
   // ── Routes ──────────────────────────────────────────────────
   getRoutes:           ()            => request('/routes'),
@@ -141,3 +139,4 @@ export const api = {
   approveInvoice:      (id, body)    => request(`/invoices/${id}/approve`, { method: 'POST', body: JSON.stringify(body) }),
   createCreditNote:    (id, body)    => request(`/invoices/${id}/credit-note`, { method: 'POST', body: JSON.stringify(body) }),
 };
+
