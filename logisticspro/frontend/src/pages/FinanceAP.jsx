@@ -12,7 +12,7 @@ const BUCKET_COLOR = { 'Current': 'badge-green', '1-30 Days': 'badge-amber', '31
 
 function exportCSV(rows, filename) {
   const headers = Object.keys(rows[0] || {});
-  const csv = [headers, ...rows.map(r => headers.map(h => `"${(r[h] ?? '').toString().replace(/"/g, '""')}"`))].map(r => r.join(',')).join('\n');
+  const csv = [headers, ...rows.map(r => headers.map(h => `"${(r[h] ?? '').toString().replace(/"/g, '""')}`))].map(r => r.join(',')).join('\n');
   const a = document.createElement('a'); a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv); a.download = filename; a.click();
 }
 
@@ -25,7 +25,7 @@ function ExportBar({ onCSV }) {
   );
 }
 
-const EMPTY_SUPPLIER = { supplier_code: '', supplier_name: '', vat_number: '', telephone: '', email: '', payment_terms_days: 30, gl_control_account: '2000', group_terms: '', city: '' };
+const EMPTY_SUPPLIER = { supplier_code: '', supplier_name: '', vat_number: '', vat_enabled: false, telephone: '', email: '', payment_terms_days: 30, credit_limit: '' };
 
 // ── SUPPLIER TRANSACTIONS ─────────────────────────────────────
 function SupplierTransactions({ suppliers }) {
@@ -52,7 +52,6 @@ function SupplierTransactions({ suppliers }) {
 
   const clear = () => { setSupp(''); setDateFrom(''); setDateTo(''); setRows([]); setTotals(null); setSearched(false); };
 
-  // Running balance (invoices add, payments subtract)
   const rowsChron = [...rows].reverse();
   let runBal = 0;
   const rowsWithBal = rowsChron.map(r => {
@@ -76,7 +75,6 @@ function SupplierTransactions({ suppliers }) {
 
   return (
     <div>
-      {/* Filter panel */}
       <div style={{ background: '#f8fafc', border: '1px solid #e8edf2', borderRadius: 8, padding: '14px 16px', marginBottom: 16 }}>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <div style={{ flex: '1 1 240px' }}>
@@ -108,7 +106,6 @@ function SupplierTransactions({ suppliers }) {
         )}
       </div>
 
-      {/* Totals */}
       {totals && (
         <div className="stats-grid" style={{ marginBottom: 12 }}>
           <div className="stat-card"><div className="stat-label">Transactions</div><div className="stat-value" style={{ color: '#00AEEF' }}>{rows.length}</div></div>
@@ -127,12 +124,9 @@ function SupplierTransactions({ suppliers }) {
         <table>
           <thead>
             <tr>
-              <th>Date</th>
-              <th>Ref</th>
-              <th>Type</th>
+              <th>Date</th><th>Ref</th><th>Type</th>
               {!suppFilter && <th>Supplier</th>}
-              <th>Description</th>
-              <th>Due Date</th>
+              <th>Description</th><th>Due Date</th>
               <th style={{ textAlign: 'right' }}>Invoiced</th>
               <th style={{ textAlign: 'right' }}>Paid</th>
               {suppFilter && <th style={{ textAlign: 'right' }}>Running Bal</th>}
@@ -140,13 +134,12 @@ function SupplierTransactions({ suppliers }) {
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={suppFilter ? 9 : 9}><div className="loading">Loading transactions…</div></td></tr>}
+            {loading && <tr><td colSpan={10}><div className="loading">Loading transactions…</div></td></tr>}
             {!loading && !searched && (
               <tr><td colSpan={10}>
                 <div className="empty-state" style={{ padding: '32px 0' }}>
                   <div style={{ fontSize: 32, marginBottom: 8 }}>🔍</div>
                   <div>Select filters above and click <strong>Search</strong> to view supplier transactions.</div>
-                  <div style={{ fontSize: 12, color: '#aaa', marginTop: 4 }}>No supplier filter = all suppliers. No date filter = all dates.</div>
                 </div>
               </td></tr>
             )}
@@ -157,11 +150,7 @@ function SupplierTransactions({ suppliers }) {
               <tr key={r.tx_ref + idx} style={{ background: idx % 2 === 0 ? 'white' : '#fafbfc' }}>
                 <td style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{r.tx_date}</td>
                 <td className="mono" style={{ fontWeight: 600, fontSize: 12 }}>{r.tx_ref}</td>
-                <td>
-                  <span className={`badge ${r.tx_type === 'INVOICE' ? 'badge-blue' : 'badge-green'}`} style={{ fontSize: 10 }}>
-                    {r.tx_type}
-                  </span>
-                </td>
+                <td><span className={`badge ${r.tx_type === 'INVOICE' ? 'badge-blue' : 'badge-green'}`} style={{ fontSize: 10 }}>{r.tx_type}</span></td>
                 {!suppFilter && <td className="mono" style={{ fontSize: 12 }}>{r.supplier_code}</td>}
                 <td style={{ fontSize: 12 }}>{r.description}</td>
                 <td style={{ fontSize: 12, color: r.due_date && r.balance_due > 0 && r.due_date < new Date().toISOString().slice(0, 10) ? '#e53e3e' : '#555' }}>
@@ -189,38 +178,25 @@ function SupplierTransactions({ suppliers }) {
   );
 }
 
-// ── MAIN AP PAGE ──────────────────────────────────────────────
-
-// ── SUPPLIER INVOICES ─────────────────────────────────────────────────────
+// ── SUPPLIER INVOICES ─────────────────────────────────────────
 function SupplierInvoicesTab({ suppliers, periods }) {
-  const [subtab, setSubtab]       = useState('pending');  // pending | invoices
+  const [subtab, setSubtab]       = useState('pending');
   const [pendingPOs, setPending]  = useState([]);
   const [invoices, setInvoices]   = useState([]);
   const [loading, setLoading]     = useState(false);
-  const [captureModal, setCapture]= useState(null);  // PO being captured
-  const [invModal, setInvModal]   = useState(false); // new standalone invoice
+  const [captureModal, setCapture]= useState(null);
+  const [invModal, setInvModal]   = useState(false);
   const [form, setForm]           = useState({ supplier_code: '', supplier_invoice_no: '', invoice_date: new Date().toISOString().slice(0,10), period_id: '', subtotal_excl_vat: '', vat_amount: '', total_incl_vat: '', document_ref: '' });
   const [saving, setSaving]       = useState(false);
   const [saveErr, setSaveErr]     = useState('');
 
   const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
-  const fmt = (n) => n == null ? '—' : `R ${Number(n).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   useEffect(() => { loadPending(); loadInvoices(); }, []);
-  const loadPending = async () => {
-    const d = await req('/fin/ap/invoices/pending-pos');
-    setPending(Array.isArray(d) ? d : []);
-  };
-  const loadInvoices = async () => {
-    setLoading(true);
-    const d = await req('/fin/ap/invoices');
-    setInvoices(Array.isArray(d) ? d : []);
-    setLoading(false);
-  };
+  const loadPending  = async () => { const d = await req('/fin/ap/invoices/pending-pos'); setPending(Array.isArray(d) ? d : []); };
+  const loadInvoices = async () => { setLoading(true); const d = await req('/fin/ap/invoices'); setInvoices(Array.isArray(d) ? d : []); setLoading(false); };
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
-
-  // Auto-calculate totals
   const calcTotals = (excl) => {
     const e = parseFloat(excl || 0);
     const vat = Math.round(e * 0.15 * 100) / 100;
@@ -234,37 +210,26 @@ function SupplierInvoicesTab({ suppliers, periods }) {
     const r = await req('/fin/ap/invoices', {
       method: 'POST',
       body: JSON.stringify({
-        supplier_code:       captureModal.supplier_code,
-        supplier_invoice_no: form.supplier_invoice_no,
-        invoice_date:        form.invoice_date,
-        period_id:           form.period_id,
-        subtotal_excl_vat:   captureModal.subtotal_excl_vat,
-        vat_amount:          captureModal.vat_amount,
-        total_incl_vat:      captureModal.total_incl_vat,
-        document_ref:        captureModal.onedrive_url || null,
-        po_id:               captureModal.po_id,
+        supplier_code: captureModal.supplier_code, supplier_invoice_no: form.supplier_invoice_no,
+        invoice_date: form.invoice_date, period_id: form.period_id,
+        subtotal_excl_vat: captureModal.subtotal_excl_vat, vat_amount: captureModal.vat_amount,
+        total_incl_vat: captureModal.total_incl_vat, document_ref: captureModal.onedrive_url || null,
+        po_id: captureModal.po_id,
       }),
     });
     setSaving(false);
     if (r.error) return setSaveErr(r.error);
-    setCapture(null);
-    setForm(f => ({ ...f, supplier_invoice_no: '', period_id: '' }));
+    setCapture(null); setForm(f => ({ ...f, supplier_invoice_no: '', period_id: '' }));
     loadPending(); loadInvoices();
   };
 
   const doInvoiceExport = () => {
     exportCSV(invoices.map(inv => ({
-      'Invoice Ref': inv.invoice_ref,
-      Supplier: inv.supplier_code,
-      'Supplier Inv No': inv.supplier_invoice_no || '',
-      'Invoice Date': inv.invoice_date,
-      'Due Date': inv.due_date,
-      'Excl VAT': inv.subtotal_excl_vat,
-      VAT: inv.vat_amount,
-      'Total Incl VAT': inv.total_incl_vat,
-      'Amount Paid': inv.amount_paid,
-      'Balance Due': inv.balance_due,
-      Status: inv.status,
+      'Invoice Ref': inv.invoice_ref, Supplier: inv.supplier_code,
+      'Supplier Inv No': inv.supplier_invoice_no || '', 'Invoice Date': inv.invoice_date,
+      'Due Date': inv.due_date, 'Excl VAT': inv.subtotal_excl_vat, VAT: inv.vat_amount,
+      'Total Incl VAT': inv.total_incl_vat, 'Amount Paid': inv.amount_paid,
+      'Balance Due': inv.balance_due, Status: inv.status,
     })), 'ap_invoices.csv');
   };
 
@@ -288,7 +253,7 @@ function SupplierInvoicesTab({ suppliers, periods }) {
   return (
     <div>
       <div style={{ display: 'flex', borderBottom: '1px solid #e8edf2', marginBottom: 12, gap: 2 }}>
-        <div style={subTabStyle('pending')}  onClick={() => setSubtab('pending')}>
+        <div style={subTabStyle('pending')} onClick={() => setSubtab('pending')}>
           POs Awaiting Invoice
           {pendingPOs.length > 0 && <span className="badge badge-red" style={{ marginLeft: 6, fontSize: 10 }}>{pendingPOs.length}</span>}
         </div>
@@ -298,7 +263,6 @@ function SupplierInvoicesTab({ suppliers, periods }) {
         </div>
       </div>
 
-      {/* ── PENDING POs ── */}
       {subtab === 'pending' && (
         <>
           {pendingPOs.length === 0 ? (
@@ -319,7 +283,7 @@ function SupplierInvoicesTab({ suppliers, periods }) {
                       <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 12 }}>{fmt(po.subtotal_excl_vat)}</td>
                       <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 12 }}>{fmt(po.vat_amount)}</td>
                       <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 13, fontWeight: 700 }}>{fmt(po.total_incl_vat)}</td>
-                      <td style={{ fontSize: 11 }}>{fmtDate(po.submitted_at)}</td>
+                      <td style={{ fontSize: 11 }}>{po.submitted_at ? new Date(po.submitted_at).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</td>
                       <td style={{ fontSize: 11 }}>
                         {po.onedrive_url
                           ? <a href={po.onedrive_url + '?web=1'} target="_blank" rel="noopener noreferrer" style={{ color: '#005A8E' }}>📎 View</a>
@@ -340,7 +304,6 @@ function SupplierInvoicesTab({ suppliers, periods }) {
         </>
       )}
 
-      {/* ── ALL INVOICES ── */}
       {subtab === 'invoices' && (
         <>
           {invoices.length > 0 && (
@@ -349,30 +312,29 @@ function SupplierInvoicesTab({ suppliers, periods }) {
             </div>
           )}
           <div className="table-wrap">
-          <table>
-            <thead><tr><th>Invoice Ref</th><th>Date</th><th>Supplier</th><th>Supplier Inv No</th><th>Due Date</th><th style={{ textAlign: 'right' }}>Total Incl VAT</th><th style={{ textAlign: 'right' }}>Balance Due</th><th>Status</th></tr></thead>
-            <tbody>
-              {loading && <tr><td colSpan={8}><div className="loading">Loading…</div></td></tr>}
-              {!loading && invoices.length === 0 && <tr><td colSpan={8}><div className="empty-state">No supplier invoices yet</div></td></tr>}
-              {!loading && invoices.map(inv => (
-                <tr key={inv.invoice_id}>
-                  <td className="mono" style={{ fontWeight: 700 }}>{inv.invoice_ref}</td>
-                  <td style={{ fontSize: 12 }}>{fmtDate(inv.invoice_date)}</td>
-                  <td style={{ fontSize: 13 }}>{inv.fin_suppliers?.supplier_name || inv.supplier_code}</td>
-                  <td className="mono" style={{ fontSize: 11 }}>{inv.supplier_invoice_no || '—'}</td>
-                  <td style={{ fontSize: 12 }}>{fmtDate(inv.due_date)}</td>
-                  <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 13 }}>{fmt(inv.total_incl_vat)}</td>
-                  <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 13, color: (inv.balance_due || 0) > 0 ? '#e53e3e' : '#059669' }}>{fmt(inv.balance_due)}</td>
-                  <td><span className={`badge ${STATUS_COLOR[inv.status] || 'badge-gray'}`} style={{ fontSize: 10 }}>{inv.status}</span></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+            <table>
+              <thead><tr><th>Invoice Ref</th><th>Date</th><th>Supplier</th><th>Supplier Inv No</th><th>Due Date</th><th style={{ textAlign: 'right' }}>Total Incl VAT</th><th style={{ textAlign: 'right' }}>Balance Due</th><th>Status</th></tr></thead>
+              <tbody>
+                {loading && <tr><td colSpan={8}><div className="loading">Loading…</div></td></tr>}
+                {!loading && invoices.length === 0 && <tr><td colSpan={8}><div className="empty-state">No supplier invoices yet</div></td></tr>}
+                {!loading && invoices.map(inv => (
+                  <tr key={inv.invoice_id}>
+                    <td className="mono" style={{ fontWeight: 700 }}>{inv.invoice_ref}</td>
+                    <td style={{ fontSize: 12 }}>{inv.invoice_date ? new Date(inv.invoice_date).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</td>
+                    <td style={{ fontSize: 13 }}>{inv.fin_suppliers?.supplier_name || inv.supplier_code}</td>
+                    <td className="mono" style={{ fontSize: 11 }}>{inv.supplier_invoice_no || '—'}</td>
+                    <td style={{ fontSize: 12 }}>{inv.due_date ? new Date(inv.due_date).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</td>
+                    <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 13 }}>{fmt(inv.total_incl_vat)}</td>
+                    <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 13, color: (inv.balance_due || 0) > 0 ? '#e53e3e' : '#059669' }}>{fmt(inv.balance_due)}</td>
+                    <td><span className={`badge ${STATUS_COLOR[inv.status] || 'badge-gray'}`} style={{ fontSize: 10 }}>{inv.status}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </>
       )}
 
-      {/* Capture Invoice Modal (from PO) */}
       {captureModal && (
         <div className="modal-overlay" onClick={() => setCapture(null)}>
           <div className="modal" style={{ maxWidth: 500 }} onClick={e => e.stopPropagation()}>
@@ -413,7 +375,6 @@ function SupplierInvoicesTab({ suppliers, periods }) {
         </div>
       )}
 
-      {/* New Standalone Invoice Modal */}
       {invModal && (
         <div className="modal-overlay" onClick={() => setInvModal(false)}>
           <div className="modal" style={{ maxWidth: 500 }} onClick={e => e.stopPropagation()}>
@@ -469,25 +430,96 @@ function SupplierInvoicesTab({ suppliers, periods }) {
   );
 }
 
+// ── SUPPLIER FORM (shared between Add and Edit) ───────────────
+function SupplierForm({ initial, onSave, onCancel, saving, title }) {
+  const [form, setForm] = useState(initial);
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  return (
+    <div className="modal-overlay" onClick={onCancel}>
+      <div className="modal" style={{ maxWidth: 560 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <h3>{title}</h3>
+          <button onClick={onCancel} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', fontSize: 18 }}>✕</button>
+        </div>
+        <div className="modal-body">
+          <div className="form-row">
+            <div className="form-group">
+              <label>Supplier Code *</label>
+              <input value={form.supplier_code} onChange={e => set('supplier_code', e.target.value.toUpperCase())}
+                placeholder="e.g. ACME001" disabled={!!initial._editing} />
+            </div>
+            <div className="form-group">
+              <label>Supplier Name *</label>
+              <input value={form.supplier_name} onChange={e => set('supplier_name', e.target.value)} placeholder="Full supplier name" />
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label>VAT Number</label>
+              <input value={form.vat_number} onChange={e => set('vat_number', e.target.value)} placeholder="e.g. 4123456789" />
+            </div>
+            <div className="form-group" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+              <label style={{ marginBottom: 6 }}>VAT Processing</label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
+                <input type="checkbox" checked={!!form.vat_enabled} onChange={e => set('vat_enabled', e.target.checked)}
+                  style={{ width: 16, height: 16, cursor: 'pointer' }} />
+                Charge VAT on this supplier
+              </label>
+              <div style={{ fontSize: 11, color: '#888', marginTop: 3 }}>
+                {form.vat_enabled ? '✓ VAT will be calculated at 15% on POs' : 'No VAT applied on POs'}
+              </div>
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label>Payment Terms (days)</label>
+              <input type="number" value={form.payment_terms_days} onChange={e => set('payment_terms_days', e.target.value)} min="0" />
+            </div>
+            <div className="form-group">
+              <label>Credit Limit (R)</label>
+              <input type="number" value={form.credit_limit} onChange={e => set('credit_limit', e.target.value)} placeholder="Leave blank for no limit" step="0.01" />
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label>Telephone</label>
+              <input value={form.telephone} onChange={e => set('telephone', e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label>Email</label>
+              <input type="email" value={form.email} onChange={e => set('email', e.target.value)} />
+            </div>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn" onClick={onCancel}>Cancel</button>
+          <button className="btn btn-primary" onClick={() => onSave(form)} disabled={saving}>
+            {saving ? 'Saving…' : (initial._editing ? 'Save Changes' : 'Create Supplier')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── MAIN AP PAGE ──────────────────────────────────────────────
 export default function FinanceAP() {
   const { user } = useAuth();
   const [tab, setTab]             = useState('aging');
   const [aging, setAging]         = useState(null);
   const [suppliers, setSuppliers] = useState([]);
-  const [periods, setPeriods]       = useState([]);
-  const [loading, setLoading]     = useState(true);   // aging
-  const [suppLoading, setSuppLoading] = useState(true); // supplier list
+  const [periods, setPeriods]     = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [suppLoading, setSuppLoading] = useState(true);
   const [search, setSearch]       = useState('');
   const [selected, setSelected]   = useState(null);
-  const [showAdd, setShowAdd]     = useState(false);
-  const [form, setForm]           = useState(EMPTY_SUPPLIER);
+  const [supplierForm, setSupplierForm] = useState(null); // null | form object
   const [saving, setSaving]       = useState(false);
   const [toggling, setToggling]   = useState(null);
 
   const canToggleWorkshop = ['ADMIN', 'FINANCE', 'WORKSHOP_MANAGER'].includes(user?.role);
 
   useEffect(() => {
-    // Always keep supplier list loaded (needed for Transactions tab dropdown)
     loadSuppliers();
     req('/fin/periods').then(d => setPeriods(Array.isArray(d) ? d.filter(p => !p.is_closed) : []));
   }, []);
@@ -501,11 +533,8 @@ export default function FinanceAP() {
     try {
       const data = await req('/fin/suppliers?active=true');
       setSuppliers(Array.isArray(data) ? data : data?.data || []);
-    } catch (e) {
-      console.error('loadSuppliers error:', e);
-    } finally {
-      setSuppLoading(false);
-    }
+    } catch (e) { console.error(e); }
+    finally { setSuppLoading(false); }
   };
 
   const loadAging = async () => {
@@ -513,24 +542,34 @@ export default function FinanceAP() {
     try {
       const data = await req('/fin/aging/suppliers');
       setAging(Array.isArray(data) ? { invoices: data } : data);
-    } catch (e) {
-      console.error('loadAging error:', e);
-    } finally {
-      setLoading(false);
-    }
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
   };
 
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const openAdd = () => setSupplierForm({ ...EMPTY_SUPPLIER, _editing: false });
+  const openEdit = (s) => setSupplierForm({
+    supplier_code: s.supplier_code, supplier_name: s.supplier_name,
+    vat_number: s.vat_number || '', vat_enabled: !!s.vat_enabled,
+    telephone: s.telephone || '', email: s.email || '',
+    payment_terms_days: s.payment_terms_days || 30,
+    credit_limit: s.credit_limit != null ? String(s.credit_limit) : '',
+    _editing: true,
+  });
 
-  const saveSupplier = async () => {
+  const saveSupplier = async (form) => {
     if (!form.supplier_code.trim() || !form.supplier_name.trim()) return alert('Supplier Code and Name are required');
     setSaving(true);
     try {
-      const res = await req('/fin/suppliers', { method: 'POST', body: JSON.stringify(form) });
+      let res;
+      if (form._editing) {
+        res = await req(`/fin/suppliers/${form.supplier_code}`, { method: 'PATCH', body: JSON.stringify(form) });
+      } else {
+        res = await req('/fin/suppliers', { method: 'POST', body: JSON.stringify(form) });
+      }
       if (res.error) throw new Error(res.error);
-      setShowAdd(false); setForm(EMPTY_SUPPLIER);
+      setSupplierForm(null);
+      setSelected(null);
       loadSuppliers();
-    req('/fin/periods').then(d => setPeriods(Array.isArray(d) ? d.filter(p => !p.is_closed) : []));
       setTab('suppliers');
     } catch (e) { alert(e.message); }
     finally { setSaving(false); }
@@ -542,7 +581,6 @@ export default function FinanceAP() {
     await req(`/fin/suppliers/${s.supplier_code}/workshop`, { method: 'PATCH', body: JSON.stringify({ workshop_allowed: val }) });
     setToggling(null);
     loadSuppliers();
-    req('/fin/periods').then(d => setPeriods(Array.isArray(d) ? d.filter(p => !p.is_closed) : []));
   };
 
   const tabStyle = (t) => ({
@@ -564,10 +602,14 @@ export default function FinanceAP() {
       Amount: i.total_incl_vat, Balance: i.balance_due, Bucket: i.aging_bucket,
     })), 'ap_aging.csv');
   };
+
   const suppliersCSV = () => exportCSV(filteredSuppliers.map(s => ({
-    Code: s.supplier_code, Name: s.supplier_name, 'Group Terms': s.group_terms || '',
-    VAT: s.vat_number || '', Tel: s.telephone || '', 'Terms (days)': s.payment_terms_days,
-    'GL Account': s.gl_control_account, 'Workshop Allowed': s.workshop_allowed ? 'YES' : 'NO',
+    Code: s.supplier_code, Name: s.supplier_name,
+    VAT: s.vat_number || '', 'VAT Enabled': s.vat_enabled ? 'YES' : 'NO',
+    Tel: s.telephone || '', Email: s.email || '',
+    'Terms (days)': s.payment_terms_days,
+    'Credit Limit': s.credit_limit != null ? s.credit_limit : '',
+    'Workshop Allowed': s.workshop_allowed ? 'YES' : 'NO',
   })), 'suppliers.csv');
 
   const STATUS_COLOR = { POSTED: 'badge-blue', PARTIAL: 'badge-amber', PAID: 'badge-green', DISPUTED: 'badge-red', CANCELLED: 'badge-gray', UNPOSTED: 'badge-gray' };
@@ -575,12 +617,12 @@ export default function FinanceAP() {
   return (
     <div>
       <div style={{ display: 'flex', borderBottom: '1px solid #e8edf2', marginBottom: 16, gap: 4, alignItems: 'center' }}>
-        <div style={tabStyle('aging')}       onClick={() => setTab('aging')}>Supplier Aging</div>
-        <div style={tabStyle('suppliers')}   onClick={() => setTab('suppliers')}>Supplier Master ({suppLoading ? '…' : suppliers.length})</div>
-        <div style={tabStyle('transactions')}onClick={() => setTab('transactions')}>Transactions</div>
-        <div style={tabStyle('invoices')}   onClick={() => setTab('invoices')}>Supplier Invoices</div>
+        <div style={tabStyle('aging')}        onClick={() => setTab('aging')}>Supplier Aging</div>
+        <div style={tabStyle('suppliers')}    onClick={() => setTab('suppliers')}>Master Supplier ({suppLoading ? '…' : suppliers.length})</div>
+        <div style={tabStyle('transactions')} onClick={() => setTab('transactions')}>Transactions</div>
+        <div style={tabStyle('invoices')}     onClick={() => setTab('invoices')}>Supplier Invoices</div>
         <div style={{ flex: 1 }} />
-        <button className="btn btn-primary btn-sm" onClick={() => { setForm(EMPTY_SUPPLIER); setShowAdd(true); }}>+ New Supplier</button>
+        <button className="btn btn-primary btn-sm" onClick={openAdd}>+ New Supplier</button>
       </div>
 
       {/* ── AGING TAB ── */}
@@ -631,19 +673,31 @@ export default function FinanceAP() {
           <ExportBar onCSV={suppliersCSV} />
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Code</th><th>Supplier Name</th><th>Group Terms</th><th>VAT Number</th><th>Telephone</th><th>Terms</th><th>GL Account</th><th style={{ textAlign: 'center' }}>Workshop</th></tr></thead>
+              <thead>
+                <tr>
+                  <th>Code</th><th>Supplier Name</th><th>VAT Number</th><th style={{ textAlign: 'center' }}>VAT</th>
+                  <th>Telephone</th><th>Terms</th><th style={{ textAlign: 'right' }}>Credit Limit</th>
+                  <th style={{ textAlign: 'center' }}>Workshop</th><th style={{ width: 60 }}></th>
+                </tr>
+              </thead>
               <tbody>
-                {suppLoading && <tr><td colSpan={8}><div className="loading">Loading suppliers…</div></td></tr>}
-                {!suppLoading && filteredSuppliers.length === 0 && <tr><td colSpan={8}><div className="empty-state">No suppliers found</div></td></tr>}
-                {!loading && filteredSuppliers.map(s => (
+                {suppLoading && <tr><td colSpan={9}><div className="loading">Loading suppliers…</div></td></tr>}
+                {!suppLoading && filteredSuppliers.length === 0 && <tr><td colSpan={9}><div className="empty-state">No suppliers found</div></td></tr>}
+                {!suppLoading && filteredSuppliers.map(s => (
                   <tr key={s.supplier_id} onClick={() => setSelected(s)} style={{ cursor: 'pointer' }}>
                     <td className="mono" style={{ fontWeight: 600 }}>{s.supplier_code}</td>
                     <td>{s.supplier_name}</td>
-                    <td style={{ fontSize: 12 }}>{s.group_terms || '—'}</td>
                     <td className="mono" style={{ fontSize: 12 }}>{s.vat_number || '—'}</td>
+                    <td style={{ textAlign: 'center' }}>
+                      {s.vat_enabled
+                        ? <span className="badge badge-green" style={{ fontSize: 10 }}>VAT</span>
+                        : <span style={{ color: '#ccc', fontSize: 12 }}>—</span>}
+                    </td>
                     <td style={{ fontSize: 12 }}>{s.telephone || '—'}</td>
                     <td style={{ fontSize: 12 }}>{s.payment_terms_days} days</td>
-                    <td className="mono" style={{ fontSize: 12 }}>{s.gl_control_account}</td>
+                    <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 12 }}>
+                      {s.credit_limit != null ? fmt(s.credit_limit) : '—'}
+                    </td>
                     <td style={{ textAlign: 'center' }} onClick={e => e.stopPropagation()}>
                       {canToggleWorkshop ? (
                         <button
@@ -660,6 +714,10 @@ export default function FinanceAP() {
                           : <span style={{ color: '#ccc', fontSize: 12 }}>—</span>
                       )}
                     </td>
+                    <td onClick={e => e.stopPropagation()} style={{ textAlign: 'center' }}>
+                      <button className="btn btn-sm" style={{ fontSize: 11, padding: '2px 8px' }}
+                        onClick={() => openEdit(s)}>✏ Edit</button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -670,10 +728,10 @@ export default function FinanceAP() {
 
       {/* ── TRANSACTIONS TAB ── */}
       {tab === 'transactions' && <SupplierTransactions suppliers={suppliers} />}
-      {tab === 'invoices'      && <SupplierInvoicesTab suppliers={suppliers} periods={periods} />}
+      {tab === 'invoices'     && <SupplierInvoicesTab suppliers={suppliers} periods={periods} />}
 
-      {/* Supplier Detail Modal */}
-      {selected && (
+      {/* Supplier Detail Panel (read-only view on row click) */}
+      {selected && !supplierForm && (
         <div className="modal-overlay" onClick={() => setSelected(null)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
@@ -683,17 +741,22 @@ export default function FinanceAP() {
             <div className="modal-body">
               <div className="form-row">
                 <div className="form-group"><label>VAT Number</label><div className="mono">{selected.vat_number || '—'}</div></div>
-                <div className="form-group"><label>Group Terms</label><div>{selected.group_terms || '—'}</div></div>
+                <div className="form-group"><label>VAT Processing</label>
+                  <span className={`badge ${selected.vat_enabled ? 'badge-green' : 'badge-gray'}`} style={{ fontSize: 11 }}>
+                    {selected.vat_enabled ? '✓ VAT enabled' : 'No VAT'}
+                  </span>
+                </div>
                 <div className="form-group"><label>Payment Terms</label><div>{selected.payment_terms_days} days</div></div>
+                <div className="form-group"><label>Credit Limit</label>
+                  <div>{selected.credit_limit != null ? fmt(selected.credit_limit) : 'No limit'}</div>
+                </div>
               </div>
               <div className="form-row">
                 <div className="form-group"><label>Telephone</label><div>{selected.telephone || '—'}</div></div>
                 <div className="form-group"><label>Email</label><div style={{ fontSize: 12 }}>{selected.email || '—'}</div></div>
-              </div>
-              <div className="form-row">
-                <div className="form-group"><label>City</label><div>{selected.city || '—'}</div></div>
-                <div className="form-group"><label>GL Control Account</label><div className="mono">{selected.gl_control_account}</div></div>
-                <div className="form-group"><label>Status</label><span className={`badge ${selected.on_hold ? 'badge-red' : 'badge-green'}`}>{selected.on_hold ? 'On Hold' : 'Active'}</span></div>
+                <div className="form-group"><label>Status</label>
+                  <span className={`badge ${selected.on_hold ? 'badge-red' : 'badge-green'}`}>{selected.on_hold ? 'On Hold' : 'Active'}</span>
+                </div>
               </div>
               <div className="form-row">
                 <div className="form-group">
@@ -717,49 +780,23 @@ export default function FinanceAP() {
                 onClick={() => { setSelected(null); setTab('transactions'); }}>
                 View Transactions →
               </button>
+              <button className="btn btn-sm" onClick={() => { openEdit(selected); setSelected(null); }}>✏ Edit Supplier</button>
               <button className="btn btn-primary" onClick={() => setSelected(null)}>Close</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Add Supplier Modal */}
-      {showAdd && (
-        <div className="modal-overlay" onClick={() => setShowAdd(false)}>
-          <div className="modal" style={{ maxWidth: 560 }} onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>New Supplier</h3>
-              <button onClick={() => setShowAdd(false)} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', fontSize: 18 }}>✕</button>
-            </div>
-            <div className="modal-body">
-              <div className="form-row">
-                <div className="form-group"><label>Supplier Code *</label><input value={form.supplier_code} onChange={e => set('supplier_code', e.target.value.toUpperCase())} placeholder="e.g. ACME001" /></div>
-                <div className="form-group"><label>Supplier Name *</label><input value={form.supplier_name} onChange={e => set('supplier_name', e.target.value)} placeholder="Full supplier name" /></div>
-              </div>
-              <div className="form-row">
-                <div className="form-group"><label>VAT Number</label><input value={form.vat_number} onChange={e => set('vat_number', e.target.value)} /></div>
-                <div className="form-group"><label>Group Terms</label><input value={form.group_terms} onChange={e => set('group_terms', e.target.value)} /></div>
-                <div className="form-group"><label>Payment Terms (days)</label><input type="number" value={form.payment_terms_days} onChange={e => set('payment_terms_days', e.target.value)} /></div>
-              </div>
-              <div className="form-row">
-                <div className="form-group"><label>Telephone</label><input value={form.telephone} onChange={e => set('telephone', e.target.value)} /></div>
-                <div className="form-group"><label>Email</label><input type="email" value={form.email} onChange={e => set('email', e.target.value)} /></div>
-              </div>
-              <div className="form-row">
-                <div className="form-group"><label>City</label><input value={form.city} onChange={e => set('city', e.target.value)} /></div>
-                <div className="form-group"><label>GL Control Account</label><input value={form.gl_control_account} onChange={e => set('gl_control_account', e.target.value)} placeholder="2000" /></div>
-              </div>
-            </div>
-            <div className="modal-footer">
-              <button className="btn" onClick={() => setShowAdd(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={saveSupplier} disabled={saving}>{saving ? 'Saving…' : 'Create Supplier'}</button>
-            </div>
-          </div>
-        </div>
+      {/* Add / Edit Supplier Form */}
+      {supplierForm && (
+        <SupplierForm
+          initial={supplierForm}
+          onSave={saveSupplier}
+          onCancel={() => setSupplierForm(null)}
+          saving={saving}
+          title={supplierForm._editing ? `Edit Supplier — ${supplierForm.supplier_code}` : 'New Supplier'}
+        />
       )}
     </div>
   );
 }
-
-
-
