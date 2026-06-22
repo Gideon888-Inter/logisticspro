@@ -227,8 +227,9 @@ export default function PurchaseOrders() {
               <button onClick={() => setShowNew(false)} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', fontSize: 18 }}>✕</button>
             </div>
             <div className="modal-body">
-              <div className="form-row">
-                <div className="form-group" style={{ flex: 2 }}>
+              {/* Row 1: Supplier (wide) + Allocation Type (narrow) */}
+              <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
+                <div className="form-group" style={{ flex: 3, margin: 0 }}>
                   <label>Supplier *</label>
                   <select value={form.supplier_code} onChange={e => {
                     const sup = suppliers.find(s => s.supplier_code === e.target.value);
@@ -239,7 +240,7 @@ export default function PurchaseOrders() {
                     {suppliers.map(s => <option key={s.supplier_code} value={s.supplier_code}>{s.supplier_code} — {s.supplier_name}</option>)}
                   </select>
                 </div>
-                <div className="form-group">
+                <div className="form-group" style={{ flex: 1, margin: 0 }}>
                   <label>Allocation Type *</label>
                   <select value={form.allocation_type} onChange={e => set('allocation_type', e.target.value)}>
                     <option value="VEHICLE">Vehicle</option>
@@ -247,8 +248,9 @@ export default function PurchaseOrders() {
                   </select>
                 </div>
               </div>
+              {/* Row 2: Vehicle (only if VEHICLE type) */}
               {form.allocation_type === 'VEHICLE' && (
-                <div className="form-group">
+                <div className="form-group" style={{ marginBottom: 12 }}>
                   <label>Vehicle *</label>
                   <select value={form.vehicle_code} onChange={e => {
                     const v = vehicles.find(v => v.vh_code === e.target.value);
@@ -260,12 +262,14 @@ export default function PurchaseOrders() {
                   </select>
                 </div>
               )}
-              <div className="form-group">
+              {/* Row 3: Description */}
+              <div className="form-group" style={{ marginBottom: 12 }}>
                 <label>Description *</label>
                 <input value={form.po_description} onChange={e => set('po_description', e.target.value)} placeholder="e.g. Front brake pads and discs — MH195" />
               </div>
-              <div className="form-row">
-                <div className="form-group">
+              {/* Row 4: Amounts — Excl | VAT (auto) | Total (auto) */}
+              <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
+                <div className="form-group" style={{ flex: 1, margin: 0 }}>
                   <label>Subtotal (excl VAT)</label>
                   <input type="number" value={form.subtotal_excl_vat} onChange={e => {
                     const excl = parseFloat(e.target.value) || 0;
@@ -273,18 +277,21 @@ export default function PurchaseOrders() {
                     set('subtotal_excl_vat', e.target.value);
                     set('vat_amount', vat);
                     set('total_incl_vat', parseFloat((excl + vat).toFixed(2)));
-                  }} placeholder="0.00" />
+                  }} placeholder="0.00" style={{ textAlign: 'right' }} />
                 </div>
-                <div className="form-group">
+                <div className="form-group" style={{ flex: 1, margin: 0 }}>
                   <label>VAT (15%)</label>
-                  <input type="number" value={form.vat_amount} readOnly style={{ background: '#f5f7fa', color: '#888' }} />
+                  <input type="number" value={form.vat_amount} readOnly
+                    style={{ background: '#f0f4f8', color: '#666', textAlign: 'right', cursor: 'default' }} />
                 </div>
-                <div className="form-group">
+                <div className="form-group" style={{ flex: 1, margin: 0 }}>
                   <label>Total (incl VAT)</label>
-                  <input type="number" value={form.total_incl_vat} readOnly style={{ background: '#f5f7fa', fontWeight: 700 }} />
+                  <input type="number" value={form.total_incl_vat} readOnly
+                    style={{ background: '#e8f0f8', fontWeight: 700, textAlign: 'right', color: '#005A8E', cursor: 'default' }} />
                 </div>
               </div>
-              <div className="form-group">
+              {/* Row 5: Notes */}
+              <div className="form-group" style={{ marginBottom: 0 }}>
                 <label>Notes</label>
                 <textarea value={form.notes} onChange={e => set('notes', e.target.value)} rows={2} style={{ width: '100%', resize: 'vertical' }} placeholder="Optional internal notes" />
               </div>
@@ -411,4 +418,5 @@ export default function PurchaseOrders() {
     </div>
   );
 }
+
 
