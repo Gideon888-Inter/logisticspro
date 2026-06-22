@@ -98,6 +98,7 @@ function SupplierTransactions({ suppliers }) {
           <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end', paddingBottom: 1 }}>
             <button className="btn btn-primary btn-sm" onClick={search} disabled={loading}>{loading ? 'Loading…' : '🔍 Search'}</button>
             {searched && <button className="btn btn-sm" onClick={clear}>Clear</button>}
+            {searched && rows.length > 0 && <button className="btn btn-sm" onClick={doExport}>⬇ CSV</button>}
           </div>
         </div>
         {selectedSupplier && (
@@ -326,7 +327,21 @@ function SupplierInvoicesTab({ suppliers, periods }) {
 
       {/* ── ALL INVOICES ── */}
       {subtab === 'invoices' && (
-        <div className="table-wrap">
+        <div>
+          {invoices.length > 0 && (
+            <div style={{ display:'flex', gap:6, marginBottom:8 }}>
+              <button className="btn btn-sm" onClick={() => exportCSV(invoices.map(inv => ({
+                'Invoice Ref': inv.invoice_ref, 'Supplier': inv.supplier_code,
+                'Supplier Inv No': inv.supplier_invoice_no || '',
+                'Invoice Date': inv.invoice_date, 'Due Date': inv.due_date,
+                'Excl VAT': inv.subtotal_excl_vat, 'VAT': inv.vat_amount,
+                'Total Incl VAT': inv.total_incl_vat,
+                'Amount Paid': inv.amount_paid, 'Balance Due': inv.balance_due,
+                'Status': inv.status,
+              })), 'ap_invoices.csv')}>⬇ CSV</button>
+            </div>
+          )}
+          <div className="table-wrap">
           <table>
             <thead><tr><th>Invoice Ref</th><th>Date</th><th>Supplier</th><th>Supplier Inv No</th><th>Due Date</th><th style={{ textAlign: 'right' }}>Total Incl VAT</th><th style={{ textAlign: 'right' }}>Balance Due</th><th>Status</th></tr></thead>
             <tbody>
@@ -386,6 +401,7 @@ function SupplierInvoicesTab({ suppliers, periods }) {
               <button className="btn" onClick={() => setCapture(null)}>Cancel</button>
               <button className="btn btn-primary" onClick={captureFromPO} disabled={saving}>{saving ? 'Capturing…' : '📥 Capture & Approve PO'}</button>
             </div>
+          </div>
           </div>
         </div>
       )}
@@ -725,4 +741,5 @@ export default function FinanceAP() {
     </div>
   );
 }
+
 
