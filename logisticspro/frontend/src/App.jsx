@@ -58,7 +58,11 @@ const LogoutIcon = () => (
 // Build menu dynamically based on user role
 function buildMenu(user) {
   const menu = [];
-  if (user?.role === ROLES.READONLY) return menu;
+  // READONLY gets a minimal menu — Loads view only
+  if (user?.role === ROLES.READONLY) {
+    menu.push({ key: 'movement', label: 'Loads', icon: '🚛' });
+    return menu;
+  }
   menu.push({ key: '', label: 'Home', icon: '🏠' });
   if (canViewLoads(user))
     menu.push({ key: 'movement', label: 'Loads', icon: '🚛' });
@@ -89,13 +93,8 @@ function buildMenu(user) {
         { key: 'rates-routes', label: 'Routes' },
       ]
     });
-  if (canManageClients(user) || canManageInvoices(user))
-    menu.push({ key: 'clients', label: 'Clients', icon: '🏢',
-      sub: [
-        ...(canManageClients(user)   ? [{ key: 'clients-list',     label: 'Customers' }] : []),
-        // Invoices moved to Finance > AR module
-      ]
-    });
+  if (canManageClients(user))
+    menu.push({ key: 'clients-list', label: 'Clients', icon: '🏢' });
   if (canViewFinance(user) || canManageInvoices(user))
     menu.push({ key: 'finance', label: 'Finance', icon: '💰',
       sub: [
@@ -118,7 +117,7 @@ const PAGE_TITLES = {
   movement: 'Loads',
   vehicles: 'Fleet',
   'drivers-list': 'Drivers', 'drivers-leave': 'Driver Leave',
-  clients: 'Clients', 'clients-list': 'Customers',
+  'clients-list': 'Customers',
   'workshop-service': 'Service Cards', 'workshop-maintenance': 'Maintenance',
   'workshop-inventory': 'Inventory', 'workshop-pos': 'Purchase Orders',
   approvals: 'Approvals', 'rates-list': 'Client Rates', 'rates-routes': 'Routes',
@@ -185,10 +184,8 @@ export default function App() {
   );
 
   const renderPage = () => {
-    if (user?.role === ROLES.READONLY) return <ReadOnlyHome />;
-
     switch (page) {
-      case '':                    return <Dashboard onNavigate={navigate} />;
+      case '':                    return user?.role === ROLES.READONLY ? <ReadOnlyHome /> : <Dashboard onNavigate={navigate} />;
       case 'movement':            return canViewLoads(user) ? <Loads /> : <AccessDenied />;
       case 'approvals':           return canViewApprovals(user) ? <Approvals /> : <AccessDenied />;
       case 'vehicles':            return canViewFleet(user) ? <Fleet /> : <AccessDenied />;
@@ -334,8 +331,3 @@ export default function App() {
     </div>
   );
 }
-
-
-
-
-
