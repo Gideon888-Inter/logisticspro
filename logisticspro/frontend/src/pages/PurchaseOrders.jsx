@@ -474,6 +474,34 @@ export default function PurchaseOrders() {
   };
 
   // ── Expanded PO content (detail + optional editor) ────────────────────────
+  // Small component for collapsible approval history (hooks must not be inside callbacks)
+  function HistoryToggle({ log }) {
+    const [open, setOpen] = useState(false);
+    if (!log?.length) return null;
+    return (
+      <div style={{ marginBottom: 10 }}>
+        <button
+          onClick={() => setOpen(o => !o)}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 0',
+                   fontSize: 11, fontWeight: 600, color: '#555', display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span style={{ fontSize: 10, display: 'inline-block', transition: 'transform 0.15s',
+                         transform: open ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
+          Approval History ({log.length})
+        </button>
+        {open && (
+          <div style={{ marginTop: 4, paddingLeft: 12, borderLeft: '2px solid #e2e8f0' }}>
+            {log.map(l => (
+              <div key={l.log_id} style={{ fontSize: 11, color: '#666', padding: '2px 0', borderBottom: '1px solid #f0f0f0' }}>
+                <strong>{l.actioned_by}</strong> — {l.action} — {fmtDate(l.actioned_at)}
+                {l.notes && <span style={{ color: '#888', marginLeft: 6 }}>({l.notes})</span>}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   const renderExpanded = (po) => {
     if (detailLoading) return <tr><td colSpan={9}><div className="loading" style={{ padding: '12px 20px' }}>Loading…</div></td></tr>;
     if (!detail) return null;
@@ -494,88 +522,114 @@ export default function PurchaseOrders() {
               saving={saving}
             />
           ) : (
-            <div style={{ padding: '14px 20px', background: '#f8fafc' }}>
-              {/* Header row */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
-                <span style={{ fontWeight: 700, fontSize: 14, color: '#005A8E' }}>{dpPO.po_number}</span>
+            <div style={{ background: '#f8fafc' }}>
+              {/* ── PO card banner — lighter blue so it differs from the dark page header ── */}
+              <div style={{
+                background: '#d0e8f5', borderTop: '2px solid #005A8E',
+                padding: '10px 18px', display: 'flex', alignItems: 'center',
+                gap: 12, flexWrap: 'wrap',
+              }}>
+                <span style={{ fontWeight: 700, fontSize: 13, color: '#003a5c' }}>{dpPO.po_number}</span>
                 <span className={`badge ${PO_STATUS_COLORS[dpPO.status] || 'badge-gray'}`} style={{ fontSize: 10 }}>{PO_STATUS_LABELS[dpPO.status] || dpPO.status}</span>
-                <span style={{ fontSize: 12, color: '#666' }}>Supplier: <strong>{dpPO.supplier_name}</strong></span>
+                <span style={{ fontSize: 12, color: '#004a70' }}>Supplier: <strong>{dpPO.supplier_name}</strong></span>
                 {dpPO.supplier_invoice_no
-                  ? <span style={{ fontSize: 12, color: '#333' }}>Inv No: <strong className="mono">{dpPO.supplier_invoice_no}</strong></span>
-                  : <span style={{ fontSize: 11, color: '#e53e3e' }}>⚠ No supplier invoice number</span>
+                  ? <span style={{ fontSize: 12, color: '#004a70' }}>Inv No: <strong className="mono">{dpPO.supplier_invoice_no}</strong></span>
+                  : <span style={{ fontSize: 11, color: '#c0392b', fontWeight: 600 }}>⚠ No supplier invoice number</span>
                 }
-                <span style={{ fontSize: 12, color: '#555' }}>Total: <strong>{fmtR(dpPO.total_incl_vat)}</strong></span>
-                <span style={{ fontSize: 11, color: '#888' }}>by {dpPO.created_by} on {fmtDate(dpPO.created_at)}</span>
+                <span style={{ fontSize: 12, color: '#004a70' }}>Total: <strong>{fmtR(dpPO.total_incl_vat)}</strong></span>
+                <span style={{ fontSize: 11, color: '#336b87', marginLeft: 'auto' }}>by {dpPO.created_by} · {fmtDate(dpPO.created_at)}</span>
               </div>
 
-              {/* Lines */}
-              {detail.lines?.length > 0 && (
-                <div className="table-wrap" style={{ marginBottom: 10 }}>
-                  <table>
-                    <thead><tr><th>#</th><th>Type</th><th>Description</th><th style={{ textAlign: 'right' }}>Excl VAT</th><th style={{ textAlign: 'right' }}>VAT</th><th style={{ textAlign: 'right' }}>Incl VAT</th></tr></thead>
-                    <tbody>
-                      {detail.lines.map(l => (
-                        <tr key={l.po_line_id}>
-                          <td style={{ fontSize: 11, color: '#888' }}>{l.line_number}</td>
-                          <td><span className="badge badge-gray" style={{ fontSize: 10 }}>{l.line_type}</span></td>
-                          <td style={{ fontSize: 13 }}>{l.description}</td>
-                          <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 12 }}>{fmtR(l.line_total_excl)}</td>
-                          <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 12, color: '#c05621' }}>{l.vat_amount > 0 ? fmtR(l.vat_amount) : '—'}</td>
-                          <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 13, fontWeight: 600, color: '#005A8E' }}>{fmtR(l.line_total_incl)}</td>
+              <div style={{ padding: '12px 18px' }}>
+                {/* Lines — Type shows Horse/Trailer/Inventory + Item code */}
+                {detail.lines?.length > 0 && (
+                  <div className="table-wrap" style={{ marginBottom: 10 }}>
+                    <table>
+                      <thead>
+                        <tr>
+                          <th style={{ width: 28 }}>#</th>
+                          <th style={{ width: 100 }}>Category</th>
+                          <th style={{ width: 130 }}>Item</th>
+                          <th>Description</th>
+                          <th style={{ textAlign: 'right' }}>Excl VAT</th>
+                          <th style={{ textAlign: 'right' }}>VAT</th>
+                          <th style={{ textAlign: 'right' }}>Incl VAT</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-
-              {/* Approval history */}
-              {detail.log?.length > 0 && (
-                <div style={{ marginBottom: 10 }}>
-                  <div style={{ fontWeight: 600, fontSize: 11, color: '#555', marginBottom: 4 }}>Approval History</div>
-                  {detail.log.map(l => (
-                    <div key={l.log_id} style={{ fontSize: 11, color: '#666', padding: '2px 0', borderBottom: '1px solid #eee' }}>
-                      <strong>{l.actioned_by}</strong> — {l.action} — {fmtDate(l.actioned_at)}
-                      {l.notes && <span style={{ color: '#888', marginLeft: 6 }}>({l.notes})</span>}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Error */}
-              {actionErr && (
-                <div style={{ background: '#fff5f5', border: '1px solid #fca5a5', borderRadius: 4, padding: '6px 10px', marginBottom: 8, color: '#e53e3e', fontSize: 12 }}>
-                  ⚠ {actionErr}
-                </div>
-              )}
-
-              {/* Action buttons */}
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {canEdit(dpPO) && (
-                  <button className="btn btn-sm" style={{ fontSize: 11 }} onClick={() => setEditing(true)}>✏ Edit PO</button>
+                      </thead>
+                      <tbody>
+                        {detail.lines.map(l => {
+                          // Derive display category and item from stored fields
+                          const cat = l.line_type === 'INVENTORY' ? 'Inventory'
+                                    : l.line_type === 'TRAILER'   ? 'Trailer'
+                                    : 'Horse';
+                          const catColor = l.line_type === 'INVENTORY' ? '#059669'
+                                         : l.line_type === 'TRAILER'   ? '#7c3aed'
+                                         : '#005A8E';
+                          // Item: item_code if set, else try to parse vehicle code from description
+                          let itemCode = l.item_code || '';
+                          if (!itemCode && l.line_type !== 'INVENTORY') {
+                            const m = (l.description || '').toUpperCase().match(/(MH|RH|BT|ST)\d+/);
+                            if (m) itemCode = m[0];
+                          }
+                          return (
+                            <tr key={l.po_line_id}>
+                              <td style={{ fontSize: 11, color: '#888' }}>{l.line_number}</td>
+                              <td>
+                                <span style={{ fontSize: 11, fontWeight: 600, color: catColor }}>{cat}</span>
+                              </td>
+                              <td className="mono" style={{ fontSize: 11, color: '#333' }}>
+                                {itemCode || <span style={{ color: '#bbb' }}>—</span>}
+                              </td>
+                              <td style={{ fontSize: 12 }}>{l.description}</td>
+                              <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 12 }}>{fmtR(l.line_total_excl)}</td>
+                              <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 12, color: '#c05621' }}>{l.vat_amount > 0 ? fmtR(l.vat_amount) : '—'}</td>
+                              <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 13, fontWeight: 600, color: '#005A8E' }}>{fmtR(l.line_total_incl)}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 )}
-                {canSubmit(dpPO) && (
-                  <button className="btn btn-primary btn-sm" style={{ fontSize: 11 }} onClick={submitPO} disabled={approving}>
-                    {approving ? 'Submitting…' : '▶ Submit for Approval'}
-                  </button>
+
+                {/* Approval history — collapsed by default */}
+                <HistoryToggle log={detail.log} />
+
+                {/* Error */}
+                {actionErr && (
+                  <div style={{ background: '#fff5f5', border: '1px solid #fca5a5', borderRadius: 4, padding: '6px 10px', marginBottom: 8, color: '#e53e3e', fontSize: 12 }}>
+                    ⚠ {actionErr}
+                  </div>
                 )}
-                {canRecall(dpPO, detail) && (
-                  <button className="btn btn-sm" style={{ fontSize: 11, color: '#92400e', borderColor: '#d97706', background: '#fffbeb' }}
-                    onClick={recallPO} disabled={approving}>
-                    {approving ? '…' : '↩ Cancel Approval Request'}
-                  </button>
-                )}
-                {canApproveStatus(dpPO.status) && (
-                  <>
-                    <button className="btn btn-primary btn-sm" style={{ fontSize: 11 }}
-                      onClick={() => approve('APPROVE', '')} disabled={approving}>
-                      {approving ? 'Processing…' : '✓ Approve'}
+
+                {/* Action buttons */}
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {canEdit(dpPO) && (
+                    <button className="btn btn-sm" style={{ fontSize: 11 }} onClick={() => setEditing(true)}>✏ Edit PO</button>
+                  )}
+                  {canSubmit(dpPO) && (
+                    <button className="btn btn-primary btn-sm" style={{ fontSize: 11 }} onClick={submitPO} disabled={approving}>
+                      {approving ? 'Submitting…' : '▶ Submit for Approval'}
                     </button>
-                    <button className="btn btn-sm" style={{ fontSize: 11, color: '#e53e3e', borderColor: '#e53e3e' }}
-                      onClick={() => { const r = prompt('Rejection reason (required):'); if (r?.trim()) approve('REJECT', r.trim()); }}
-                      disabled={approving}>✕ Reject</button>
-                  </>
-                )}
+                  )}
+                  {canRecall(dpPO, detail) && (
+                    <button className="btn btn-sm" style={{ fontSize: 11, color: '#92400e', borderColor: '#d97706', background: '#fffbeb' }}
+                      onClick={recallPO} disabled={approving}>
+                      {approving ? '…' : '↩ Cancel Approval Request'}
+                    </button>
+                  )}
+                  {canApproveStatus(dpPO.status) && (
+                    <>
+                      <button className="btn btn-primary btn-sm" style={{ fontSize: 11 }}
+                        onClick={() => approve('APPROVE', '')} disabled={approving}>
+                        {approving ? 'Processing…' : '✓ Approve'}
+                      </button>
+                      <button className="btn btn-sm" style={{ fontSize: 11, color: '#e53e3e', borderColor: '#e53e3e' }}
+                        onClick={() => { const r = prompt('Rejection reason (required):'); if (r?.trim()) approve('REJECT', r.trim()); }}
+                        disabled={approving}>✕ Reject</button>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
           )}
