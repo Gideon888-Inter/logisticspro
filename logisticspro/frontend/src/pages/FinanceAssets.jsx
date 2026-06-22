@@ -782,6 +782,21 @@ function ProcessDepreciation() {
 
           {/* Asset detail table */}
           <div style={{ fontWeight: 600, fontSize: 13, color: '#555', marginBottom: 6 }}>Asset Detail</div>
+          {preview?.assets?.length > 0 && (
+            <div style={{ display:'flex', gap:6, marginBottom:6 }}>
+              <button className="btn btn-sm" onClick={() => {
+                const rows = (preview.assets || []).map(a => ({
+                  'Asset Code': a.asset_code, 'Description': a.description, 'Class': a.class_code,
+                  'Cost': a.purchase_price, 'Book NVB Before': a.book_nbv,
+                  'Book Depre': a.book_depre_amount, 'Tax Depre': a.tax_depre_amount,
+                  'Book NBV After': a.book_nbv_after,
+                }));
+                const headers = Object.keys(rows[0]);
+                const csv = [headers, ...rows.map(r => headers.map(h => `"${String(r[h]??'').replace(/"/g,'""')}"`))].map(r=>r.join(',')).join('\n');
+                const a = document.createElement('a'); a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv); a.download='depreciation_preview.csv'; a.click();
+              }}>⬇ Export Preview CSV</button>
+            </div>
+          )}
           <div className="table-wrap" style={{ marginBottom: 16 }}>
             <table>
               <thead>
@@ -870,4 +885,5 @@ export default function FinanceAssets() {
     </div>
   );
 }
+
 
