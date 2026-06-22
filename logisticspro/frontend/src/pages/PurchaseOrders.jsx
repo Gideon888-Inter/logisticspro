@@ -103,10 +103,10 @@ function InlinePOEditor({ po, lines: existingLines, suppliers, vehicles, onSave,
   const totalIncl = (form.lines || []).reduce((s, l) => s + (parseFloat(l.incl) || 0), 0);
 
   return (
-    <div style={{ padding: '16px 20px', background: '#f0f7ff', borderTop: '2px solid #005A8E' }}>
+    <div style={{ padding: '12px 16px', background: '#f0f7ff', borderTop: '2px solid #005A8E' }}>
       {/* Supplier + Invoice No row */}
       <div style={{ display: 'flex', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
-        <div className="form-group" style={{ flex: '1 1 280px', marginBottom: 0 }}>
+        <div className="form-group" style={{ flex: '1 1 240px', marginBottom: 0, minWidth: 0 }}>
           <label style={{ fontWeight: 600, fontSize: 12 }}>Supplier *</label>
           <select value={form.supplier_code} onChange={e => {
             const sup    = suppliers.find(s => s.supplier_code === e.target.value);
@@ -130,7 +130,7 @@ function InlinePOEditor({ po, lines: existingLines, suppliers, vehicles, onSave,
             ? <span style={{ fontSize: 10, color: '#059669' }}>✓ VAT at 15%</span>
             : form.supplier_code ? <span style={{ fontSize: 10, color: '#888' }}>No VAT</span> : null}
         </div>
-        <div className="form-group" style={{ flex: '0 1 220px', marginBottom: 0 }}>
+        <div className="form-group" style={{ flex: '1 1 200px', marginBottom: 0, minWidth: 0 }}>
           <label style={{ fontWeight: 600, fontSize: 12 }}>
             Supplier Invoice No
             <span style={{ fontWeight: 400, color: '#888', marginLeft: 4 }}>(required before approval)</span>
@@ -146,8 +146,8 @@ function InlinePOEditor({ po, lines: existingLines, suppliers, vehicles, onSave,
           <span style={{ fontWeight: 600, fontSize: 12 }}>Line Items *</span>
           <button className="btn btn-sm" onClick={addLine} style={{ fontSize: 10 }}>+ Add Line</button>
         </div>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, minWidth: 660 }}>
+        <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, minWidth: 580 }}>
             <thead>
               <tr style={{ background: '#2d6a96', color: 'white' }}>
                 <th style={{ padding: '6px 7px', textAlign: 'left', width: 100 }}>Type</th>
@@ -668,12 +668,13 @@ export default function PurchaseOrders() {
     // Re-use InlinePOEditor inside a modal wrapper
     return (
       <div className="modal-overlay" onClick={() => setShowNew(false)}>
-        <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 840, width: '96vw' }}>
-          <div className="modal-header">
+        <div className="modal" onClick={e => e.stopPropagation()}
+          style={{ maxWidth: 860, width: '98vw', maxHeight: '95vh', display: 'flex', flexDirection: 'column' }}>
+          <div className="modal-header" style={{ flexShrink: 0 }}>
             <h3>New Purchase Order</h3>
             <button onClick={() => setShowNew(false)} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', fontSize: 18 }}>✕</button>
           </div>
-          <div className="modal-body" style={{ padding: 0 }}>
+          <div className="modal-body" style={{ padding: 0, flex: 1, overflowY: 'auto' }}>
             <InlinePOEditor
               po={{ supplier_code: '', supplier_name: '', supplier_invoice_no: '' }}
               lines={[]}
@@ -691,9 +692,23 @@ export default function PurchaseOrders() {
 
   return (
     <div>
+      <style>{`
+        @media (max-width: 600px) {
+          /* Stack filter bar items */
+          .filter-bar { flex-direction: column !important; align-items: stretch !important; }
+          .filter-bar input, .filter-bar select { width: 100% !important; max-width: 100% !important; }
+          /* Hide less-critical list columns on mobile */
+          .po-col-desc, .po-col-created, .po-col-date { display: none; }
+          /* Make modal full-screen on mobile */
+          .modal { width: 100vw !important; max-width: 100vw !important; height: 100dvh !important; max-height: 100dvh !important; border-radius: 0 !important; margin: 0 !important; }
+          .modal-overlay { padding: 0 !important; align-items: flex-start !important; }
+          /* Ensure PO editor padding is tighter */
+          .po-editor-wrap { padding: 10px 12px !important; }
+        }
+      `}</style>
       {/* Filter bar */}
-      <div className="filter-bar">
-        <div style={{ display: 'flex', gap: 8 }}>
+      <div className="filter-bar" style={{ flexWrap: 'wrap', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           <button className={`btn btn-sm ${tab === 'all'     ? 'btn-primary' : ''}`} onClick={() => setTab('all')}>All POs</button>
           <button className={`btn btn-sm ${tab === 'mine'    ? 'btn-primary' : ''}`} onClick={() => setTab('mine')}>My POs</button>
           {hasApprovals && <button className={`btn btn-sm ${tab === 'pending' ? 'btn-primary' : ''}`} onClick={() => setTab('pending')}>Pending Approval</button>}
@@ -709,17 +724,17 @@ export default function PurchaseOrders() {
       </div>
 
       {/* PO Table with expandable rows */}
-      <div className="table-wrap">
+      <div className="table-wrap" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
         <table>
           <thead>
             <tr>
               <th>PO Number</th>
               <th>Supplier</th>
               <th>Supplier Inv No</th>
-              <th>Description</th>
+              <th className="po-col-desc">Description</th>
               <th style={{ textAlign: 'right' }}>Total</th>
-              <th>Created By</th>
-              <th>Date</th>
+              <th className="po-col-created">Created By</th>
+              <th className="po-col-date">Date</th>
               <th>Status</th>
               <th style={{ width: 90, textAlign: 'center' }}>Actions</th>
             </tr>
@@ -739,10 +754,10 @@ export default function PurchaseOrders() {
                   <td className="mono" style={{ fontSize: 11, color: po.supplier_invoice_no ? '#333' : '#ccc' }}>
                     {po.supplier_invoice_no || '—'}
                   </td>
-                  <td style={{ fontSize: 11, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{po.po_description}</td>
+                  <td className="po-col-desc" style={{ fontSize: 11, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{po.po_description}</td>
                   <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 12 }}>{fmtR(po.total_incl_vat)}</td>
-                  <td style={{ fontSize: 11, color: '#555' }}>{po.created_by}</td>
-                  <td style={{ fontSize: 11 }}>{fmtDate(po.created_at)}</td>
+                  <td className="po-col-created" style={{ fontSize: 11, color: '#555' }}>{po.created_by}</td>
+                  <td className="po-col-date" style={{ fontSize: 11 }}>{fmtDate(po.created_at)}</td>
                   <td>
                     <span className={`badge ${PO_STATUS_COLORS[po.status] || 'badge-gray'}`} style={{ fontSize: 10 }}>
                       {PO_STATUS_LABELS[po.status] || po.status}
