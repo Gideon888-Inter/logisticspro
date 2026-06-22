@@ -6,17 +6,45 @@ function getToken() {
 
 async function request(path, options = {}) {
   const token = getToken();
-  const res = await fetch(`${BASE}/api${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(options.headers || {}),
-    },
-  });
+  let res;
+  try {
+    res = await fetch(`${BASE}/api${path}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(options.headers || {}),
+      },
+    });
+  } catch (networkErr) {
+    // Network failure — backend may be sleeping (Render cold start)
+    throw new Error('Network error — server may be starting up. Please wait a moment and try again.');
+  }
+
+  // JWT expired or invalid — force logout so user sees login screen
+  if (res.status === 401) {
+    localStorage.removeItem('lp_token');
+    localStorage.removeItem('lp_user');
+    window.location.reload();
+    throw new Error('Session expired — please log in again.');
+  }
+
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Request failed');
+  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
   return data;
+}
+
+// Retry wrapper — retries once after 4 seconds on network errors (Render cold start)
+export async function apiWithRetry(path, options = {}, retries = 1) {
+  try {
+    return await request(path, options);
+  } catch (err) {
+    if (retries > 0 && err.message.includes('Network error')) {
+      await new Promise(r => setTimeout(r, 4000));
+      return apiWithRetry(path, options, retries - 1);
+    }
+    throw err;
+  }
 }
 
 export const api = {
@@ -139,4 +167,5 @@ export const api = {
   approveInvoice:      (id, body)    => request(`/invoices/${id}/approve`, { method: 'POST', body: JSON.stringify(body) }),
   createCreditNote:    (id, body)    => request(`/invoices/${id}/credit-note`, { method: 'POST', body: JSON.stringify(body) }),
 };
+
 
