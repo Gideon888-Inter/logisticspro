@@ -27,26 +27,30 @@ function InlinePOEditor({ po, lines: existingLines, suppliers, vehicles, onSave,
 
     const lines = (existingLines || []).length > 0
       ? existingLines.map(l => {
-          // Determine category from stored line_type
+          // Decode category from item_name field ("HORSE:MH202" or "TRAILER:BT001")
+          // DB line_type only stores COST or INVENTORY — category is in item_name
           let typeCategory = 'HORSE';
-          if (l.line_type === 'INVENTORY') typeCategory = 'INVENTORY';
-          else if (l.line_type === 'TRAILER') typeCategory = 'TRAILER';
+          let type = '';
 
-          // Recover vehicle/trailer code: stored in item_code, or infer from vehicle lists
-          // The backend stores the selected vh_code in item_code when available
-          let type = l.item_code || '';
-
-          // If item_code not set, try to match against known vehicle lists via description
-          // (best-effort — user can correct if wrong)
-          if (!type && typeCategory !== 'INVENTORY') {
-            const descUpper = (l.description || '').toUpperCase();
-            // Check horse pattern e.g. "MH202", "RH08"
-            const horseMatch = descUpper.match(/(MH|RH)\d+/);
-            const trailerMatch = descUpper.match(/(BT|ST)\d+/);
-            if (trailerMatch) { typeCategory = 'TRAILER'; type = trailerMatch[0]; }
-            else if (horseMatch) { typeCategory = 'HORSE'; type = horseMatch[0]; }
-            else type = typeCategory === 'HORSE' ? 'GENERAL_HORSE' : 'GENERAL_TRAILER';
+          if (l.line_type === 'INVENTORY') {
+            typeCategory = 'INVENTORY';
+          } else if (l.item_name && l.item_name.includes(':')) {
+            const [cat, veh] = l.item_name.split(':');
+            typeCategory = cat || 'HORSE';
+            type = veh || '';
+          } else if (l.item_name === 'TRAILER' || l.item_name === 'HORSE') {
+            typeCategory = l.item_name;
           }
+
+          if (!type && l.item_code) type = l.item_code;
+
+          if (!type && typeCategory !== 'INVENTORY') {
+            const m = (l.description || '').toUpperCase().match(/(MH|RH|BT|ST)\d+/);
+            if (m) type = m[0];
+          }
+
+          if (!type && typeCategory === 'HORSE')   type = 'GENERAL_HORSE';
+          if (!type && typeCategory === 'TRAILER') type = 'GENERAL_TRAILER';
 
           return {
             typeCategory,
@@ -327,21 +331,23 @@ export default function PurchaseOrders() {
     if (!lines.length) return alert('At least one line with a description is required');
     setSaving(true);
     try {
-      const apiLines = lines.map((l, i) => ({
-        line_number: i + 1,
-        // Store the actual category so it round-trips correctly
-        line_type: l.typeCategory === 'INVENTORY' ? 'INVENTORY'
-                 : l.typeCategory === 'TRAILER'   ? 'TRAILER'
-                 : 'HORSE',
-        description: l.description, quantity: 1,
-        item_code: (l.typeCategory !== 'INVENTORY' && l.type && !['GENERAL_HORSE','GENERAL_TRAILER'].includes(l.type)) ? l.type : null,
-        item_name: (l.typeCategory !== 'INVENTORY' && l.type && !['GENERAL_HORSE','GENERAL_TRAILER'].includes(l.type)) ? l.type : null,
-        unit_price_excl: parseFloat(l.excl) || 0,
-        vat_type: form.supplier_vat ? 'IN_STD' : null,
-        vat_amount: parseFloat(l.vat) || 0,
-        line_total_excl: parseFloat(l.excl) || 0,
-        line_total_incl: parseFloat(l.incl) || parseFloat(l.excl) || 0,
-      }));
+      const apiLines = lines.map((l, i) => {
+        const isInv = l.typeCategory === 'INVENTORY';
+        const vehCode = (!isInv && l.type && !['GENERAL_HORSE','GENERAL_TRAILER'].includes(l.type)) ? l.type : null;
+        return {
+          line_number:     i + 1,
+          line_type:       isInv ? 'INVENTORY' : 'COST',
+          item_name:       !isInv ? `${l.typeCategory}:${l.type || ''}` : null,
+          item_code:       vehCode,
+          description:     l.description,
+          quantity:        1,
+          unit_price_excl: parseFloat(l.excl) || 0,
+          vat_type:        form.supplier_vat ? 'IN_STD' : null,
+          vat_amount:      parseFloat(l.vat) || 0,
+          line_total_excl: parseFloat(l.excl) || 0,
+          line_total_incl: parseFloat(l.incl) || parseFloat(l.excl) || 0,
+        };
+      });
       const result = await req(`/stock/po/${openPoId}`, {
         method: 'PATCH',
         body: JSON.stringify({
@@ -366,20 +372,23 @@ export default function PurchaseOrders() {
     if (!lines.length) return alert('At least one line with a description is required');
     setSaving(true);
     try {
-      const apiLines = lines.map((l, i) => ({
-        line_number: i + 1,
-        line_type: l.typeCategory === 'INVENTORY' ? 'INVENTORY'
-                 : l.typeCategory === 'TRAILER'   ? 'TRAILER'
-                 : 'HORSE',
-        description: l.description, quantity: 1,
-        item_code: (l.typeCategory !== 'INVENTORY' && l.type && !['GENERAL_HORSE','GENERAL_TRAILER'].includes(l.type)) ? l.type : null,
-        item_name: (l.typeCategory !== 'INVENTORY' && l.type && !['GENERAL_HORSE','GENERAL_TRAILER'].includes(l.type)) ? l.type : null,
-        unit_price_excl: parseFloat(l.excl) || 0,
-        vat_type: form.supplier_vat ? 'IN_STD' : null,
-        vat_amount: parseFloat(l.vat) || 0,
-        line_total_excl: parseFloat(l.excl) || 0,
-        line_total_incl: parseFloat(l.incl) || parseFloat(l.excl) || 0,
-      }));
+      const apiLines = lines.map((l, i) => {
+        const isInv = l.typeCategory === 'INVENTORY';
+        const vehCode = (!isInv && l.type && !['GENERAL_HORSE','GENERAL_TRAILER'].includes(l.type)) ? l.type : null;
+        return {
+          line_number:     i + 1,
+          line_type:       isInv ? 'INVENTORY' : 'COST',
+          item_name:       !isInv ? `${l.typeCategory}:${l.type || ''}` : null,
+          item_code:       vehCode,
+          description:     l.description,
+          quantity:        1,
+          unit_price_excl: parseFloat(l.excl) || 0,
+          vat_type:        form.supplier_vat ? 'IN_STD' : null,
+          vat_amount:      parseFloat(l.vat) || 0,
+          line_total_excl: parseFloat(l.excl) || 0,
+          line_total_incl: parseFloat(l.incl) || parseFloat(l.excl) || 0,
+        };
+      });
       const result = await req('/stock/po', {
         method: 'POST',
         body: JSON.stringify({
@@ -568,14 +577,17 @@ export default function PurchaseOrders() {
                       <tbody>
                         {detail.lines.map(l => {
                           // Derive display category and item from stored fields
-                          const cat = l.line_type === 'INVENTORY' ? 'Inventory'
-                                    : l.line_type === 'TRAILER'   ? 'Trailer'
-                                    : 'Horse';
-                          const catColor = l.line_type === 'INVENTORY' ? '#059669'
-                                         : l.line_type === 'TRAILER'   ? '#7c3aed'
-                                         : '#005A8E';
-                          // Item: item_code if set, else try to parse vehicle code from description
+                          // Decode category from item_name ("HORSE:MH202" or "TRAILER:BT001")
+                          let cat = 'Horse', catColor = '#005A8E';
+                          if (l.line_type === 'INVENTORY') {
+                            cat = 'Inventory'; catColor = '#059669';
+                          } else if (l.item_name && l.item_name.startsWith('TRAILER')) {
+                            cat = 'Trailer'; catColor = '#7c3aed';
+                          }
                           let itemCode = l.item_code || '';
+                          if (!itemCode && l.item_name && l.item_name.includes(':')) {
+                            itemCode = l.item_name.split(':')[1] || '';
+                          }
                           if (!itemCode && l.line_type !== 'INVENTORY') {
                             const m = (l.description || '').toUpperCase().match(/(MH|RH|BT|ST)\d+/);
                             if (m) itemCode = m[0];
