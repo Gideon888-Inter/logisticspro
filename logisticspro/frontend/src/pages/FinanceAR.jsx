@@ -100,6 +100,7 @@ function CustomerTransactions({ customers }) {
           <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end', paddingBottom: 1 }}>
             <button className="btn btn-primary btn-sm" onClick={search} disabled={loading}>{loading ? 'Loading…' : '🔍 Search'}</button>
             {searched && <button className="btn btn-sm" onClick={clear}>Clear</button>}
+            {searched && rows.length > 0 && <button className="btn btn-sm" onClick={doExport}>⬇ CSV</button>}
           </div>
         </div>
         {selectedCustomer && (
@@ -478,4 +479,5 @@ export default function FinanceAR() {
     </div>
   );
 }
+
 
