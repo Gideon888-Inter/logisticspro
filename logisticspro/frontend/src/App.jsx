@@ -17,7 +17,6 @@ import Drivers from './pages/Drivers';
 import Clients from './pages/Clients';
 import Rates from './pages/Rates';
 import Users from './pages/Users';
-import Invoices from './pages/Invoices';
 import { Maintenance } from './pages/Entities';
 import FinanceGL      from './pages/FinanceGL';
 import FinanceAssets  from './pages/FinanceAssets';
@@ -119,12 +118,12 @@ const PAGE_TITLES = {
   movement: 'Loads',
   vehicles: 'Fleet',
   'drivers-list': 'Drivers', 'drivers-leave': 'Driver Leave',
-  clients: 'Clients', 'clients-list': 'Customers', 'clients-invoices': 'Invoices',
+  clients: 'Clients', 'clients-list': 'Customers',
   'workshop-service': 'Service Cards', 'workshop-maintenance': 'Maintenance',
   'workshop-inventory': 'Inventory', 'workshop-pos': 'Purchase Orders',
   approvals: 'Approvals', 'rates-list': 'Client Rates', 'rates-routes': 'Routes',
   users: 'Users',
-  'finance-invoices':'Invoices','finance-gl':'GL / Chart of Accounts',
+  'finance-gl':'GL / Chart of Accounts',
   'finance-cashbook':'Cash Book','finance-ar':'Accounts Receivable','finance-ap':'Accounts Payable',
   'finance-assets':'Fixed Assets','finance-vat':'VAT Returns','finance-periods':'Period Management',
 };
@@ -200,7 +199,6 @@ export default function App() {
       case 'workshop-pos':        return canViewPOs(user) ? <PurchaseOrders /> : <AccessDenied />;
       case 'rates-list':          return canViewRates(user) ? <Rates /> : <AccessDenied />;
       case 'clients-list':        return canManageClients(user) ? <Clients /> : <AccessDenied />;
-      case 'clients-invoices':    return canViewFinance(user) ? <FinanceAR /> : (canManageInvoices(user) ? <Invoices /> : <AccessDenied />);
       case 'users':               return canManageUsers(user) ? <Users /> : <AccessDenied />;
       case 'finance-gl':      return canViewFinance(user) ? <FinanceGL /> : <AccessDenied />;
       case 'finance-cashbook': return canViewFinance(user) ? <FinanceCashbook /> : <AccessDenied />;
@@ -336,6 +334,7 @@ export default function App() {
     </div>
   );
 }
+
 
 
 
