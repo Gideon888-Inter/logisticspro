@@ -1,50 +1,52 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../lib/AuthContext';
-import { canCreatePO, hasPOApprovalDuties, PO_STATUS_LABELS, PO_STATUS_COLORS } from '../lib/roles';
+import { canCreatePO, hasPOApprovalDuties, myPOApprovalStatuses, PO_STATUS_LABELS, PO_STATUS_COLORS } from '../lib/roles';
 
 const API = `${import.meta.env.VITE_API_URL}/api`;
 const token = () => localStorage.getItem('lp_token');
 const req = (path, opts = {}) =>
   fetch(API + path, {
     ...opts,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: 'Bearer ' + token(),
-      ...(opts.headers || {}),
-    },
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token(), ...(opts.headers || {}) },
   }).then(r => r.json());
+
+const fmtR    = (n) => n == null ? '—' : 'R ' + Number(n).toLocaleString('en-ZA', { minimumFractionDigits: 2 });
+const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+
+// 3 default blank lines for new POs
+const EMPTY_LINE = () => ({ typeCategory: 'HORSE', type: '', description: '', excl: '', vat: '', incl: '' });
+const DEFAULT_LINES = () => [EMPTY_LINE(), EMPTY_LINE(), EMPTY_LINE()];
 
 export default function PurchaseOrders() {
   const { user } = useAuth();
   const canCreate    = canCreatePO(user);
   const hasApprovals = hasPOApprovalDuties(user);
 
-  const [pos, setPos]               = useState([]);
-  const [loading, setLoading]       = useState(true);
-  const [tab, setTab]               = useState('all');
-  const [search, setSearch]         = useState('');
-  const [statusFilter, setStatus]   = useState('');
-  const [selected, setSelected]     = useState(null);
-  const [detail, setDetail]         = useState(null);
-  const [detailLoading, setDL]      = useState(false);
-  const [showNew, setShowNew]       = useState(false);
-  const [suppliers, setSuppliers]   = useState([]);
-  const [vehicles, setVehicles]     = useState([]);
-  const [saving, setSaving]         = useState(false);
-  const [approving, setApproving]   = useState(false);
+  const [pos, setPos]             = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [tab, setTab]             = useState('all');
+  const [search, setSearch]       = useState('');
+  const [statusFilter, setStatus] = useState('');
+  const [selected, setSelected]   = useState(null);
+  const [detail, setDetail]       = useState(null);
+  const [detailLoading, setDL]    = useState(false);
+  const [showNew, setShowNew]     = useState(false);
+  const [suppliers, setSuppliers] = useState([]);
+  const [vehicles, setVehicles]   = useState([]);
+  const [saving, setSaving]       = useState(false);
+  const [approving, setApproving] = useState(false);
+  const [submitErr, setSubmitErr] = useState('');
 
-  const EMPTY_LINE = { typeCategory: 'HORSE', type: '', description: '', excl: '', vat: '', incl: '' };
   const [form, setForm] = useState({
     supplier_code: '', supplier_name: '', supplier_vat: '',
-    lines: [{ ...EMPTY_LINE }],
+    supplier_invoice_no: '',
+    lines: DEFAULT_LINES(),
   });
 
   const load = async () => {
     setLoading(true);
-    try {
-      const data = await req('/stock/po');
-      setPos(Array.isArray(data) ? data : data.pos || []);
-    } catch (e) { console.error(e); }
+    try { const data = await req('/stock/po'); setPos(Array.isArray(data) ? data : data.pos || []); }
+    catch (e) { console.error(e); }
     finally { setLoading(false); }
   };
 
@@ -62,39 +64,37 @@ export default function PurchaseOrders() {
   useEffect(() => { load(); loadSupport(); }, []);
 
   const openDetail = async (po) => {
-    setSelected(po);
-    setDL(true);
-    try {
-      const data = await req(`/stock/po/${po.po_id}`);
-      setDetail(data);
-    } catch (e) { console.error(e); }
+    setSelected(po); setDL(true); setSubmitErr('');
+    try { const data = await req(`/stock/po/${po.po_id}`); setDetail(data); }
+    catch (e) { console.error(e); }
     finally { setDL(false); }
   };
+
+  const closeDetail = () => { setSelected(null); setDetail(null); setSubmitErr(''); };
 
   // ── Line helpers ──────────────────────────────────────────────────────────
   const setLine = (i, k, v) => {
     setForm(f => {
       const lines = (f.lines || []).map((l, idx) => idx !== i ? l : { ...l, [k]: v });
       if (k === 'typeCategory') {
-        // Reset the specific item when category changes
         lines[i] = { ...lines[i], typeCategory: v, type: '' };
       }
       if (k === 'excl') {
-        const excl = parseFloat(v) || 0;
-        const isVatReg = !!f.supplier_vat;
-        const vatAmt = isVatReg ? Math.round(excl * 0.15 * 100) / 100 : 0;
-        lines[i] = { ...lines[i], vat: isVatReg ? String(vatAmt) : '', incl: String(Math.round((excl + vatAmt) * 100) / 100) };
+        const excl   = parseFloat(v) || 0;
+        const vatReg = !!(f.supplier_vat || f.supplier_vat_enabled);
+        const vatAmt = vatReg ? Math.round(excl * 0.15 * 100) / 100 : 0;
+        lines[i] = { ...lines[i], vat: vatReg ? String(vatAmt) : '', incl: String(Math.round((excl + vatAmt) * 100) / 100) };
       }
       return { ...f, lines };
     });
   };
 
-  const addLine    = () => setForm(f => ({ ...f, lines: [...(f.lines || []), { ...EMPTY_LINE }] }));
+  const addLine    = () => setForm(f => ({ ...f, lines: [...(f.lines || []), EMPTY_LINE()] }));
   const removeLine = (i) => setForm(f => ({ ...f, lines: (f.lines || []).filter((_, idx) => idx !== i) }));
 
   const recalcLines = (isVatReg, lines) =>
     (lines || []).map(l => {
-      const excl = parseFloat(l.excl) || 0;
+      const excl   = parseFloat(l.excl) || 0;
       const vatAmt = isVatReg ? Math.round(excl * 0.15 * 100) / 100 : 0;
       return { ...l, vat: isVatReg ? String(vatAmt) : '', incl: String(Math.round((excl + vatAmt) * 100) / 100) };
     });
@@ -104,10 +104,12 @@ export default function PurchaseOrders() {
   const totalIncl = (form.lines || []).reduce((s, l) => s + (parseFloat(l.incl) || 0), 0);
 
   const vehicleOptions = (vehicles || []).filter(v => /^(MH|RH)/i.test(v.vh_code));
-  const trailerOptions  = (vehicles || []).filter(v => /^(BT|ST)/i.test(v.vh_code));
+  const trailerOptions = (vehicles || []).filter(v => /^(BT|ST)/i.test(v.vh_code));
+
+  const isVatReg = !!(form.supplier_vat);
 
   // ── Save PO ───────────────────────────────────────────────────────────────
-  const savePO = async (park = true) => {
+  const savePO = async () => {
     if (!form.supplier_code) return alert('Supplier is required');
     const lines = (form.lines || []).filter(l => l.description.trim());
     if (!lines.length) return alert('At least one line with a description is required');
@@ -119,7 +121,7 @@ export default function PurchaseOrders() {
         description:     l.description,
         quantity:        1,
         unit_price_excl: parseFloat(l.excl) || 0,
-        vat_type:        form.supplier_vat ? 'IN_STD' : null,
+        vat_type:        isVatReg ? 'IN_STD' : null,
         vat_amount:      parseFloat(l.vat) || 0,
         line_total_excl: parseFloat(l.excl) || 0,
         line_total_incl: parseFloat(l.incl) || parseFloat(l.excl) || 0,
@@ -127,25 +129,40 @@ export default function PurchaseOrders() {
       const result = await req('/stock/po', {
         method: 'POST',
         body: JSON.stringify({
-          supplier_code:     form.supplier_code,
-          supplier_name:     form.supplier_name,
-          allocation_type:   lines.some(l => l.typeCategory === 'INVENTORY') ? 'INVENTORY' : 'VEHICLE',
-          po_description:    lines.map(l => l.description).filter(Boolean).join('; '),
-          subtotal_excl_vat: totalExcl,
-          vat_amount:        totalVat,
-          total_incl_vat:    totalIncl,
-          lines:             apiLines,
+          supplier_code:       form.supplier_code,
+          supplier_name:       form.supplier_name,
+          allocation_type:     lines.some(l => l.typeCategory === 'INVENTORY') ? 'INVENTORY' : 'VEHICLE',
+          po_description:      lines.map(l => l.description).filter(Boolean).join('; '),
+          subtotal_excl_vat:   totalExcl,
+          vat_amount:          totalVat,
+          total_incl_vat:      totalIncl,
+          supplier_invoice_no: form.supplier_invoice_no || null,
+          lines:               apiLines,
         }),
       });
       if (result.error) throw new Error(result.error);
-      if (!park) {
-        await req('/stock/po/' + result.po_id + '/submit', { method: 'POST', body: '{}' });
-      }
       setShowNew(false);
-      setForm({ supplier_code: '', supplier_name: '', supplier_vat: '', lines: [{ ...EMPTY_LINE }] });
+      setForm({ supplier_code: '', supplier_name: '', supplier_vat: '', supplier_invoice_no: '', lines: DEFAULT_LINES() });
       load();
     } catch (e) { alert(e.message); }
     finally { setSaving(false); }
+  };
+
+  // ── Submit for approval (from detail panel) ───────────────────────────────
+  const submitPO = async (poId) => {
+    setSubmitErr('');
+    // Check supplier_invoice_no in detail
+    if (!detail?.po?.supplier_invoice_no) {
+      setSubmitErr('Supplier invoice number is required before submitting for approval.');
+      return;
+    }
+    setApproving(true);
+    try {
+      const result = await req(`/stock/po/${poId}/submit`, { method: 'POST', body: '{}' });
+      if (result.error) { setSubmitErr(result.error); return; }
+      load(); closeDetail();
+    } catch (e) { setSubmitErr(e.message); }
+    finally { setApproving(false); }
   };
 
   // ── Approve / reject ──────────────────────────────────────────────────────
@@ -154,11 +171,10 @@ export default function PurchaseOrders() {
     try {
       const result = await req(`/stock/po/${poId}/approve`, {
         method: 'POST',
-        body: JSON.stringify({ action, rejection_reason: reason }),
+        body: JSON.stringify({ action, rejection_reason: reason, notes: reason }),
       });
-      if (result.error) throw new Error(result.error);
-      load();
-      setSelected(null); setDetail(null);
+      if (result.error) { alert(result.error); return; }
+      load(); closeDetail();
     } catch (e) { alert(e.message); }
     finally { setApproving(false); }
   };
@@ -166,33 +182,30 @@ export default function PurchaseOrders() {
   // ── Filters ───────────────────────────────────────────────────────────────
   const filtered = pos.filter(po => {
     const s = search.toLowerCase();
-    const matchSearch  = !s || po.po_number?.toLowerCase().includes(s) || po.supplier_name?.toLowerCase().includes(s) || po.po_description?.toLowerCase().includes(s);
-    const matchStatus  = !statusFilter || po.status === statusFilter;
-    const matchTab     = tab === 'all' || (tab === 'mine' && po.created_by === user?.username) || (tab === 'pending' && hasApprovals);
+    const matchSearch = !s || po.po_number?.toLowerCase().includes(s) || po.supplier_name?.toLowerCase().includes(s) || po.po_description?.toLowerCase().includes(s);
+    const matchStatus = !statusFilter || po.status === statusFilter;
+    const matchTab    = tab === 'all' || (tab === 'mine' && po.created_by === user?.username) || (tab === 'pending' && hasApprovals);
     return matchSearch && matchStatus && matchTab;
   });
 
-  const fmtR = (n) => n == null ? '—' : 'R ' + Number(n).toLocaleString('en-ZA', { minimumFractionDigits: 2 });
-  const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+  const myApprovalStatuses = myPOApprovalStatuses(user);
+  const canApproveThisPO   = (po) => myApprovalStatuses.includes(po?.status);
 
   return (
     <div>
       {/* Filter bar */}
       <div className="filter-bar">
         <div style={{ display: 'flex', gap: 8 }}>
-          <button className={`btn btn-sm ${tab === 'all' ? 'btn-primary' : ''}`} onClick={() => setTab('all')}>All POs</button>
-          <button className={`btn btn-sm ${tab === 'mine' ? 'btn-primary' : ''}`} onClick={() => setTab('mine')}>My POs</button>
+          <button className={`btn btn-sm ${tab === 'all'     ? 'btn-primary' : ''}`} onClick={() => setTab('all')}>All POs</button>
+          <button className={`btn btn-sm ${tab === 'mine'    ? 'btn-primary' : ''}`} onClick={() => setTab('mine')}>My POs</button>
           {hasApprovals && <button className={`btn btn-sm ${tab === 'pending' ? 'btn-primary' : ''}`} onClick={() => setTab('pending')}>Pending Approval</button>}
         </div>
-        <input placeholder="Search PO number, supplier, description…" value={search} onChange={e => setSearch(e.target.value)}
-          style={{ flex: 1, maxWidth: 320 }} />
+        <input placeholder="Search PO number, supplier, description…" value={search} onChange={e => setSearch(e.target.value)} style={{ flex: 1, maxWidth: 320 }} />
         <select value={statusFilter} onChange={e => setStatus(e.target.value)} style={{ width: 160 }}>
           <option value="">All statuses</option>
           {Object.entries(PO_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        {canCreate && (
-          <button className="btn btn-primary btn-sm" onClick={() => setShowNew(true)}>+ New PO</button>
-        )}
+        {canCreate && <button className="btn btn-primary btn-sm" onClick={() => { setSubmitErr(''); setShowNew(true); }}>+ New PO</button>}
       </div>
 
       {/* PO List */}
@@ -200,9 +213,8 @@ export default function PurchaseOrders() {
         <table>
           <thead>
             <tr>
-              <th>PO Number</th><th>Supplier</th><th>Vehicle</th>
-              <th>Description</th>
-              <th style={{ textAlign: 'right' }}>Total</th>
+              <th>PO Number</th><th>Supplier</th><th>Supplier Inv No</th>
+              <th>Description</th><th style={{ textAlign: 'right' }}>Total</th>
               <th>Status</th><th>Created</th>
             </tr>
           </thead>
@@ -214,7 +226,9 @@ export default function PurchaseOrders() {
                   className={selected?.po_id === po.po_id ? 'row-selected' : ''}>
                 <td className="mono" style={{ fontWeight: 700, color: '#005A8E' }}>{po.po_number}</td>
                 <td style={{ fontSize: 13 }}>{po.supplier_name || po.supplier_code}</td>
-                <td className="mono" style={{ fontSize: 12 }}>{po.vehicle_code || '—'}</td>
+                <td className="mono" style={{ fontSize: 12, color: po.supplier_invoice_no ? '#333' : '#ccc' }}>
+                  {po.supplier_invoice_no || '—'}
+                </td>
                 <td style={{ fontSize: 12, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{po.po_description}</td>
                 <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 13 }}>{fmtR(po.total_incl_vat)}</td>
                 <td><span className={`badge ${PO_STATUS_COLORS[po.status] || 'badge-gray'}`} style={{ fontSize: 10 }}>{PO_STATUS_LABELS[po.status] || po.status}</span></td>
@@ -235,11 +249,15 @@ export default function PurchaseOrders() {
                   <span style={{ fontWeight: 700, fontSize: 15, color: '#005A8E', marginRight: 12 }}>{selected.po_number}</span>
                   <span className={`badge ${PO_STATUS_COLORS[selected.status] || 'badge-gray'}`} style={{ fontSize: 11 }}>{PO_STATUS_LABELS[selected.status] || selected.status}</span>
                 </div>
-                <button onClick={() => { setSelected(null); setDetail(null); }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: '#888' }}>✕</button>
+                <button onClick={closeDetail} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: '#888' }}>✕</button>
               </div>
+
               <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 12, fontSize: 13 }}>
                 <div><strong>Supplier:</strong> {detail.po?.supplier_name}</div>
-                {detail.po?.vehicle_code && <div><strong>Vehicle:</strong> {detail.po.vehicle_code} {detail.po.vehicle_name && `— ${detail.po.vehicle_name}`}</div>}
+                {detail.po?.supplier_invoice_no
+                  ? <div><strong>Supplier Inv No:</strong> <span className="mono">{detail.po.supplier_invoice_no}</span></div>
+                  : <div style={{ color: '#e53e3e' }}>⚠ No supplier invoice number — required before submission</div>
+                }
                 <div><strong>Total:</strong> {fmtR(detail.po?.total_incl_vat)}</div>
                 <div><strong>Created:</strong> {fmtDate(detail.po?.created_at)} by {detail.po?.created_by}</div>
               </div>
@@ -278,17 +296,34 @@ export default function PurchaseOrders() {
                 </div>
               )}
 
-              {/* Approve / reject buttons */}
-              {hasApprovals && ['PENDING_L1','PENDING_L2','PENDING_L3','PENDING_FINANCIAL'].includes(selected.status) && (
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button className="btn btn-primary btn-sm" onClick={() => approve(selected.po_id, 'approve')} disabled={approving}>
-                    {approving ? 'Processing…' : '✓ Approve'}
-                  </button>
-                  <button className="btn btn-sm" style={{ color: '#e53e3e', borderColor: '#e53e3e' }}
-                    onClick={() => { const r = prompt('Rejection reason:'); if (r) approve(selected.po_id, 'reject', r); }}
-                    disabled={approving}>✕ Reject</button>
+              {/* Error display */}
+              {submitErr && (
+                <div style={{ background: '#fff5f5', border: '1px solid #fca5a5', borderRadius: 4, padding: '8px 12px', marginBottom: 10, color: '#e53e3e', fontSize: 13 }}>
+                  ⚠ {submitErr}
                 </div>
               )}
+
+              {/* Action buttons */}
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {/* Submit — only for PARKED POs owned by creator */}
+                {selected.status === 'PARKED' && selected.created_by === user?.username && (
+                  <button className="btn btn-primary btn-sm"
+                    onClick={() => submitPO(selected.po_id)} disabled={approving}>
+                    {approving ? 'Submitting…' : '▶ Submit for Approval'}
+                  </button>
+                )}
+                {/* Approve / Reject — for pending POs this user can action */}
+                {canApproveThisPO(selected) && (
+                  <>
+                    <button className="btn btn-primary btn-sm" onClick={() => approve(selected.po_id, 'APPROVE')} disabled={approving}>
+                      {approving ? 'Processing…' : '✓ Approve'}
+                    </button>
+                    <button className="btn btn-sm" style={{ color: '#e53e3e', borderColor: '#e53e3e' }}
+                      onClick={() => { const r = prompt('Rejection reason:'); if (r) approve(selected.po_id, 'REJECT', r); }}
+                      disabled={approving}>✕ Reject</button>
+                  </>
+                )}
+              </div>
             </>
           )}
         </div>
@@ -297,40 +332,54 @@ export default function PurchaseOrders() {
       {/* New PO Modal */}
       {showNew && (
         <div className="modal-overlay" onClick={() => setShowNew(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 780, width: '96vw' }}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 820, width: '96vw' }}>
             <div className="modal-header">
               <h3>New Purchase Order</h3>
               <button onClick={() => setShowNew(false)} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', fontSize: 18 }}>✕</button>
             </div>
             <div className="modal-body" style={{ maxHeight: '80vh', overflowY: 'auto' }}>
 
-              {/* Supplier */}
-              <div className="form-group" style={{ marginBottom: 16 }}>
-                <label style={{ fontWeight: 600 }}>Supplier *</label>
-                <select value={form.supplier_code} onChange={e => {
-                  const sup = suppliers.find(s => s.supplier_code === e.target.value);
-                  const vatReg = !!(sup && sup.vat_number);
-                  setForm(f => ({
-                    ...f,
-                    supplier_code: e.target.value,
-                    supplier_name: sup ? sup.supplier_name : '',
-                    supplier_vat:  sup ? (sup.vat_number || '') : '',
-                    lines: recalcLines(vatReg, f.lines),
-                  }));
-                }} style={{ width: '100%' }}>
-                  <option value="">— Select supplier —</option>
-                  {suppliers.map(s => (
-                    <option key={s.supplier_code} value={s.supplier_code}>
-                      {s.supplier_code} — {s.supplier_name}{s.vat_number ? '  ✓ VAT' : ''}
-                    </option>
-                  ))}
-                </select>
-                {form.supplier_vat
-                  ? <div style={{ fontSize: 11, color: '#059669', marginTop: 3 }}>✓ VAT registered — VAT calculated at 15%</div>
-                  : form.supplier_code
-                    ? <div style={{ fontSize: 11, color: '#888', marginTop: 3 }}>Not VAT registered — no VAT on this PO</div>
-                    : null
-                }
+              {/* Supplier + Supplier Invoice No */}
+              <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+                <div className="form-group" style={{ flex: '1 1 320px', marginBottom: 0 }}>
+                  <label style={{ fontWeight: 600 }}>Supplier *</label>
+                  <select value={form.supplier_code} onChange={e => {
+                    const sup    = suppliers.find(s => s.supplier_code === e.target.value);
+                    const vatReg = !!(sup && (sup.vat_number || sup.vat_enabled));
+                    setForm(f => ({
+                      ...f,
+                      supplier_code: e.target.value,
+                      supplier_name: sup ? sup.supplier_name : '',
+                      supplier_vat:  sup ? (sup.vat_number || (sup.vat_enabled ? 'Y' : '')) : '',
+                      lines: recalcLines(vatReg, f.lines),
+                    }));
+                  }} style={{ width: '100%' }}>
+                    <option value="">— Select supplier —</option>
+                    {suppliers.map(s => (
+                      <option key={s.supplier_code} value={s.supplier_code}>
+                        {s.supplier_code} — {s.supplier_name}{(s.vat_number || s.vat_enabled) ? '  ✓ VAT' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  {isVatReg
+                    ? <div style={{ fontSize: 11, color: '#059669', marginTop: 3 }}>✓ VAT registered — VAT calculated at 15%</div>
+                    : form.supplier_code
+                      ? <div style={{ fontSize: 11, color: '#888', marginTop: 3 }}>Not VAT registered — no VAT on this PO</div>
+                      : null
+                  }
+                </div>
+                <div className="form-group" style={{ flex: '0 1 220px', marginBottom: 0 }}>
+                  <label style={{ fontWeight: 600 }}>
+                    Supplier Invoice No
+                    <span style={{ fontWeight: 400, fontSize: 11, color: '#888', marginLeft: 6 }}>(required before approval)</span>
+                  </label>
+                  <input
+                    value={form.supplier_invoice_no}
+                    onChange={e => setForm(f => ({ ...f, supplier_invoice_no: e.target.value }))}
+                    placeholder="e.g. INV-2025-001"
+                    style={{ width: '100%' }}
+                  />
+                </div>
               </div>
 
               {/* Line items */}
@@ -340,15 +389,15 @@ export default function PurchaseOrders() {
                   <button className="btn btn-sm" onClick={addLine} style={{ fontSize: 11 }}>+ Add Line</button>
                 </div>
                 <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 620 }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 680 }}>
                     <thead>
                       <tr style={{ background: '#1e3a5f', color: 'white' }}>
-                        <th style={{ padding: '7px 8px', textAlign: 'left', width: 120 }}>Type</th>
-                        <th style={{ padding: '7px 8px', textAlign: 'left', width: 180 }}>Item</th>
+                        <th style={{ padding: '7px 8px', textAlign: 'left', width: 110 }}>Type</th>
+                        <th style={{ padding: '7px 8px', textAlign: 'left', width: 190 }}>Item</th>
                         <th style={{ padding: '7px 8px', textAlign: 'left' }}>Description *</th>
-                        <th style={{ padding: '7px 8px', textAlign: 'right', width: 115 }}>Excl VAT (R)</th>
-                        <th style={{ padding: '7px 8px', textAlign: 'right', width: 100 }}>VAT (R)</th>
-                        <th style={{ padding: '7px 8px', textAlign: 'right', width: 115 }}>Incl VAT (R)</th>
+                        <th style={{ padding: '7px 8px', textAlign: 'right', width: 110 }}>Excl VAT (R)</th>
+                        <th style={{ padding: '7px 8px', textAlign: 'right', width: 90 }}>VAT (R)</th>
+                        <th style={{ padding: '7px 8px', textAlign: 'right', width: 110 }}>Incl VAT (R)</th>
                         <th style={{ width: 28 }}></th>
                       </tr>
                     </thead>
@@ -390,7 +439,7 @@ export default function PurchaseOrders() {
                           </td>
                           <td style={{ padding: '4px 6px' }}>
                             <input value={l.description} onChange={e => setLine(i, 'description', e.target.value)}
-                              placeholder="e.g. Front brake pads — MH195"
+                              placeholder="e.g. Front brake pads"
                               style={{ width: '100%', fontSize: 12, border: '1px solid #cbd5e0', borderRadius: 3, padding: '3px 6px' }} />
                           </td>
                           <td style={{ padding: '4px 6px' }}>
@@ -400,12 +449,11 @@ export default function PurchaseOrders() {
                           </td>
                           <td style={{ padding: '4px 6px' }}>
                             <input type="number" value={l.vat} readOnly
-                              placeholder={form.supplier_vat ? 'auto' : 'N/A'}
-                              style={{ width: '100%', textAlign: 'right', fontSize: 12, background: '#f0f4f8', color: form.supplier_vat ? '#c05621' : '#ccc', border: '1px solid #e2e8f0', borderRadius: 3, padding: '3px 6px', cursor: 'default' }} />
+                              placeholder={isVatReg ? 'auto' : 'N/A'}
+                              style={{ width: '100%', textAlign: 'right', fontSize: 12, background: '#f0f4f8', color: isVatReg ? '#c05621' : '#ccc', border: '1px solid #e2e8f0', borderRadius: 3, padding: '3px 6px', cursor: 'default' }} />
                           </td>
                           <td style={{ padding: '4px 6px' }}>
-                            <input type="number" value={l.incl} readOnly
-                              placeholder="0.00"
+                            <input type="number" value={l.incl} readOnly placeholder="0.00"
                               style={{ width: '100%', textAlign: 'right', fontSize: 12, fontWeight: 600, background: '#e8f0f8', color: '#005A8E', border: '1px solid #c3d4e8', borderRadius: 3, padding: '3px 6px', cursor: 'default' }} />
                           </td>
                           <td style={{ padding: '4px 2px', textAlign: 'center' }}>
@@ -430,12 +478,12 @@ export default function PurchaseOrders() {
               </div>
 
               <div style={{ fontSize: 12, color: '#666', background: '#f0f7ff', padding: '8px 12px', borderRadius: 6 }}>
-                ℹ️ PO will be saved as a draft. Submit separately to start the approval workflow.
+                ℹ️ PO is saved as a draft (Parked). Add the supplier invoice number, then submit to start the approval workflow.
               </div>
             </div>
             <div className="modal-footer">
               <button className="btn" onClick={() => setShowNew(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={() => savePO(true)} disabled={saving}>
+              <button className="btn btn-primary" onClick={savePO} disabled={saving}>
                 {saving ? 'Saving…' : 'Save as Draft'}
               </button>
             </div>
@@ -445,4 +493,3 @@ export default function PurchaseOrders() {
     </div>
   );
 }
-
