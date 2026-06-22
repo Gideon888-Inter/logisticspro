@@ -63,7 +63,7 @@ router.post('/login', async (req, res) => {
 //   • WORKSHOP                                 → approval by Workshop Manager
 //   • MANAGER                                  → approval by any ADMIN
 //   • ADMIN                                    → forbidden (Admin only)
-//   • ACCOUNTING / READONLY                    → created directly (no approval)
+//   • FINANCE / READONLY                       → created directly (no approval)
 // ============================================================
 router.post('/register', authMiddleware, requireRole(...CAN_MANAGE_USERS), async (req, res) => {
   const { u_username, u_password, u_name, u_email, u_role, u_region, u_active } = req.body;
@@ -111,7 +111,7 @@ router.post('/register', authMiddleware, requireRole(...CAN_MANAGE_USERS), async
   const needsApproval = req.user.role === ROLES.MANAGER && NEEDS_APPROVAL_ROLES.includes(u_role);
 
   if (!needsApproval) {
-    // Admin, or Manager creating ACCOUNTING/READONLY — create directly
+    // Admin, or Manager creating FINANCE/READONLY — create directly
     const { data, error } = await supabase
       .from('lp_users')
       .insert([{
@@ -392,4 +392,5 @@ router.get('/me', authMiddleware, async (req, res) => {
 
 
 module.exports = router;
+
 
