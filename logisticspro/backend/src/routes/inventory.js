@@ -860,7 +860,7 @@ router.post('/po/:id/approve',
         user:    po.created_by,
         type:    'PO_REJECTED',
         title:   `PO Rejected: ${po.po_number}`,
-        message: `Your PO was rejected at stage ${stage.stage} by ${req.user.username}. Reason: ${notes}`,
+        message: `Your PO was rejected at stage ${currentStage.replace('PENDING_','')} by ${req.user.username}. Reason: ${notes}`,
         po_id:   po.po_id,
       });
     } else {
@@ -874,7 +874,7 @@ router.post('/po/:id/approve',
       if (nextRole) {
         await notify({
           role:    nextRole,
-          type:    `PO_APPROVED_${stage.stage}`,
+          type:    `PO_APPROVED_${logAction}`,
           title:   `PO Requires Your Approval: ${po.po_number}`,
           message: `${po.po_description} — Supplier: ${po.supplier_name} — R${Number(po.total_incl_vat || 0).toFixed(2)}`,
           po_id:   po.po_id,
