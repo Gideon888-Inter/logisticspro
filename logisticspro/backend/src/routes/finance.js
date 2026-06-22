@@ -503,7 +503,7 @@ router.get('/vat201', requireFin, async (req, res) => {
 router.get('/suppliers/workshop', async (req, res) => {
   const { data, error } = await supabase
     .from('fin_suppliers')
-    .select('supplier_id,supplier_code,supplier_name,payment_terms_days,telephone,email')
+    .select('supplier_id,supplier_code,supplier_name,payment_terms_days,telephone,email,vat_number')
     .eq('workshop_allowed', true)
     .eq('active', true)
     .order('supplier_name');
