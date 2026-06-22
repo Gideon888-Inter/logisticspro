@@ -253,6 +253,22 @@ function SupplierInvoicesTab({ suppliers, periods }) {
     loadPending(); loadInvoices();
   };
 
+  const doInvoiceExport = () => {
+    exportCSV(invoices.map(inv => ({
+      'Invoice Ref': inv.invoice_ref,
+      'Supplier': inv.supplier_code,
+      'Supplier Inv No': inv.supplier_invoice_no || '',
+      'Invoice Date': inv.invoice_date,
+      'Due Date': inv.due_date,
+      'Excl VAT': inv.subtotal_excl_vat,
+      'VAT': inv.vat_amount,
+      'Total Incl VAT': inv.total_incl_vat,
+      'Amount Paid': inv.amount_paid,
+      'Balance Due': inv.balance_due,
+      'Status': inv.status,
+    })), 'ap_invoices.csv');
+  };
+
   const createInvoice = async () => {
     setSaveErr('');
     if (!form.supplier_code) return setSaveErr('Supplier is required');
@@ -330,15 +346,7 @@ function SupplierInvoicesTab({ suppliers, periods }) {
         <div>
           {invoices.length > 0 && (
             <div style={{ display:'flex', gap:6, marginBottom:8 }}>
-              <button className="btn btn-sm" onClick={() => exportCSV(invoices.map(inv => ({
-                'Invoice Ref': inv.invoice_ref, 'Supplier': inv.supplier_code,
-                'Supplier Inv No': inv.supplier_invoice_no || '',
-                'Invoice Date': inv.invoice_date, 'Due Date': inv.due_date,
-                'Excl VAT': inv.subtotal_excl_vat, 'VAT': inv.vat_amount,
-                'Total Incl VAT': inv.total_incl_vat,
-                'Amount Paid': inv.amount_paid, 'Balance Due': inv.balance_due,
-                'Status': inv.status,
-              })), 'ap_invoices.csv')}>⬇ CSV</button>
+              <button className="btn btn-sm" onClick={doInvoiceExport}>⬇ CSV</button>
             </div>
           )}
           <div className="table-wrap">
@@ -742,6 +750,7 @@ export default function FinanceAP() {
     </div>
   );
 }
+
 
 
 
