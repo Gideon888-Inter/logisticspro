@@ -345,10 +345,12 @@ function VATReturn() {
 
   const load = async () => {
     if (!inputPeriod.trim()) return setError('Enter a VAT period e.g. 202605');
+    if (!/^\d{6}$/.test(inputPeriod.trim())) return setError('Format must be YYYYMM — e.g. 202605');
     setError('');
     setLoading(true);
     const res = await req(`/fin/vat-return/${inputPeriod.trim()}`);
-    if (res.error) { setError(res.error); setData(null); }
+    if (res?.error) { setError(res.error); setData(null); }
+    else if (!res?.fields) { setError('No data returned — check the period or try again.'); setData(null); }
     else { setData(res); setVatPer(res.vat_period); }
     setLoading(false);
   };
@@ -419,6 +421,35 @@ function VATReturn() {
         </div>
       )}
 
+      {data && data.transaction_count === 0 && (
+        <div style={{ background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 6, padding: 16, margin: '0 0 16px', fontSize: 13 }}>
+          <strong>⚠ No VAT transactions found for period {vatPeriod}.</strong><br />
+          VAT transactions are written automatically when journals with a VAT type are posted, or when supplier invoices are captured with a VAT amount.
+          Post a journal with VAT or capture a supplier invoice first, then regenerate.
+        </div>
+      )}
+
+      {data && data.transaction_count > 0 && (
+        <div style={{ display:'flex', gap:12, marginBottom:12, flexWrap:'wrap' }}>
+          <div className="stat-card" style={{ flex:1, minWidth:140 }}>
+            <div className="stat-label">Transactions</div>
+            <div className="stat-value" style={{ color:'#005A8E' }}>{data.transaction_count}</div>
+          </div>
+          <div className="stat-card" style={{ flex:1, minWidth:140 }}>
+            <div className="stat-label">Output Tax (Field 13)</div>
+            <div className="stat-value" style={{ color:'#e53e3e', fontSize:16 }}>{fmtR(data.fields.field13)}</div>
+          </div>
+          <div className="stat-card" style={{ flex:1, minWidth:140 }}>
+            <div className="stat-label">Input Tax (Field 19)</div>
+            <div className="stat-value" style={{ color:'#059669', fontSize:16 }}>{fmtR(data.fields.field19)}</div>
+          </div>
+          <div className="stat-card" style={{ flex:1, minWidth:140 }}>
+            <div className="stat-label">{data.payable ? 'VAT Payable' : 'VAT Refundable'}</div>
+            <div className="stat-value" style={{ color: data.payable ? '#c00' : '#059669', fontSize:16 }}>{fmtR(Math.abs(data.fields.field20))}</div>
+          </div>
+        </div>
+      )}
+
       {data && (
         <div id="vat201-report" style={{ maxWidth: 740, margin: '0 auto' }}>
           {/* Header */}
@@ -468,9 +499,9 @@ function VATReturn() {
 
                 {/* SECTION B — INPUT */}
                 <SectionHeader label="B. Calculation of Input Tax" />
-                <Row field="14"  label="Capital goods and / or services supplied to you" value={f.field14}     />
+                <Row field="14"  label={<span>Capital goods and / or services supplied to you<br/><span style={{fontSize:10,color:'#888'}}>Excl. base: {fmtR(f.field14_excl || 0)}</span></span>} value={f.field14}     />
                 <Row field="14A" label="Capital goods imported by you"                   value={0}             />
-                <Row field="15"  label="Other goods and / or services supplied to you (not capital goods)" value={f.field15} />
+                <Row field="15"  label={<span>Other goods and / or services supplied to you (not capital goods)<br/><span style={{fontSize:10,color:'#888'}}>Excl. base: {fmtR(f.field15_excl || 0)}</span></span>} value={f.field15} />
                 <Row field="15A" label="Other goods imported by you (not capital goods)" value={0}             />
 
                 <SubHeader label="Adjustments:" color="#5a8ec4" />
@@ -664,4 +695,5 @@ export default function FinanceVAT() {
     </div>
   );
 }
+
 
