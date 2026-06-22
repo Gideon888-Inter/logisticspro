@@ -17,6 +17,65 @@ function sharepointLink(loadNo) {
 }
 
 // ============================================================
+// GET /api/pods/pending
+// Loads currently sitting in WAIT_POD_SCAN — need a POD.
+// NOTE: Must be registered BEFORE /:loadNo routes to avoid
+//       Express treating "pending" as a loadNo parameter.
+// ============================================================
+router.get('/pending', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
+  const { bus_unit } = req.query;
+
+  let q = supabase
+    .from('lp_movement')
+    .select('m_load_no, m_date, m_customer, m_truck, m_from, m_to, m_rate, m_order_no')
+    .eq('m_status', 'WAIT_POD_SCAN')
+    .order('m_date', { ascending: false });
+
+  // bus_unit filter removed — column dropped
+
+  const { data, error } = await q;
+  if (error) return res.status(500).json({ error: error.message });
+
+  const result = (data || []).map(load => ({
+    ...load,
+    sharepoint_url: sharepointLink(load.m_load_no),
+  }));
+
+  res.json(result);
+});
+
+
+// ============================================================
+// GET /api/pods/received
+// Loads that have been marked as POD received (m_pod_received = true).
+// NOTE: Must be registered BEFORE /:loadNo routes.
+// ============================================================
+router.get('/received', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
+  const { bus_unit, search } = req.query;
+
+  let q = supabase
+    .from('lp_movement')
+    .select('m_load_no, m_date, m_customer, m_truck, m_from, m_to, m_rate, m_status, m_order_no')
+    .eq('m_pod_received', true)
+    .neq('m_status', 'DELETED')
+    .order('m_date', { ascending: false });
+
+  // bus_unit filter removed — column dropped
+  if (search)   q = q.or(`m_load_no.ilike.%${search}%,m_customer.ilike.%${search}%,m_truck.ilike.%${search}%`);
+
+  const { data, error } = await q;
+  if (error) return res.status(500).json({ error: error.message });
+
+  const result = (data || []).map(load => ({
+    ...load,
+    sharepoint_url: sharepointLink(load.m_load_no),
+  }));
+
+  res.json(result);
+});
+
+
+// ============================================================
 // GET /api/pods/:loadNo/check
 // Called by the Loads page when a load is in WAIT_POD_SCAN.
 // Checks if a POD folder exists in SharePoint (via the m_pod_received flag
@@ -50,62 +109,6 @@ router.get('/:loadNo/check', requireRole(...CAN_VIEW_LOADS), async (req, res) =>
     console.error('[POD CHECK ERROR]', err);
     res.json({ found: false });
   }
-});
-
-
-// ============================================================
-// GET /api/pods/pending
-// Loads currently sitting in WAIT_POD_SCAN — need a POD.
-// ============================================================
-router.get('/pending', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
-  const { bus_unit } = req.query;
-
-  let q = supabase
-    .from('lp_movement')
-    .select('m_load_no, m_date, m_customer, m_truck, m_from, m_to, m_rate, m_order_no')
-    .eq('m_status', 'WAIT_POD_SCAN')
-    .order('m_date', { ascending: false });
-
-  // bus_unit filter removed — column dropped
-
-  const { data, error } = await q;
-  if (error) return res.status(500).json({ error: error.message });
-
-  const result = (data || []).map(load => ({
-    ...load,
-    sharepoint_url: sharepointLink(load.m_load_no),
-  }));
-
-  res.json(result);
-});
-
-
-// ============================================================
-// GET /api/pods/received
-// Loads that have been marked as POD received (m_pod_received = true).
-// ============================================================
-router.get('/received', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
-  const { bus_unit, search } = req.query;
-
-  let q = supabase
-    .from('lp_movement')
-    .select('m_load_no, m_date, m_customer, m_truck, m_from, m_to, m_rate, m_status, m_order_no')
-    .eq('m_pod_received', true)
-    .neq('m_status', 'DELETED')
-    .order('m_date', { ascending: false });
-
-  // bus_unit filter removed — column dropped
-  if (search)   q = q.or(`m_load_no.ilike.%${search}%,m_customer.ilike.%${search}%,m_truck.ilike.%${search}%`);
-
-  const { data, error } = await q;
-  if (error) return res.status(500).json({ error: error.message });
-
-  const result = (data || []).map(load => ({
-    ...load,
-    sharepoint_url: sharepointLink(load.m_load_no),
-  }));
-
-  res.json(result);
 });
 
 
@@ -171,5 +174,3 @@ router.post('/:loadNo/mark-received', requireRole(...CAN_MARK_POD), async (req, 
 
 
 module.exports = router;
-
-
