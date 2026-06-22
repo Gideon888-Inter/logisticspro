@@ -250,13 +250,23 @@ router.post('/journals', requireFin, async (req, res) => {
   if (!journal_date)         return res.status(400).json({ error: 'Journal date is required' });
   if (!lines?.length)        return res.status(400).json({ error: 'Journal lines are required' });
 
-  const { data: period } = await supabase
-    .from('fin_periods')
-    .select('is_closed, period_name')
-    .eq('period_id', period_id)
-    .single();
-
-  if (!period)          return res.status(404).json({ error: 'Period not found' });
+  // Auto-resolve period from journal_date if period_id not provided
+  let resolvedPeriodId = period_id;
+  let period = null;
+  if (resolvedPeriodId) {
+    const { data: p } = await supabase.from('fin_periods').select('is_closed, period_name, period_id').eq('period_id', resolvedPeriodId).single();
+    period = p;
+  } else {
+    const { data: p } = await supabase.from('fin_periods')
+      .select('is_closed, period_name, period_id')
+      .lte('period_start', journal_date)
+      .gte('period_end', journal_date)
+      .eq('entity_id', 1)
+      .single();
+    period = p;
+    if (p) resolvedPeriodId = p.period_id;
+  }
+  if (!period)          return res.status(404).json({ error: `No open period found for date ${journal_date}` });
   if (period.is_closed) return res.status(400).json({ error: `Period ${period.period_name} is locked` });
 
   const totalDebit  = lines.reduce((s, l) => s + (parseFloat(l.debit)  || 0), 0);
@@ -277,7 +287,7 @@ router.post('/journals', requireFin, async (req, res) => {
     .from('fin_gl_journals')
     .insert({
       journal_ref, journal_type: journal_type || 'GL', description,
-      period_id, journal_date, source_document, source_module,
+      period_id: resolvedPeriodId, journal_date, source_document, source_module,
       posted: true, posted_at: new Date().toISOString(), posted_by: req.user.username,
       created_by: req.user.username,
     })
@@ -2655,6 +2665,7 @@ router.post('/depreciation/run', requireFin, async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
