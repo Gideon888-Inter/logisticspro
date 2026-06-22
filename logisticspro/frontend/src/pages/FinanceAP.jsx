@@ -25,7 +25,7 @@ function ExportBar({ onCSV }) {
   );
 }
 
-const EMPTY_SUPPLIER = { supplier_code: '', supplier_name: '', vat_number: '', vat_enabled: false, telephone: '', email: '', payment_terms_days: 30, credit_limit: '' };
+const EMPTY_SUPPLIER = { supplier_code: '', supplier_name: '', vat_number: '', vat_enabled: false, telephone: '', email: '', payment_terms_days: 30, credit_limit: '', supplier_type_id: '', discount_id: '' };
 
 // ── SUPPLIER TRANSACTIONS ─────────────────────────────────────
 function SupplierTransactions({ suppliers }) {
@@ -431,7 +431,7 @@ function SupplierInvoicesTab({ suppliers, periods }) {
 }
 
 // ── SUPPLIER FORM (shared between Add and Edit) ───────────────
-function SupplierForm({ initial, onSave, onCancel, saving, title }) {
+function SupplierForm({ initial, onSave, onCancel, saving, categories = { types: [], discounts: [] }, title }) {
   const [form, setForm] = useState(initial);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   return (
@@ -490,6 +490,22 @@ function SupplierForm({ initial, onSave, onCancel, saving, title }) {
               <input type="email" value={form.email} onChange={e => set('email', e.target.value)} />
             </div>
           </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label>Supplier Type</label>
+              <select value={form.supplier_type_id || ''} onChange={e => set('supplier_type_id', e.target.value)}>
+                <option value="">— Select type —</option>
+                {(categories.types || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label>Discount / Terms</label>
+              <select value={form.discount_id || ''} onChange={e => set('discount_id', e.target.value)}>
+                <option value="">— Select discount —</option>
+                {(categories.discounts || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+          </div>
         </div>
         <div className="modal-footer">
           <button className="btn" onClick={onCancel}>Cancel</button>
@@ -516,12 +532,21 @@ export default function FinanceAP() {
   const [supplierForm, setSupplierForm] = useState(null); // null | form object
   const [saving, setSaving]       = useState(false);
   const [toggling, setToggling]   = useState(null);
+  const [categories, setCategories] = useState({ types: [], discounts: [] });
 
   const canToggleWorkshop = ['ADMIN', 'FINANCE', 'WORKSHOP_MANAGER'].includes(user?.role);
 
   useEffect(() => {
     loadSuppliers();
     req('/fin/periods').then(d => setPeriods(Array.isArray(d) ? d.filter(p => !p.is_closed) : []));
+    req('/fin/supplier-categories').then(cats => {
+      if (Array.isArray(cats)) {
+        setCategories({
+          types:     cats.filter(c => c.category_type === 'SUPPLIER_TYPE'),
+          discounts: cats.filter(c => c.category_type === 'DISCOUNT'),
+        });
+      }
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -553,6 +578,8 @@ export default function FinanceAP() {
     telephone: s.telephone || '', email: s.email || '',
     payment_terms_days: s.payment_terms_days || 30,
     credit_limit: s.credit_limit != null ? String(s.credit_limit) : '',
+    supplier_type_id: s.supplier_type_id || '',
+    discount_id: s.discount_id || '',
     _editing: true,
   });
 
@@ -560,11 +587,13 @@ export default function FinanceAP() {
     if (!form.supplier_code.trim() || !form.supplier_name.trim()) return alert('Supplier Code and Name are required');
     setSaving(true);
     try {
+      const body = { ...form };
+      delete body._editing;
       let res;
       if (form._editing) {
-        res = await req(`/fin/suppliers/${form.supplier_code}`, { method: 'PATCH', body: JSON.stringify(form) });
+        res = await req(`/fin/suppliers/${form.supplier_code}`, { method: 'PATCH', body: JSON.stringify(body) });
       } else {
-        res = await req('/fin/suppliers', { method: 'POST', body: JSON.stringify(form) });
+        res = await req('/fin/suppliers', { method: 'POST', body: JSON.stringify(body) });
       }
       if (res.error) throw new Error(res.error);
       setSupplierForm(null);
@@ -675,7 +704,7 @@ export default function FinanceAP() {
             <table>
               <thead>
                 <tr>
-                  <th>Code</th><th>Supplier Name</th><th>VAT Number</th><th style={{ textAlign: 'center' }}>VAT</th>
+                  <th>Code</th><th>Supplier Name</th><th>Type</th><th>Discount</th><th>VAT Number</th><th style={{ textAlign: 'center' }}>VAT</th>
                   <th>Telephone</th><th>Terms</th><th style={{ textAlign: 'right' }}>Credit Limit</th>
                   <th style={{ textAlign: 'center' }}>Workshop</th><th style={{ width: 60 }}></th>
                 </tr>
@@ -687,6 +716,8 @@ export default function FinanceAP() {
                   <tr key={s.supplier_id} onClick={() => setSelected(s)} style={{ cursor: 'pointer' }}>
                     <td className="mono" style={{ fontWeight: 600 }}>{s.supplier_code}</td>
                     <td>{s.supplier_name}</td>
+                    <td style={{ fontSize: 12 }}>{categories.types.find(c => c.id === s.supplier_type_id)?.name || '—'}</td>
+                    <td style={{ fontSize: 12 }}>{categories.discounts.find(c => c.id === s.discount_id)?.name || '—'}</td>
                     <td className="mono" style={{ fontSize: 12 }}>{s.vat_number || '—'}</td>
                     <td style={{ textAlign: 'center' }}>
                       {s.vat_enabled
@@ -794,6 +825,7 @@ export default function FinanceAP() {
           onSave={saveSupplier}
           onCancel={() => setSupplierForm(null)}
           saving={saving}
+          categories={categories}
           title={supplierForm._editing ? `Edit Supplier — ${supplierForm.supplier_code}` : 'New Supplier'}
         />
       )}
