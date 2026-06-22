@@ -476,7 +476,8 @@ export default function FinanceAP() {
   const [aging, setAging]         = useState(null);
   const [suppliers, setSuppliers] = useState([]);
   const [periods, setPeriods]       = useState([]);
-  const [loading, setLoading]     = useState(true);
+  const [loading, setLoading]     = useState(true);   // aging
+  const [suppLoading, setSuppLoading] = useState(true); // supplier list
   const [search, setSearch]       = useState('');
   const [selected, setSelected]   = useState(null);
   const [showAdd, setShowAdd]     = useState(false);
@@ -497,16 +498,27 @@ export default function FinanceAP() {
   }, [tab]);
 
   const loadSuppliers = async () => {
-    const data = await req('/fin/suppliers?active=true');
-    setSuppliers(Array.isArray(data) ? data : []);
-    setLoading(false);
+    setSuppLoading(true);
+    try {
+      const data = await req('/fin/suppliers?active=true');
+      setSuppliers(Array.isArray(data) ? data : data?.data || []);
+    } catch (e) {
+      console.error('loadSuppliers error:', e);
+    } finally {
+      setSuppLoading(false);
+    }
   };
 
   const loadAging = async () => {
     setLoading(true);
-    const data = await req('/fin/aging/suppliers');
-    setAging(data);
-    setLoading(false);
+    try {
+      const data = await req('/fin/aging/suppliers');
+      setAging(Array.isArray(data) ? { invoices: data } : data);
+    } catch (e) {
+      console.error('loadAging error:', e);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -565,7 +577,7 @@ export default function FinanceAP() {
     <div>
       <div style={{ display: 'flex', borderBottom: '1px solid #e8edf2', marginBottom: 16, gap: 4, alignItems: 'center' }}>
         <div style={tabStyle('aging')}       onClick={() => setTab('aging')}>Supplier Aging</div>
-        <div style={tabStyle('suppliers')}   onClick={() => setTab('suppliers')}>Supplier Master ({suppliers.length || '…'})</div>
+        <div style={tabStyle('suppliers')}   onClick={() => setTab('suppliers')}>Supplier Master ({suppLoading ? '…' : suppliers.length})</div>
         <div style={tabStyle('transactions')}onClick={() => setTab('transactions')}>Transactions</div>
         <div style={tabStyle('invoices')}   onClick={() => setTab('invoices')}>Supplier Invoices</div>
         <div style={{ flex: 1 }} />
@@ -622,8 +634,8 @@ export default function FinanceAP() {
             <table>
               <thead><tr><th>Code</th><th>Supplier Name</th><th>Group Terms</th><th>VAT Number</th><th>Telephone</th><th>Terms</th><th>GL Account</th><th style={{ textAlign: 'center' }}>Workshop</th></tr></thead>
               <tbody>
-                {loading && <tr><td colSpan={8}><div className="loading">Loading suppliers…</div></td></tr>}
-                {!loading && filteredSuppliers.length === 0 && <tr><td colSpan={8}><div className="empty-state">No suppliers found</div></td></tr>}
+                {suppLoading && <tr><td colSpan={8}><div className="loading">Loading suppliers…</div></td></tr>}
+                {!suppLoading && filteredSuppliers.length === 0 && <tr><td colSpan={8}><div className="empty-state">No suppliers found</div></td></tr>}
                 {!loading && filteredSuppliers.map(s => (
                   <tr key={s.supplier_id} onClick={() => setSelected(s)} style={{ cursor: 'pointer' }}>
                     <td className="mono" style={{ fontWeight: 600 }}>{s.supplier_code}</td>
@@ -749,5 +761,6 @@ export default function FinanceAP() {
     </div>
   );
 }
+
 
 
