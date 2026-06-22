@@ -256,16 +256,16 @@ function SupplierInvoicesTab({ suppliers, periods }) {
   const doInvoiceExport = () => {
     exportCSV(invoices.map(inv => ({
       'Invoice Ref': inv.invoice_ref,
-      'Supplier': inv.supplier_code,
+      Supplier: inv.supplier_code,
       'Supplier Inv No': inv.supplier_invoice_no || '',
       'Invoice Date': inv.invoice_date,
       'Due Date': inv.due_date,
       'Excl VAT': inv.subtotal_excl_vat,
-      'VAT': inv.vat_amount,
+      VAT: inv.vat_amount,
       'Total Incl VAT': inv.total_incl_vat,
       'Amount Paid': inv.amount_paid,
       'Balance Due': inv.balance_due,
-      'Status': inv.status,
+      Status: inv.status,
     })), 'ap_invoices.csv');
   };
 
@@ -343,9 +343,9 @@ function SupplierInvoicesTab({ suppliers, periods }) {
 
       {/* ── ALL INVOICES ── */}
       {subtab === 'invoices' && (
-        <div>
+        <>
           {invoices.length > 0 && (
-            <div style={{ display:'flex', gap:6, marginBottom:8 }}>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
               <button className="btn btn-sm" onClick={doInvoiceExport}>⬇ CSV</button>
             </div>
           )}
@@ -370,7 +370,7 @@ function SupplierInvoicesTab({ suppliers, periods }) {
             </tbody>
           </table>
           </div>
-        </div>
+        </>
       )}
 
       {/* Capture Invoice Modal (from PO) */}
@@ -747,11 +747,7 @@ export default function FinanceAP() {
         </div>
       )}
     </div>
-  </div>
   );
 }
-
-
-
 
 
