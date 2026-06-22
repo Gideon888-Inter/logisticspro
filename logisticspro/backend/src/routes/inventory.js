@@ -74,7 +74,7 @@ router.use(authMiddleware);
 
 /** Return config values from lp_config */
 async function getConfig(...keys) {
-  const { data } = await supabase
+  const { data } = await supabase()
     .from('lp_config')
     .select('cfg_key, cfg_value')
     .in('cfg_key', keys);
@@ -145,7 +145,7 @@ function buildOneDrivePath(config, supplier_code, supplier_name, po_date) {
 router.get('/suppliers',
   requireRole(ROLES.ADMIN, ROLES.MANAGER, ROLES.FINANCE, ROLES.CONTROL_ROOM, ROLES.WORKSHOP_MANAGER, ROLES.WORKSHOP_ASSISTANT, ROLES.STOCK_CONTROLLER, ROLES.WORKSHOP),
   async (req, res) => {
-    const { data, error } = await supabase
+    const { data, error } = await supabase()
       .from('fin_suppliers')
       .select('supplier_id,supplier_code,supplier_name,payment_terms_days,telephone,email')
       .eq('workshop_allowed', true)
@@ -241,7 +241,7 @@ router.patch('/items/:id/approve',
     }
 
     const newStatus = action === 'APPROVE' ? 'ACTIVE' : 'SUSPENDED';
-    const { data: item, error } = await supabase
+    const { data: item, error } = await supabase()
       .from('lp_inventory_items')
       .update({
         status:           newStatus,
@@ -274,14 +274,14 @@ router.get('/items/:id',
   requireRole(ROLES.ADMIN, ROLES.MANAGER, ROLES.FINANCE, ROLES.OPERATOR, ROLES.OPS_ASSISTANT,
              ROLES.WORKSHOP_MANAGER, ROLES.WORKSHOP_ASSISTANT, ROLES.STOCK_CONTROLLER, ROLES.WORKSHOP),
   async (req, res) => {
-    const { data: item, error } = await supabase
+    const { data: item, error } = await supabase()
       .from('lp_inventory_items')
       .select('*')
       .eq('item_id', req.params.id)
       .single();
     if (error || !item) return res.status(404).json({ error: 'Item not found' });
 
-    const { data: txns } = await supabase
+    const { data: txns } = await supabase()
       .from('lp_inventory_transactions')
       .select('*')
       .eq('item_id', req.params.id)
@@ -304,7 +304,7 @@ router.get('/po',
               ROLES.STOCK_CONTROLLER, ROLES.WORKSHOP),
   async (req, res) => {
     const { status, vehicle_code, supplier_code } = req.query;
-    let query = supabase
+    let query = supabase()
       .from('lp_purchase_orders')
       .select(`
         po_id, po_number, supplier_code, supplier_name,
@@ -377,7 +377,7 @@ router.post('/po',
     // Generate PO number
     const { data: poNum } = await supabase().rpc('next_po_number');
 
-    const { data: po, error: poErr } = await supabase
+    const { data: po, error: poErr } = await supabase()
       .from('lp_purchase_orders')
       .insert({
         po_number:       poNum,
@@ -435,7 +435,7 @@ router.get('/po/:id',
               ROLES.CONTROL_ROOM, ROLES.WORKSHOP_MANAGER, ROLES.WORKSHOP_ASSISTANT,
               ROLES.STOCK_CONTROLLER, ROLES.WORKSHOP),
   async (req, res) => {
-    const { data: po, error } = await supabase
+    const { data: po, error } = await supabase()
       .from('lp_purchase_orders')
       .select('*')
       .eq('po_id', req.params.id)
@@ -456,7 +456,7 @@ router.patch('/po/:id',
   requireRole(ROLES.ADMIN, ROLES.FINANCE, ROLES.CONTROL_ROOM, ROLES.STOCK_CONTROLLER,
              ROLES.WORKSHOP_ASSISTANT, ROLES.WORKSHOP_MANAGER),
   async (req, res) => {
-    const { data: po } = await supabase
+    const { data: po } = await supabase()
       .from('lp_purchase_orders')
       .select('po_id, po_number, status, created_by')
       .eq('po_id', req.params.id)
@@ -477,7 +477,7 @@ router.patch('/po/:id',
     allowed.forEach(k => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
     updates.updated_at = new Date().toISOString();
 
-    const { data, error } = await supabase
+    const { data, error } = await supabase()
       .from('lp_purchase_orders')
       .update(updates)
       .eq('po_id', req.params.id)
@@ -499,7 +499,7 @@ router.post('/po/:id/attachment',
   async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
-    const { data: po } = await supabase
+    const { data: po } = await supabase()
       .from('lp_purchase_orders')
       .select('po_id, po_number, status, supplier_code, supplier_name, created_by')
       .eq('po_id', req.params.id)
@@ -510,7 +510,7 @@ router.post('/po/:id/attachment',
     // Build a serving URL for the temp file
     const tempUrl = `/temp-attachments/${req.file.filename}`;
 
-    const { data, error } = await supabase
+    const { data, error } = await supabase()
       .from('lp_purchase_orders')
       .update({
         attachment_filename: req.file.originalname,
@@ -539,7 +539,7 @@ router.post('/po/:id/attachment',
 router.post('/po/:id/offload-attachment',
   requireRole(ROLES.ADMIN),
   async (req, res) => {
-    const { data: po } = await supabase
+    const { data: po } = await supabase()
       .from('lp_purchase_orders')
       .select('*')
       .eq('po_id', req.params.id)
@@ -566,7 +566,7 @@ router.post('/po/:id/offload-attachment',
       try { fs.unlinkSync(tempFilePath); } catch (e) { /* non-fatal */ }
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await supabase()
       .from('lp_purchase_orders')
       .update({
         onedrive_url:       onedriveUrl,
@@ -600,7 +600,7 @@ router.post('/po/:id/submit',
   requireRole(ROLES.ADMIN, ROLES.FINANCE, ROLES.CONTROL_ROOM, ROLES.STOCK_CONTROLLER,
              ROLES.WORKSHOP_ASSISTANT, ROLES.WORKSHOP_MANAGER),
   async (req, res) => {
-    const { data: po } = await supabase
+    const { data: po } = await supabase()
       .from('lp_purchase_orders')
       .select('*')
       .eq('po_id', req.params.id)
@@ -634,7 +634,7 @@ router.post('/po/:id/submit',
     const newStatus = firstApprovalStatus(req.user.role);
     const now = new Date().toISOString();
 
-    const { data, error } = await supabase
+    const { data, error } = await supabase()
       .from('lp_purchase_orders')
       .update({
         status:       newStatus,
@@ -690,7 +690,7 @@ router.post('/po/:id/approve',
       return res.status(400).json({ error: 'A rejection reason is required' });
     }
 
-    const { data: po } = await supabase
+    const { data: po } = await supabase()
       .from('lp_purchase_orders')
       .select('*')
       .eq('po_id', req.params.id)
@@ -742,7 +742,7 @@ router.post('/po/:id/approve',
       updates.rejection_stage   = stage.stage;
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await supabase()
       .from('lp_purchase_orders')
       .update(updates)
       .eq('po_id', po.po_id)
@@ -810,7 +810,7 @@ router.post('/po/:id/receive',
       return res.status(400).json({ error: 'received_lines required' });
     }
 
-    const { data: po } = await supabase
+    const { data: po } = await supabase()
       .from('lp_purchase_orders')
       .select('*')
       .eq('po_id', req.params.id)
@@ -826,7 +826,7 @@ router.post('/po/:id/receive',
 
     const txns = [];
     for (const recv of received_lines) {
-      const { data: line } = await supabase
+      const { data: line } = await supabase()
         .from('lp_po_lines')
         .select('*, lp_inventory_items(item_id, qty_on_hand, qty_on_order, average_cost, last_cost)')
         .eq('po_line_id', recv.po_line_id)
@@ -898,7 +898,7 @@ router.post('/po/:id/receive',
 router.post('/po/:id/close',
   requireRole(ROLES.ADMIN),
   async (req, res) => {
-    const { data: po } = await supabase
+    const { data: po } = await supabase()
       .from('lp_purchase_orders')
       .select('*')
       .eq('po_id', req.params.id)
@@ -960,7 +960,7 @@ router.get('/po/pending-approval',
     const myStatuses = roleStatusMap[req.user.role] || [];
     if (!myStatuses.length) return res.json([]);
 
-    const { data, error } = await supabase
+    const { data, error } = await supabase()
       .from('lp_purchase_orders')
       .select('po_id, po_number, supplier_name, po_description, total_incl_vat, status, created_by, submitted_at, attachment_filename')
       .in('status', myStatuses)
@@ -972,6 +972,7 @@ router.get('/po/pending-approval',
 );
 
 module.exports = router;
+
 
 
 
