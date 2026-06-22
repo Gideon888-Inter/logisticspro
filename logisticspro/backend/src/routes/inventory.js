@@ -786,8 +786,9 @@ router.post('/po/:id/approve',
     } else {
       // Determine bypass based on approver role
       if ([ROLES.FINANCE, ROLES.ADMIN].includes(role)) {
-        // Finance and Admin fully approve — bypass all remaining stages
-        newStatus = 'APPROVED';
+        // Finance and Admin give financial approval — PO moves to PENDING_FINANCIAL
+        // It will move to APPROVED only once a supplier invoice is captured against it
+        newStatus = 'PENDING_FINANCIAL';
         logAction = 'FINANCIAL_APPROVED';
       } else if (role === ROLES.WORKSHOP_MANAGER) {
         // Workshop Manager covers L1, L2, L3 — jumps to PENDING_FINANCIAL
@@ -811,7 +812,12 @@ router.post('/po/:id/approve',
       // Stamp all stages from current through the ones being bypassed
       const stageOrder = ['PENDING_L1','PENDING_L2','PENDING_L3','PENDING_FINANCIAL'];
       const fromIdx = stageOrder.indexOf(currentStage);
-      const toIdx   = newStatus === 'APPROVED' ? 3 : stageOrder.indexOf(newStatus) - 1;
+      // Stamp all stages from fromIdx up to and including the last bypassed stage.
+      // PENDING_FINANCIAL is stage index 3 — if we're landing there, stamp up to index 3.
+      // If landing at PENDING_L2 (index 1), stamp only index 0 (L1 was current).
+      const toIdx = stageOrder.indexOf(newStatus) > fromIdx
+        ? stageOrder.indexOf(newStatus) - 1  // stamp stages up to but not including new stage
+        : fromIdx;                             // single stage (no bypass)
       const stageFields = {
         'PENDING_L1':        ['l1_approver','l1_approved_at'],
         'PENDING_L2':        ['l2_approver','l2_approved_at'],
@@ -862,8 +868,7 @@ router.post('/po/:id/approve',
       const nextNotifyRoleMap = {
         'PENDING_L2':        ROLES.WORKSHOP_ASSISTANT,
         'PENDING_L3':        ROLES.WORKSHOP_MANAGER,
-        'PENDING_FINANCIAL': ROLES.FINANCE,
-        'APPROVED':          null, // notify creator
+        'PENDING_FINANCIAL': ROLES.FINANCE,  // notify Finance to capture supplier invoice
       };
       const nextRole = nextNotifyRoleMap[newStatus];
       if (nextRole) {
@@ -875,12 +880,13 @@ router.post('/po/:id/approve',
           po_id:   po.po_id,
         });
       }
-      if (newStatus === 'APPROVED') {
+      if (newStatus === 'PENDING_FINANCIAL') {
+        // Notify creator that PO is financially approved and queued for invoice capture
         await notify({
           user:    po.created_by,
           type:    'PO_FINANCIAL_APPROVED',
           title:   `PO Approved: ${po.po_number}`,
-          message: `Your purchase order has been fully approved and committed. Total: R${Number(po.total_incl_vat || 0).toFixed(2)}`,
+          message: `Your purchase order has been approved and is awaiting supplier invoice capture. Total: R${Number(po.total_incl_vat || 0).toFixed(2)}`,
           po_id:   po.po_id,
         });
       }
