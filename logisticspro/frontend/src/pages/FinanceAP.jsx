@@ -180,21 +180,31 @@ function SupplierTransactions({ suppliers }) {
 
 // ── SUPPLIER INVOICES ─────────────────────────────────────────
 function SupplierInvoicesTab({ suppliers, periods }) {
-  const [subtab, setSubtab]       = useState('pending');
+  const [subtab, setSubtab]       = useState('invoices');
   const [pendingPOs, setPending]  = useState([]);
   const [invoices, setInvoices]   = useState([]);
-  const [loading, setLoading]     = useState(false);
-  const [captureModal, setCapture]= useState(null);
-  const [invModal, setInvModal]   = useState(false);
+  const [loading, setLoading]     = useState(true);
+  const [selected, setSelected]   = useState(null);  // selected invoice (summary)
+  const [captureModal, setCapture]= useState(null);  // PO being captured
+  const [showNew, setShowNew]     = useState(false);
   const [form, setForm]           = useState({ supplier_code: '', supplier_invoice_no: '', invoice_date: new Date().toISOString().slice(0,10), period_id: '', subtotal_excl_vat: '', vat_amount: '', total_incl_vat: '', document_ref: '' });
   const [saving, setSaving]       = useState(false);
   const [saveErr, setSaveErr]     = useState('');
+  const [search, setSearch]       = useState('');
+  const [statusFilter, setStatusF]= useState('');
 
   const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+  const STATUS_COLOR = { UNPOSTED: 'badge-amber', POSTED: 'badge-blue', PARTIAL: 'badge-amber', PAID: 'badge-green', DISPUTED: 'badge-red', CANCELLED: 'badge-gray' };
+  const INV_STATUS_LABELS = { UNPOSTED: 'Unposted', POSTED: 'Posted', PARTIAL: 'Partial', PAID: 'Paid', DISPUTED: 'Disputed', CANCELLED: 'Cancelled' };
 
   useEffect(() => { loadPending(); loadInvoices(); }, []);
   const loadPending  = async () => { const d = await req('/fin/ap/invoices/pending-pos'); setPending(Array.isArray(d) ? d : []); };
-  const loadInvoices = async () => { setLoading(true); const d = await req('/fin/ap/invoices'); setInvoices(Array.isArray(d) ? d : []); setLoading(false); };
+  const loadInvoices = async () => {
+    setLoading(true);
+    const d = await req('/fin/ap/invoices');
+    setInvoices(Array.isArray(d) ? d : []);
+    setLoading(false);
+  };
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const calcTotals = (excl) => {
@@ -210,7 +220,8 @@ function SupplierInvoicesTab({ suppliers, periods }) {
     const r = await req('/fin/ap/invoices', {
       method: 'POST',
       body: JSON.stringify({
-        supplier_code: captureModal.supplier_code, supplier_invoice_no: form.supplier_invoice_no,
+        supplier_code: captureModal.supplier_code,
+        supplier_invoice_no: captureModal.supplier_invoice_no || form.supplier_invoice_no,
         invoice_date: form.invoice_date, period_id: form.period_id,
         subtotal_excl_vat: captureModal.subtotal_excl_vat, vat_amount: captureModal.vat_amount,
         total_incl_vat: captureModal.total_incl_vat, document_ref: captureModal.onedrive_url || null,
@@ -219,50 +230,139 @@ function SupplierInvoicesTab({ suppliers, periods }) {
     });
     setSaving(false);
     if (r.error) return setSaveErr(r.error);
-    setCapture(null); setForm(f => ({ ...f, supplier_invoice_no: '', period_id: '' }));
+    setCapture(null);
+    setForm(f => ({ ...f, supplier_invoice_no: '', period_id: '' }));
     loadPending(); loadInvoices();
-  };
-
-  const doInvoiceExport = () => {
-    exportCSV(invoices.map(inv => ({
-      'Invoice Ref': inv.invoice_ref, Supplier: inv.supplier_code,
-      'Supplier Inv No': inv.supplier_invoice_no || '', 'Invoice Date': inv.invoice_date,
-      'Due Date': inv.due_date, 'Excl VAT': inv.subtotal_excl_vat, VAT: inv.vat_amount,
-      'Total Incl VAT': inv.total_incl_vat, 'Amount Paid': inv.amount_paid,
-      'Balance Due': inv.balance_due, Status: inv.status,
-    })), 'ap_invoices.csv');
   };
 
   const createInvoice = async () => {
     setSaveErr('');
-    if (!form.supplier_code) return setSaveErr('Supplier is required');
-    if (!form.period_id)     return setSaveErr('Period is required');
+    if (!form.supplier_code)   return setSaveErr('Supplier is required');
+    if (!form.supplier_invoice_no) return setSaveErr('Supplier invoice number is required');
+    if (!form.period_id)       return setSaveErr('Period is required');
     if (!form.total_incl_vat || parseFloat(form.total_incl_vat) <= 0) return setSaveErr('Amount is required');
     setSaving(true);
     const r = await req('/fin/ap/invoices', { method: 'POST', body: JSON.stringify(form) });
     setSaving(false);
     if (r.error) return setSaveErr(r.error);
-    setInvModal(false);
+    setShowNew(false);
     setForm({ supplier_code: '', supplier_invoice_no: '', invoice_date: new Date().toISOString().slice(0,10), period_id: '', subtotal_excl_vat: '', vat_amount: '', total_incl_vat: '', document_ref: '' });
     loadInvoices();
   };
 
-  const STATUS_COLOR = { UNPOSTED: 'badge-amber', POSTED: 'badge-blue', PARTIAL: 'badge-amber', PAID: 'badge-green', DISPUTED: 'badge-red', CANCELLED: 'badge-gray' };
-  const subTabStyle = (t) => ({ padding: '5px 12px', cursor: 'pointer', fontSize: 12, fontWeight: 600, borderBottom: subtab === t ? '2px solid #005A8E' : '2px solid transparent', color: subtab === t ? '#005A8E' : '#666' });
+  const doExport = () => exportCSV(invoices.map(inv => ({
+    'Invoice Ref': inv.invoice_ref, 'Supplier': inv.supplier_code,
+    'Supplier Name': inv.fin_suppliers?.supplier_name || '',
+    'Supplier Inv No': inv.supplier_invoice_no || '',
+    'Invoice Date': inv.invoice_date, 'Due Date': inv.due_date,
+    'Excl VAT': inv.subtotal_excl_vat, 'VAT': inv.vat_amount,
+    'Total Incl VAT': inv.total_incl_vat, 'Amount Paid': inv.amount_paid,
+    'Balance Due': inv.balance_due, 'Status': inv.status,
+  })), 'ap_invoices.csv');
+
+  const tabStyle = (t) => ({ padding: '5px 14px', cursor: 'pointer', fontSize: 12, fontWeight: 600, borderBottom: subtab === t ? '2px solid #005A8E' : '2px solid transparent', color: subtab === t ? '#005A8E' : '#666' });
+
+  const filteredInvoices = invoices.filter(inv => {
+    const s = search.toLowerCase();
+    const matchSearch = !s || inv.invoice_ref?.toLowerCase().includes(s) || inv.supplier_code?.toLowerCase().includes(s) || (inv.fin_suppliers?.supplier_name || '').toLowerCase().includes(s) || (inv.supplier_invoice_no || '').toLowerCase().includes(s);
+    const matchStatus = !statusFilter || inv.status === statusFilter;
+    return matchSearch && matchStatus;
+  });
 
   return (
     <div>
-      <div style={{ display: 'flex', borderBottom: '1px solid #e8edf2', marginBottom: 12, gap: 2 }}>
-        <div style={subTabStyle('pending')} onClick={() => setSubtab('pending')}>
+      {/* Tab bar */}
+      <div style={{ display: 'flex', borderBottom: '1px solid #e8edf2', marginBottom: 12, gap: 2, alignItems: 'center' }}>
+        <div style={tabStyle('invoices')} onClick={() => setSubtab('invoices')}>All Supplier Invoices</div>
+        <div style={tabStyle('pending')}  onClick={() => setSubtab('pending')}>
           POs Awaiting Invoice
           {pendingPOs.length > 0 && <span className="badge badge-red" style={{ marginLeft: 6, fontSize: 10 }}>{pendingPOs.length}</span>}
         </div>
-        <div style={subTabStyle('invoices')} onClick={() => setSubtab('invoices')}>All Supplier Invoices</div>
-        <div style={{ marginLeft: 'auto' }}>
-          <button className="btn btn-primary btn-sm" onClick={() => { setSaveErr(''); setInvModal(true); }}>+ New Invoice</button>
-        </div>
+        <div style={{ flex: 1 }} />
+        <button className="btn btn-primary btn-sm" onClick={() => { setSaveErr(''); setShowNew(true); }}>+ New Invoice</button>
       </div>
 
+      {/* ── ALL INVOICES — PO-style layout ── */}
+      {subtab === 'invoices' && (
+        <>
+          {/* Filter bar */}
+          <div className="filter-bar">
+            <input placeholder="Search invoice ref, supplier, inv number…" value={search} onChange={e => setSearch(e.target.value)} style={{ flex: 1, maxWidth: 340 }} />
+            <select value={statusFilter} onChange={e => setStatusF(e.target.value)} style={{ width: 140 }}>
+              <option value="">All statuses</option>
+              {Object.entries(INV_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+            <button className="btn btn-sm" onClick={doExport}>⬇ CSV</button>
+          </div>
+
+          {/* Invoice list table */}
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Invoice Ref</th><th>Supplier</th><th>Supplier Inv No</th>
+                  <th>Invoice Date</th><th>Due Date</th>
+                  <th style={{ textAlign: 'right' }}>Total Incl VAT</th>
+                  <th style={{ textAlign: 'right' }}>Balance Due</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading && <tr><td colSpan={8}><div className="loading">Loading…</div></td></tr>}
+                {!loading && filteredInvoices.length === 0 && <tr><td colSpan={8}><div className="empty-state">No supplier invoices found</div></td></tr>}
+                {!loading && filteredInvoices.map(inv => (
+                  <tr key={inv.invoice_id} onClick={() => setSelected(inv === selected ? null : inv)}
+                      style={{ cursor: 'pointer' }} className={selected?.invoice_id === inv.invoice_id ? 'row-selected' : ''}>
+                    <td className="mono" style={{ fontWeight: 700, color: '#005A8E' }}>{inv.invoice_ref}</td>
+                    <td style={{ fontSize: 13 }}>{inv.fin_suppliers?.supplier_name || inv.supplier_code}</td>
+                    <td className="mono" style={{ fontSize: 12 }}>{inv.supplier_invoice_no || '—'}</td>
+                    <td style={{ fontSize: 12 }}>{fmtDate(inv.invoice_date)}</td>
+                    <td style={{ fontSize: 12, color: inv.due_date && (inv.balance_due||0) > 0 && inv.due_date < new Date().toISOString().slice(0,10) ? '#e53e3e' : '#555' }}>
+                      {fmtDate(inv.due_date)}
+                    </td>
+                    <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 13 }}>{fmt(inv.total_incl_vat)}</td>
+                    <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 13, fontWeight: 600, color: (inv.balance_due||0) > 0 ? '#e53e3e' : '#059669' }}>{fmt(inv.balance_due)}</td>
+                    <td><span className={`badge ${STATUS_COLOR[inv.status] || 'badge-gray'}`} style={{ fontSize: 10 }}>{INV_STATUS_LABELS[inv.status] || inv.status}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Invoice detail panel */}
+          {selected && (
+            <div style={{ marginTop: 16, background: '#f8fafc', border: '1px solid #e8edf2', borderRadius: 8, padding: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <span style={{ fontWeight: 700, fontSize: 15, color: '#005A8E' }}>{selected.invoice_ref}</span>
+                  <span className={`badge ${STATUS_COLOR[selected.status] || 'badge-gray'}`} style={{ fontSize: 11 }}>{INV_STATUS_LABELS[selected.status] || selected.status}</span>
+                </div>
+                <button onClick={() => setSelected(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: '#888' }}>✕</button>
+              </div>
+              <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', fontSize: 13, marginBottom: 14 }}>
+                <div><strong>Supplier:</strong> {selected.fin_suppliers?.supplier_name || selected.supplier_code}</div>
+                <div><strong>Supplier Inv No:</strong> <span className="mono">{selected.supplier_invoice_no || '—'}</span></div>
+                <div><strong>Invoice Date:</strong> {fmtDate(selected.invoice_date)}</div>
+                <div><strong>Due Date:</strong> {fmtDate(selected.due_date)}</div>
+                <div><strong>Period:</strong> {periods.find(p => p.period_id === selected.period_id)?.period_name || selected.period_id}</div>
+              </div>
+              <div className="stats-grid" style={{ marginBottom: 12 }}>
+                <div className="stat-card"><div className="stat-label">Excl VAT</div><div className="stat-value" style={{ fontSize: 14 }}>{fmt(selected.subtotal_excl_vat)}</div></div>
+                <div className="stat-card"><div className="stat-label">VAT</div><div className="stat-value" style={{ fontSize: 14, color: '#c05621' }}>{fmt(selected.vat_amount)}</div></div>
+                <div className="stat-card"><div className="stat-label">Total Incl VAT</div><div className="stat-value" style={{ fontSize: 14, color: '#005A8E' }}>{fmt(selected.total_incl_vat)}</div></div>
+                <div className="stat-card"><div className="stat-label">Balance Due</div><div className="stat-value" style={{ fontSize: 14, color: (selected.balance_due||0) > 0 ? '#e53e3e' : '#059669' }}>{fmt(selected.balance_due)}</div></div>
+              </div>
+              {selected.document_ref && (
+                <div style={{ fontSize: 12, marginTop: 4 }}>
+                  <strong>Document:</strong> <a href={selected.document_ref} target="_blank" rel="noopener noreferrer" style={{ color: '#005A8E' }}>📎 View attachment</a>
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── POs AWAITING INVOICE ── */}
       {subtab === 'pending' && (
         <>
           {pendingPOs.length === 0 ? (
@@ -273,25 +373,21 @@ function SupplierInvoicesTab({ suppliers, periods }) {
           ) : (
             <div className="table-wrap">
               <table>
-                <thead><tr><th>PO Number</th><th>Supplier</th><th>Description</th><th style={{ textAlign: 'right' }}>Excl VAT</th><th style={{ textAlign: 'right' }}>VAT</th><th style={{ textAlign: 'right' }}>Total Incl</th><th>Submitted</th><th>Attachment</th><th style={{ width: 120 }}>Action</th></tr></thead>
+                <thead><tr><th>PO Number</th><th>Supplier</th><th>Supplier Inv No</th><th>Description</th><th style={{ textAlign: 'right' }}>Excl VAT</th><th style={{ textAlign: 'right' }}>VAT</th><th style={{ textAlign: 'right' }}>Total Incl</th><th>Submitted</th><th style={{ width: 130 }}>Action</th></tr></thead>
                 <tbody>
                   {pendingPOs.map(po => (
                     <tr key={po.po_id}>
                       <td className="mono" style={{ fontWeight: 700, color: '#005A8E' }}>{po.po_number}</td>
                       <td style={{ fontSize: 13 }}>{po.supplier_name || po.supplier_code}</td>
-                      <td style={{ fontSize: 12, color: '#555', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{po.po_description}</td>
+                      <td className="mono" style={{ fontSize: 12 }}>{po.supplier_invoice_no || '—'}</td>
+                      <td style={{ fontSize: 12, color: '#555', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{po.po_description}</td>
                       <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 12 }}>{fmt(po.subtotal_excl_vat)}</td>
                       <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 12 }}>{fmt(po.vat_amount)}</td>
                       <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 13, fontWeight: 700 }}>{fmt(po.total_incl_vat)}</td>
-                      <td style={{ fontSize: 11 }}>{po.submitted_at ? new Date(po.submitted_at).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</td>
-                      <td style={{ fontSize: 11 }}>
-                        {po.onedrive_url
-                          ? <a href={po.onedrive_url + '?web=1'} target="_blank" rel="noopener noreferrer" style={{ color: '#005A8E' }}>📎 View</a>
-                          : <span style={{ color: '#ccc' }}>—</span>}
-                      </td>
+                      <td style={{ fontSize: 11 }}>{fmtDate(po.submitted_at)}</td>
                       <td>
                         <button className="btn btn-primary btn-sm" style={{ fontSize: 11 }}
-                          onClick={() => { setSaveErr(''); setCapture(po); }}>
+                          onClick={() => { setSaveErr(''); setCapture(po); setForm(f => ({ ...f, invoice_date: new Date().toISOString().slice(0,10), supplier_invoice_no: po.supplier_invoice_no || '', period_id: '' })); }}>
                           📥 Capture Invoice
                         </button>
                       </td>
@@ -304,40 +400,10 @@ function SupplierInvoicesTab({ suppliers, periods }) {
         </>
       )}
 
-      {subtab === 'invoices' && (
-        <>
-          {invoices.length > 0 && (
-            <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-              <button className="btn btn-sm" onClick={doInvoiceExport}>⬇ CSV</button>
-            </div>
-          )}
-          <div className="table-wrap">
-            <table>
-              <thead><tr><th>Invoice Ref</th><th>Date</th><th>Supplier</th><th>Supplier Inv No</th><th>Due Date</th><th style={{ textAlign: 'right' }}>Total Incl VAT</th><th style={{ textAlign: 'right' }}>Balance Due</th><th>Status</th></tr></thead>
-              <tbody>
-                {loading && <tr><td colSpan={8}><div className="loading">Loading…</div></td></tr>}
-                {!loading && invoices.length === 0 && <tr><td colSpan={8}><div className="empty-state">No supplier invoices yet</div></td></tr>}
-                {!loading && invoices.map(inv => (
-                  <tr key={inv.invoice_id}>
-                    <td className="mono" style={{ fontWeight: 700 }}>{inv.invoice_ref}</td>
-                    <td style={{ fontSize: 12 }}>{inv.invoice_date ? new Date(inv.invoice_date).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</td>
-                    <td style={{ fontSize: 13 }}>{inv.fin_suppliers?.supplier_name || inv.supplier_code}</td>
-                    <td className="mono" style={{ fontSize: 11 }}>{inv.supplier_invoice_no || '—'}</td>
-                    <td style={{ fontSize: 12 }}>{inv.due_date ? new Date(inv.due_date).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</td>
-                    <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 13 }}>{fmt(inv.total_incl_vat)}</td>
-                    <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 13, color: (inv.balance_due || 0) > 0 ? '#e53e3e' : '#059669' }}>{fmt(inv.balance_due)}</td>
-                    <td><span className={`badge ${STATUS_COLOR[inv.status] || 'badge-gray'}`} style={{ fontSize: 10 }}>{inv.status}</span></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
-
+      {/* Capture Invoice Modal (from PO) */}
       {captureModal && (
         <div className="modal-overlay" onClick={() => setCapture(null)}>
-          <div className="modal" style={{ maxWidth: 500 }} onClick={e => e.stopPropagation()}>
+          <div className="modal" style={{ maxWidth: 520 }} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h3>Capture Supplier Invoice — {captureModal.po_number}</h3>
               <button onClick={() => setCapture(null)} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', fontSize: 18 }}>✕</button>
@@ -346,21 +412,22 @@ function SupplierInvoicesTab({ suppliers, periods }) {
               {saveErr && <div style={{ background: '#fff5f5', border: '1px solid #fca5a5', borderRadius: 4, padding: '8px 12px', marginBottom: 12, color: '#e53e3e', fontSize: 13 }}>⚠ {saveErr}</div>}
               <div style={{ background: '#f0f7ff', borderRadius: 6, padding: '10px 12px', marginBottom: 14, fontSize: 13 }}>
                 <div><strong>Supplier:</strong> {captureModal.supplier_name}</div>
-                <div><strong>PO Description:</strong> {captureModal.po_description}</div>
+                <div><strong>PO:</strong> {captureModal.po_number} — {captureModal.po_description}</div>
                 <div><strong>Total:</strong> {fmt(captureModal.total_incl_vat)} (incl VAT)</div>
-                <div style={{ marginTop: 6, fontSize: 12, color: '#1e40af' }}>
-                  ℹ️ Capturing this invoice will <strong>approve the PO</strong> and create the supplier invoice record.
-                </div>
+                <div style={{ marginTop: 6, fontSize: 12, color: '#1e40af' }}>ℹ️ Capturing this invoice will <strong>approve the PO</strong> and create the AP invoice record.</div>
               </div>
               <div className="form-row">
-                <div className="form-group"><label>Supplier Invoice No</label>
+                <div className="form-group">
+                  <label>Supplier Invoice No *</label>
                   <input value={form.supplier_invoice_no} onChange={e => set('supplier_invoice_no', e.target.value)} placeholder="Supplier's own invoice number" />
                 </div>
-                <div className="form-group"><label>Invoice Date</label>
+                <div className="form-group">
+                  <label>Invoice Date</label>
                   <input type="date" value={form.invoice_date} onChange={e => set('invoice_date', e.target.value)} />
                 </div>
               </div>
-              <div className="form-group"><label>GL Period *</label>
+              <div className="form-group">
+                <label>GL Period *</label>
                 <select value={form.period_id} onChange={e => set('period_id', e.target.value)}>
                   <option value="">— Select period —</option>
                   {periods.map(p => <option key={p.period_id} value={p.period_id}>{p.period_name}</option>)}
@@ -375,52 +442,63 @@ function SupplierInvoicesTab({ suppliers, periods }) {
         </div>
       )}
 
-      {invModal && (
-        <div className="modal-overlay" onClick={() => setInvModal(false)}>
-          <div className="modal" style={{ maxWidth: 500 }} onClick={e => e.stopPropagation()}>
+      {/* New Standalone Invoice Modal */}
+      {showNew && (
+        <div className="modal-overlay" onClick={() => setShowNew(false)}>
+          <div className="modal" style={{ maxWidth: 560 }} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h3>New Supplier Invoice</h3>
-              <button onClick={() => setInvModal(false)} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', fontSize: 18 }}>✕</button>
+              <button onClick={() => setShowNew(false)} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', fontSize: 18 }}>✕</button>
             </div>
             <div className="modal-body">
               {saveErr && <div style={{ background: '#fff5f5', border: '1px solid #fca5a5', borderRadius: 4, padding: '8px 12px', marginBottom: 12, color: '#e53e3e', fontSize: 13 }}>⚠ {saveErr}</div>}
-              <div className="form-group"><label>Supplier *</label>
-                <select value={form.supplier_code} onChange={e => set('supplier_code', e.target.value)}>
-                  <option value="">— Select supplier —</option>
-                  {suppliers.map(s => <option key={s.supplier_code} value={s.supplier_code}>{s.supplier_code} — {s.supplier_name}</option>)}
-                </select>
+              <div className="form-row">
+                <div className="form-group" style={{ flex: '1 1 220px' }}>
+                  <label>Supplier *</label>
+                  <select value={form.supplier_code} onChange={e => set('supplier_code', e.target.value)} style={{ width: '100%' }}>
+                    <option value="">— Select supplier —</option>
+                    {suppliers.map(s => <option key={s.supplier_code} value={s.supplier_code}>{s.supplier_code} — {s.supplier_name}</option>)}
+                  </select>
+                </div>
+                <div className="form-group" style={{ flex: '1 1 180px' }}>
+                  <label>Supplier Invoice No *</label>
+                  <input value={form.supplier_invoice_no} onChange={e => set('supplier_invoice_no', e.target.value)} placeholder="e.g. INV-001" />
+                </div>
               </div>
               <div className="form-row">
-                <div className="form-group"><label>Supplier Invoice No</label>
-                  <input value={form.supplier_invoice_no} onChange={e => set('supplier_invoice_no', e.target.value)} />
-                </div>
-                <div className="form-group"><label>Invoice Date *</label>
+                <div className="form-group">
+                  <label>Invoice Date *</label>
                   <input type="date" value={form.invoice_date} onChange={e => set('invoice_date', e.target.value)} />
                 </div>
-              </div>
-              <div className="form-group"><label>GL Period *</label>
-                <select value={form.period_id} onChange={e => set('period_id', e.target.value)}>
-                  <option value="">— Select period —</option>
-                  {periods.map(p => <option key={p.period_id} value={p.period_id}>{p.period_name}</option>)}
-                </select>
+                <div className="form-group">
+                  <label>GL Period *</label>
+                  <select value={form.period_id} onChange={e => set('period_id', e.target.value)}>
+                    <option value="">— Select period —</option>
+                    {periods.map(p => <option key={p.period_id} value={p.period_id}>{p.period_name}</option>)}
+                  </select>
+                </div>
               </div>
               <div className="form-row">
-                <div className="form-group"><label>Amount Excl VAT (R)</label>
-                  <input type="number" value={form.subtotal_excl_vat} onChange={e => calcTotals(e.target.value)} step="0.01" />
+                <div className="form-group">
+                  <label>Amount Excl VAT (R)</label>
+                  <input type="number" value={form.subtotal_excl_vat} onChange={e => calcTotals(e.target.value)} step="0.01" placeholder="0.00" />
                 </div>
-                <div className="form-group"><label>VAT (R)</label>
-                  <input type="number" value={form.vat_amount} onChange={e => set('vat_amount', e.target.value)} step="0.01" />
+                <div className="form-group">
+                  <label>VAT (R)</label>
+                  <input type="number" value={form.vat_amount} onChange={e => set('vat_amount', e.target.value)} step="0.01" placeholder="0.00" />
                 </div>
-                <div className="form-group"><label>Total Incl VAT (R) *</label>
-                  <input type="number" value={form.total_incl_vat} onChange={e => set('total_incl_vat', e.target.value)} step="0.01" />
+                <div className="form-group">
+                  <label>Total Incl VAT (R) *</label>
+                  <input type="number" value={form.total_incl_vat} onChange={e => set('total_incl_vat', e.target.value)} step="0.01" placeholder="0.00" />
                 </div>
               </div>
-              <div className="form-group"><label>Document / SharePoint Link</label>
+              <div className="form-group">
+                <label>Document / SharePoint Link</label>
                 <input value={form.document_ref} onChange={e => set('document_ref', e.target.value)} placeholder="OneDrive URL or reference" />
               </div>
             </div>
             <div className="modal-footer">
-              <button className="btn" onClick={() => setInvModal(false)}>Cancel</button>
+              <button className="btn" onClick={() => setShowNew(false)}>Cancel</button>
               <button className="btn btn-primary" onClick={createInvoice} disabled={saving}>{saving ? 'Saving…' : 'Create Invoice'}</button>
             </div>
           </div>
