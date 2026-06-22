@@ -24,16 +24,41 @@ function InlinePOEditor({ po, lines: existingLines, suppliers, vehicles, onSave,
   const buildForm = useCallback(() => {
     const sup = suppliers.find(s => s.supplier_code === po.supplier_code);
     const vatReg = !!(sup?.vat_number || sup?.vat_enabled || po.vat_number);
+
     const lines = (existingLines || []).length > 0
-      ? existingLines.map(l => ({
-          typeCategory: l.line_type === 'INVENTORY' ? 'INVENTORY' : 'HORSE',
-          type: '',
-          description: l.description || '',
-          excl: l.line_total_excl != null ? String(l.line_total_excl) : '',
-          vat:  l.vat_amount      != null ? String(l.vat_amount)      : '',
-          incl: l.line_total_incl != null ? String(l.line_total_incl) : '',
-        }))
+      ? existingLines.map(l => {
+          // Determine category from stored line_type
+          let typeCategory = 'HORSE';
+          if (l.line_type === 'INVENTORY') typeCategory = 'INVENTORY';
+          else if (l.line_type === 'TRAILER') typeCategory = 'TRAILER';
+
+          // Recover vehicle/trailer code: stored in item_code, or infer from vehicle lists
+          // The backend stores the selected vh_code in item_code when available
+          let type = l.item_code || '';
+
+          // If item_code not set, try to match against known vehicle lists via description
+          // (best-effort — user can correct if wrong)
+          if (!type && typeCategory !== 'INVENTORY') {
+            const descUpper = (l.description || '').toUpperCase();
+            // Check horse pattern e.g. "MH202", "RH08"
+            const horseMatch = descUpper.match(/(MH|RH)\d+/);
+            const trailerMatch = descUpper.match(/(BT|ST)\d+/);
+            if (trailerMatch) { typeCategory = 'TRAILER'; type = trailerMatch[0]; }
+            else if (horseMatch) { typeCategory = 'HORSE'; type = horseMatch[0]; }
+            else type = typeCategory === 'HORSE' ? 'GENERAL_HORSE' : 'GENERAL_TRAILER';
+          }
+
+          return {
+            typeCategory,
+            type,
+            description: l.description || '',
+            excl: l.line_total_excl != null ? String(l.line_total_excl) : '',
+            vat:  l.vat_amount      != null ? String(l.vat_amount)      : '',
+            incl: l.line_total_incl != null ? String(l.line_total_incl) : '',
+          };
+        })
       : DEFAULT_LINES();
+
     return {
       supplier_code: po.supplier_code || '',
       supplier_name: po.supplier_name || '',
@@ -144,16 +169,18 @@ function InlinePOEditor({ po, lines: existingLines, suppliers, vehicles, onSave,
                   <td style={{ padding: '3px 5px' }}>
                     {l.typeCategory === 'HORSE' && (
                       <select value={l.type} onChange={e => setLine(i, 'type', e.target.value)}
-                        style={{ width: '100%', fontSize: 10, border: '1px solid #cbd5e0', borderRadius: 3, padding: '2px 3px' }}>
-                        <option value="">— Select horse —</option>
+                        style={{ width: '100%', fontSize: 10, borderRadius: 3, padding: '2px 3px',
+                                 border: !l.type ? '1px solid #e53e3e' : '1px solid #cbd5e0' }}>
+                        <option value="">— Select horse * —</option>
                         {vehicleOptions.map(v => <option key={v.vh_code} value={v.vh_code}>{v.vh_code}{v.vh_display_name ? ' — ' + v.vh_display_name : ''}</option>)}
                         <option value="GENERAL_HORSE">General / Unspecified</option>
                       </select>
                     )}
                     {l.typeCategory === 'TRAILER' && (
                       <select value={l.type} onChange={e => setLine(i, 'type', e.target.value)}
-                        style={{ width: '100%', fontSize: 10, border: '1px solid #cbd5e0', borderRadius: 3, padding: '2px 3px' }}>
-                        <option value="">— Select trailer —</option>
+                        style={{ width: '100%', fontSize: 10, borderRadius: 3, padding: '2px 3px',
+                                 border: !l.type ? '1px solid #e53e3e' : '1px solid #cbd5e0' }}>
+                        <option value="">— Select trailer * —</option>
                         {trailerOptions.map(v => <option key={v.vh_code} value={v.vh_code}>{v.vh_code}{v.vh_display_name ? ' — ' + v.vh_display_name : ''}</option>)}
                         <option value="GENERAL_TRAILER">General / Unspecified</option>
                       </select>
@@ -204,7 +231,28 @@ function InlinePOEditor({ po, lines: existingLines, suppliers, vehicles, onSave,
       {/* Save / Cancel */}
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
         <button className="btn btn-sm" onClick={onCancel} disabled={saving}>Cancel</button>
-        <button className="btn btn-primary btn-sm" onClick={() => onSave(form, totalExcl, totalVat, totalIncl)} disabled={saving}>
+        <button className="btn btn-primary btn-sm" onClick={() => {
+          // Validate: supplier required
+          if (!form.supplier_code) { alert('Supplier is required'); return; }
+          // Validate lines
+          const activeLines = (form.lines || []).filter(l => l.description.trim() || l.excl);
+          if (!activeLines.length) { alert('At least one line with a description is required'); return; }
+          const badLine = activeLines.find(l => {
+            if (l.typeCategory === 'INVENTORY') return !l.description.trim();
+            // Horse and Trailer require an item selection
+            return !l.type || !l.description.trim();
+          });
+          if (badLine) {
+            const idx = activeLines.indexOf(badLine) + 1;
+            if (!badLine.type && badLine.typeCategory !== 'INVENTORY') {
+              alert(`Line ${idx}: please select a ${badLine.typeCategory === 'HORSE' ? 'horse' : 'trailer'} from the Item column.`);
+            } else {
+              alert(`Line ${idx}: description is required.`);
+            }
+            return;
+          }
+          onSave(form, totalExcl, totalVat, totalIncl);
+        }} disabled={saving}>
           {saving ? 'Saving…' : '💾 Save Changes'}
         </button>
       </div>
@@ -282,6 +330,7 @@ export default function PurchaseOrders() {
       const apiLines = lines.map((l, i) => ({
         line_number: i + 1, line_type: l.typeCategory === 'INVENTORY' ? 'INVENTORY' : 'COST',
         description: l.description, quantity: 1,
+        item_code: (l.typeCategory !== 'INVENTORY' && l.type && !['GENERAL_HORSE','GENERAL_TRAILER'].includes(l.type)) ? l.type : null,
         unit_price_excl: parseFloat(l.excl) || 0,
         vat_type: form.supplier_vat ? 'IN_STD' : null,
         vat_amount: parseFloat(l.vat) || 0,
@@ -315,6 +364,7 @@ export default function PurchaseOrders() {
       const apiLines = lines.map((l, i) => ({
         line_number: i + 1, line_type: l.typeCategory === 'INVENTORY' ? 'INVENTORY' : 'COST',
         description: l.description, quantity: 1,
+        item_code: (l.typeCategory !== 'INVENTORY' && l.type && !['GENERAL_HORSE','GENERAL_TRAILER'].includes(l.type)) ? l.type : null,
         unit_price_excl: parseFloat(l.excl) || 0,
         vat_type: form.supplier_vat ? 'IN_STD' : null,
         vat_amount: parseFloat(l.vat) || 0,
@@ -344,6 +394,18 @@ export default function PurchaseOrders() {
     setActionErr('');
     if (!detail?.po?.supplier_invoice_no) {
       setActionErr('Supplier invoice number is required before submitting for approval.');
+      return;
+    }
+    // Validate lines before submit — no empty items allowed
+    const lines = detail?.lines || [];
+    if (!lines.length) { setActionErr('PO has no line items — please edit the PO and add at least one line.'); return; }
+    const badLine = lines.find(l => {
+      if (l.line_type === 'INVENTORY') return !l.description?.trim();
+      // COST lines (horse/trailer) require a description; item is stored in description
+      return !l.description?.trim();
+    });
+    if (badLine) {
+      setActionErr(`Line ${badLine.line_number}: description is missing. Please edit the PO before submitting.`);
       return;
     }
     setApproving(true);
