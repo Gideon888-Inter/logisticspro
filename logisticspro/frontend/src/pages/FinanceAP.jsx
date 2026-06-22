@@ -411,7 +411,6 @@ function SupplierInvoicesTab({ suppliers, periods }) {
               <button className="btn btn-primary" onClick={captureFromPO} disabled={saving}>{saving ? 'Capturing…' : '📥 Capture & Approve PO'}</button>
             </div>
           </div>
-          </div>
         </div>
       )}
 
@@ -748,8 +747,10 @@ export default function FinanceAP() {
         </div>
       )}
     </div>
+  </div>
   );
 }
+
 
 
 
