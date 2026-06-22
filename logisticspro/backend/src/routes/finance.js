@@ -529,24 +529,46 @@ router.get('/suppliers', requireFin, async (req, res) => {
 
 // POST /fin/suppliers — create supplier
 router.post('/suppliers', requireFin, async (req, res) => {
-  const { supplier_code, supplier_name, group_terms, telephone, email, vat_number, payment_terms_days, gl_control_account, city } = req.body;
+  const { supplier_code, supplier_name, telephone, email, vat_number, vat_enabled, payment_terms_days, credit_limit } = req.body;
   if (!supplier_code?.trim()) return res.status(400).json({ error: 'supplier_code is required' });
   if (!supplier_name?.trim()) return res.status(400).json({ error: 'supplier_name is required' });
   const { data, error } = await supabase.from('fin_suppliers').insert({
     supplier_code:       supplier_code.trim().toUpperCase(),
     supplier_name:       supplier_name.trim(),
-    group_terms:         group_terms || null,
     telephone:           telephone   || null,
     email:               email       || null,
     vat_number:          vat_number  || null,
+    vat_enabled:         !!vat_enabled,
     payment_terms_days:  parseInt(payment_terms_days) || 30,
-    gl_control_account:  gl_control_account || '2000',
-    city:                city        || null,
+    gl_control_account:  '2000',
+    credit_limit:        parseFloat(credit_limit) || null,
     active:              true,
     on_hold:             false,
     workshop_allowed:    false,
     created_by:          req.user.username,
   }).select().single();
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data);
+});
+
+// PATCH /fin/suppliers/:code — edit supplier details
+router.patch('/suppliers/:code', requireFin, async (req, res) => {
+  const { supplier_name, telephone, email, vat_number, vat_enabled, payment_terms_days, credit_limit } = req.body;
+  const updates = {};
+  if (supplier_name      !== undefined) updates.supplier_name      = supplier_name.trim();
+  if (telephone          !== undefined) updates.telephone          = telephone || null;
+  if (email              !== undefined) updates.email              = email || null;
+  if (vat_number         !== undefined) updates.vat_number         = vat_number || null;
+  if (vat_enabled        !== undefined) updates.vat_enabled        = !!vat_enabled;
+  if (payment_terms_days !== undefined) updates.payment_terms_days = parseInt(payment_terms_days) || 30;
+  if (credit_limit       !== undefined) updates.credit_limit       = parseFloat(credit_limit) || null;
+  if (!Object.keys(updates).length) return res.status(400).json({ error: 'No fields to update' });
+  const { data, error } = await supabase
+    .from('fin_suppliers')
+    .update(updates)
+    .eq('supplier_code', req.params.code)
+    .select()
+    .single();
   if (error) return res.status(400).json({ error: error.message });
   res.json(data);
 });
