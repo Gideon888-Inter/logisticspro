@@ -21,7 +21,6 @@ function ExportBar({ onCSV }) {
   return (
     <div style={{ display: 'flex', gap: 6, marginBottom: 10, justifyContent: 'flex-end' }}>
       <button className="btn btn-sm" onClick={onCSV}>⬇ CSV</button>
-      <button className="btn btn-sm" onClick={onCSV}>⬇ Excel</button>
       <button className="btn btn-sm" onClick={() => window.print()}>🖨 Print</button>
     </div>
   );
