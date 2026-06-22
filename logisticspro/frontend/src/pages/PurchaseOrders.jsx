@@ -33,7 +33,7 @@ export default function PurchaseOrders() {
   const [saving, setSaving]         = useState(false);
   const [approving, setApproving]   = useState(false);
 
-  const EMPTY_LINE = { type: 'VEHICLE', description: '', excl: '', vat: '', incl: '' };
+  const EMPTY_LINE = { typeCategory: 'HORSE', type: '', description: '', excl: '', vat: '', incl: '' };
   const [form, setForm] = useState({
     supplier_code: '', supplier_name: '', supplier_vat: '',
     lines: [{ ...EMPTY_LINE }],
@@ -75,6 +75,10 @@ export default function PurchaseOrders() {
   const setLine = (i, k, v) => {
     setForm(f => {
       const lines = (f.lines || []).map((l, idx) => idx !== i ? l : { ...l, [k]: v });
+      if (k === 'typeCategory') {
+        // Reset the specific item when category changes
+        lines[i] = { ...lines[i], typeCategory: v, type: '' };
+      }
       if (k === 'excl') {
         const excl = parseFloat(v) || 0;
         const isVatReg = !!f.supplier_vat;
@@ -111,7 +115,7 @@ export default function PurchaseOrders() {
     try {
       const apiLines = lines.map((l, i) => ({
         line_number:     i + 1,
-        line_type:       l.type === 'INVENTORY' ? 'INVENTORY' : 'COST',
+        line_type:       l.typeCategory === 'INVENTORY' ? 'INVENTORY' : 'COST',
         description:     l.description,
         quantity:        1,
         unit_price_excl: parseFloat(l.excl) || 0,
@@ -125,7 +129,7 @@ export default function PurchaseOrders() {
         body: JSON.stringify({
           supplier_code:     form.supplier_code,
           supplier_name:     form.supplier_name,
-          allocation_type:   lines.some(l => l.type === 'INVENTORY') ? 'INVENTORY' : 'VEHICLE',
+          allocation_type:   lines.some(l => l.typeCategory === 'INVENTORY') ? 'INVENTORY' : 'VEHICLE',
           po_description:    lines.map(l => l.description).filter(Boolean).join('; '),
           subtotal_excl_vat: totalExcl,
           vat_amount:        totalVat,
@@ -339,7 +343,8 @@ export default function PurchaseOrders() {
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 620 }}>
                     <thead>
                       <tr style={{ background: '#1e3a5f', color: 'white' }}>
-                        <th style={{ padding: '7px 8px', textAlign: 'left', width: 170 }}>Vehicle / Type</th>
+                        <th style={{ padding: '7px 8px', textAlign: 'left', width: 120 }}>Type</th>
+                        <th style={{ padding: '7px 8px', textAlign: 'left', width: 180 }}>Item</th>
                         <th style={{ padding: '7px 8px', textAlign: 'left' }}>Description *</th>
                         <th style={{ padding: '7px 8px', textAlign: 'right', width: 115 }}>Excl VAT (R)</th>
                         <th style={{ padding: '7px 8px', textAlign: 'right', width: 100 }}>VAT (R)</th>
@@ -351,27 +356,37 @@ export default function PurchaseOrders() {
                       {(form.lines || []).map((l, i) => (
                         <tr key={i} style={{ borderBottom: '1px solid #e2e8f0', background: i % 2 === 0 ? 'white' : '#f7f9fc' }}>
                           <td style={{ padding: '4px 6px' }}>
-                            <select value={l.type} onChange={e => setLine(i, 'type', e.target.value)}
+                            <select value={l.typeCategory} onChange={e => setLine(i, 'typeCategory', e.target.value)}
                               style={{ width: '100%', fontSize: 11, border: '1px solid #cbd5e0', borderRadius: 3, padding: '3px 4px' }}>
-                              {vehicleOptions.length > 0 && (
-                                <optgroup label="Vehicles (MH / RH)">
-                                  {vehicleOptions.map(v => (
-                                    <option key={v.vh_code} value={v.vh_code}>{v.vh_code}{v.vh_display_name ? ' — ' + v.vh_display_name : ''}</option>
-                                  ))}
-                                </optgroup>
-                              )}
-                              {trailerOptions.length > 0 && (
-                                <optgroup label="Trailers (BT / ST)">
-                                  {trailerOptions.map(v => (
-                                    <option key={v.vh_code} value={v.vh_code}>{v.vh_code}{v.vh_display_name ? ' — ' + v.vh_display_name : ''}</option>
-                                  ))}
-                                </optgroup>
-                              )}
-                              <optgroup label="Other">
-                                <option value="INVENTORY">Inventory / Stock</option>
-                                <option value="VEHICLE">General Vehicle</option>
-                              </optgroup>
+                              <option value="HORSE">Horse</option>
+                              <option value="TRAILER">Trailer</option>
+                              <option value="INVENTORY">Inventory</option>
                             </select>
+                          </td>
+                          <td style={{ padding: '4px 6px' }}>
+                            {l.typeCategory === 'HORSE' && (
+                              <select value={l.type} onChange={e => setLine(i, 'type', e.target.value)}
+                                style={{ width: '100%', fontSize: 11, border: '1px solid #cbd5e0', borderRadius: 3, padding: '3px 4px' }}>
+                                <option value="">— Select horse —</option>
+                                {vehicleOptions.map(v => (
+                                  <option key={v.vh_code} value={v.vh_code}>{v.vh_code}{v.vh_display_name ? ' — ' + v.vh_display_name : ''}</option>
+                                ))}
+                                <option value="GENERAL_HORSE">General / Unspecified</option>
+                              </select>
+                            )}
+                            {l.typeCategory === 'TRAILER' && (
+                              <select value={l.type} onChange={e => setLine(i, 'type', e.target.value)}
+                                style={{ width: '100%', fontSize: 11, border: '1px solid #cbd5e0', borderRadius: 3, padding: '3px 4px' }}>
+                                <option value="">— Select trailer —</option>
+                                {trailerOptions.map(v => (
+                                  <option key={v.vh_code} value={v.vh_code}>{v.vh_code}{v.vh_display_name ? ' — ' + v.vh_display_name : ''}</option>
+                                ))}
+                                <option value="GENERAL_TRAILER">General / Unspecified</option>
+                              </select>
+                            )}
+                            {l.typeCategory === 'INVENTORY' && (
+                              <span style={{ fontSize: 11, color: '#059669', padding: '3px 4px', display: 'block' }}>Stock / Parts</span>
+                            )}
                           </td>
                           <td style={{ padding: '4px 6px' }}>
                             <input value={l.description} onChange={e => setLine(i, 'description', e.target.value)}
@@ -403,7 +418,7 @@ export default function PurchaseOrders() {
                     </tbody>
                     <tfoot>
                       <tr style={{ background: '#1e3a5f', color: 'white', fontWeight: 700 }}>
-                        <td colSpan={2} style={{ padding: '7px 8px', textAlign: 'right', fontSize: 12 }}>TOTALS</td>
+                        <td colSpan={3} style={{ padding: '7px 8px', textAlign: 'right', fontSize: 12 }}>TOTALS</td>
                         <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'monospace' }}>R {totalExcl.toFixed(2)}</td>
                         <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'monospace', color: '#fbd38d' }}>{totalVat > 0 ? 'R ' + totalVat.toFixed(2) : '—'}</td>
                         <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'monospace', color: '#90cdf4' }}>R {totalIncl.toFixed(2)}</td>
@@ -430,3 +445,4 @@ export default function PurchaseOrders() {
     </div>
   );
 }
+
