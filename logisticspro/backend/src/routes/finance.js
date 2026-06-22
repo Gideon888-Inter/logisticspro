@@ -2371,7 +2371,7 @@ router.get('/ap/invoices', requireFin, async (req, res) => {
 router.get('/ap/invoices/pending-pos', requireFin, async (req, res) => {
   const { data, error } = await supabase
     .from('lp_purchase_orders')
-    .select('po_id, po_number, supplier_code, supplier_name, po_description, total_incl_vat, subtotal_excl_vat, vat_amount, created_by, submitted_at, attachment_filename, onedrive_url')
+    .select('po_id, po_number, supplier_code, supplier_name, po_description, total_incl_vat, subtotal_excl_vat, vat_amount, supplier_invoice_no, created_by, submitted_at, attachment_filename, onedrive_url')
     .eq('status', 'PENDING_FINANCIAL')
     .order('submitted_at');
   if (error) return res.status(500).json({ error: error.message });
