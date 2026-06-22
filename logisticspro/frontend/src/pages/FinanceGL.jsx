@@ -488,7 +488,7 @@ function AccountTransactions() {
 
 // ── GL JOURNALS ────────────────────────────────────────────────────────────
 // New line shape: date, journalRef (display), description, module (AR/AP/GL),
-// account (filtered by module), debit, credit, vatApplicable, vatType, vatAmount
+// account (filtered by module), side (DR/CR), incl_amount, vat_type, vat_amount (auto), excl_amount (auto)
 function GLJournals({ user }) {
   const isAdmin  = user?.role === 'ADMIN' || user?.role === 'FINANCE';
   const [journals,  setJournals]  = useState([]);
@@ -508,8 +508,9 @@ function GLJournals({ user }) {
   const today = new Date().toISOString().slice(0,10);
   const [hdr, setHdr] = useState({ description: '', period_id: '', journal_date: today });
 
-  // Journal lines — each line is a full sub-ledger entry
-  const EMPTY_LINE = { date: today, description: '', module: 'GL', account_code: '', debit: '', credit: '', vatApplicable: false, vat_type: '', vat_amount: '0' };
+  // Journal lines — incl_amount is the editable value (inclusive of VAT if applicable)
+  // vat_amount and excl_amount are derived automatically from the selected VAT type rate
+  const EMPTY_LINE = { date: today, description: '', module: 'GL', account_code: '', side: 'debit', incl_amount: '', vat_type: '', vat_amount: '0', excl_amount: '' };
   const [lines, setLines] = useState([{ ...EMPTY_LINE }, { ...EMPTY_LINE }]);
 
   useEffect(() => { load(); loadSupport(); }, []);
@@ -545,19 +546,54 @@ function GLJournals({ user }) {
     setDetail(data);
   };
 
-  // When a line's module changes, clear the account
+  // Helper: recalculate vat_amount and excl_amount from incl_amount + vat_type rate
+  const calcVat = (inclStr, vat_type) => {
+    const incl = parseFloat(inclStr) || 0;
+    if (!vat_type) return { vat_amount: '0', excl_amount: incl.toFixed(2) };
+    const vt = vatTypes.find(v => v.vat_code === vat_type);
+    const rate = vt ? Number(vt.rate_pct) : 0;
+    if (rate === 0) return { vat_amount: '0', excl_amount: incl.toFixed(2) };
+    const excl = incl / (1 + rate / 100);
+    const vat  = incl - excl;
+    return { vat_amount: vat.toFixed(2), excl_amount: excl.toFixed(2) };
+  };
+
+  // Build VAT type options filtered to what the selected GL account allows
+  const vatOptionsFor = (account_code, module) => {
+    if (module !== 'GL') return vatTypes; // AP/AR lines: show all
+    const acct = glAccounts.find(a => a.account_code === account_code);
+    if (!acct || !acct.allowed_vat_codes) return [];
+    const allowed = acct.allowed_vat_codes.split(',').map(s => s.trim()).filter(Boolean);
+    if (!allowed.length) return [];
+    return vatTypes.filter(v => allowed.includes(v.vat_code));
+  };
+
+  // When a line changes, cascade: module → clear account; vat_type or incl → recalc
   const setLine = (i, k, v) => {
     setLines(prev => {
       const next = prev.map((l, idx) => idx !== i ? l : { ...l, [k]: v });
       const line = next[i];
-      // Auto-copy date and description from the line above
-      if (k === 'module') next[i].account_code = '';
-      // Recalculate VAT amount when debit/credit changes
-      if ((k === 'debit' || k === 'credit') && line.vatApplicable && line.vat_type) {
-        const amt = parseFloat(v) || 0;
-        next[i].vat_amount = (amt * 15 / 115).toFixed(2);
+      if (k === 'module') { next[i].account_code = ''; next[i].vat_type = ''; next[i].vat_amount = '0'; next[i].excl_amount = ''; }
+      if (k === 'account_code') {
+        // When account changes, reset VAT if the new account doesn't allow current vat_type
+        const allowed = vatOptionsFor(v, line.module);
+        if (line.vat_type && !allowed.find(vt => vt.vat_code === line.vat_type)) {
+          next[i].vat_type = '';
+          next[i].vat_amount = '0';
+          const incl = parseFloat(line.incl_amount) || 0;
+          next[i].excl_amount = incl.toFixed(2);
+        }
       }
-      if (k === 'vatApplicable' && !v) { next[i].vat_type = ''; next[i].vat_amount = '0'; }
+      if (k === 'vat_type') {
+        const { vat_amount, excl_amount } = calcVat(line.incl_amount, v);
+        next[i].vat_amount  = vat_amount;
+        next[i].excl_amount = excl_amount;
+      }
+      if (k === 'incl_amount') {
+        const { vat_amount, excl_amount } = calcVat(v, line.vat_type);
+        next[i].vat_amount  = vat_amount;
+        next[i].excl_amount = excl_amount;
+      }
       return next;
     });
   };
@@ -574,8 +610,9 @@ function GLJournals({ user }) {
     setLines(prev => prev.filter((_, idx) => idx !== i));
   };
 
-  const totalDR  = lines.reduce((s, l) => s + (parseFloat(l.debit)  || 0), 0);
-  const totalCR  = lines.reduce((s, l) => s + (parseFloat(l.credit) || 0), 0);
+  // Totals operate on the inclusive amount, split by side (debit/credit)
+  const totalDR  = lines.reduce((s, l) => s + (l.side === 'debit'  ? (parseFloat(l.incl_amount) || 0) : 0), 0);
+  const totalCR  = lines.reduce((s, l) => s + (l.side === 'credit' ? (parseFloat(l.incl_amount) || 0) : 0), 0);
   const balanced = Math.abs(totalDR - totalCR) < 0.01 && totalDR > 0;
 
   // Build the account dropdown options based on module selection
@@ -592,23 +629,25 @@ function GLJournals({ user }) {
     if (!hdr.journal_date)        return setSaveErr('Date is required');
     if (lines.length < 2)         return setSaveErr('At least 2 lines required');
     for (let i = 0; i < lines.length; i++) {
-      if (!lines[i].account_code) return setSaveErr(`Line ${i + 1}: account is required`);
-      if (!lines[i].debit && !lines[i].credit) return setSaveErr(`Line ${i + 1}: debit or credit amount required`);
+      if (!lines[i].account_code)  return setSaveErr(`Line ${i + 1}: account is required`);
+      if (!lines[i].incl_amount)   return setSaveErr(`Line ${i + 1}: amount is required`);
     }
     if (!balanced) return setSaveErr(`Journal not balanced — DR: ${fmt(totalDR)}, CR: ${fmt(totalCR)}`);
     setSaving(true);
 
-    // Map lines to the API format
-    const apiLines = lines.map(l => ({
-      account_code: l.account_code,
-      description:  l.description || hdr.description,
-      debit:        parseFloat(l.debit)  || 0,
-      credit:       parseFloat(l.credit) || 0,
-      vat_type:     l.vatApplicable && l.vat_type ? l.vat_type : null,
-      vat_amount:   l.vatApplicable ? (parseFloat(l.vat_amount) || 0) : 0,
-      // Store module on the line as a reference field
-      reference:    l.module !== 'GL' ? l.module : null,
-    }));
+    // Map lines to the API format — debit/credit determined by side
+    const apiLines = lines.map(l => {
+      const incl = parseFloat(l.incl_amount) || 0;
+      return {
+        account_code: l.account_code,
+        description:  l.description || hdr.description,
+        debit:        l.side === 'debit'  ? incl : 0,
+        credit:       l.side === 'credit' ? incl : 0,
+        vat_type:     l.vat_type || null,
+        vat_amount:   parseFloat(l.vat_amount) || 0,
+        reference:    l.module !== 'GL' ? l.module : null,
+      };
+    });
 
     const result = await req('/fin/journals', {
       method: 'POST',
@@ -736,115 +775,131 @@ function GLJournals({ user }) {
                 </div>
               </div>
 
-              {/* Line Entry Table */}
+              {/* Sage-style batch entry grid */}
               <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse', minWidth: 900 }}>
                   <thead>
-                    <tr style={{ background: '#f0f4f8' }}>
-                      <th style={{ padding: '6px 4px', textAlign: 'left', width: 110 }}>Date</th>
-                      <th style={{ padding: '6px 4px', textAlign: 'left', minWidth: 160 }}>Description</th>
-                      <th style={{ padding: '6px 4px', textAlign: 'left', width: 70 }}>Module</th>
-                      <th style={{ padding: '6px 4px', textAlign: 'left', minWidth: 200 }}>Account</th>
-                      <th style={{ padding: '6px 4px', textAlign: 'right', width: 110 }}>Debit</th>
-                      <th style={{ padding: '6px 4px', textAlign: 'right', width: 110 }}>Credit</th>
-                      <th style={{ padding: '6px 4px', textAlign: 'center', width: 50 }}>VAT?</th>
-                      <th style={{ padding: '6px 4px', textAlign: 'left', width: 130 }}>VAT Type</th>
-                      <th style={{ padding: '6px 4px', textAlign: 'right', width: 90 }}>VAT Amt</th>
-                      <th style={{ width: 28 }}></th>
+                    <tr style={{ background: '#1e3a5f', color: 'white' }}>
+                      <th style={{ padding: '7px 5px', textAlign: 'left', width: 34, fontWeight: 500, fontSize: 11 }}>Line</th>
+                      <th style={{ padding: '7px 5px', textAlign: 'left', width: 108, fontWeight: 500, fontSize: 11 }}>Date</th>
+                      <th style={{ padding: '7px 5px', textAlign: 'left', width: 65, fontWeight: 500, fontSize: 11 }}>Module</th>
+                      <th style={{ padding: '7px 5px', textAlign: 'left', minWidth: 180, fontWeight: 500, fontSize: 11 }}>Account</th>
+                      <th style={{ padding: '7px 5px', textAlign: 'left', minWidth: 150, fontWeight: 500, fontSize: 11 }}>Description</th>
+                      <th style={{ padding: '7px 5px', textAlign: 'left', width: 62, fontWeight: 500, fontSize: 11 }}>DR / CR</th>
+                      <th style={{ padding: '7px 5px', textAlign: 'right', width: 115, fontWeight: 500, fontSize: 11 }}>Incl. Amount</th>
+                      <th style={{ padding: '7px 5px', textAlign: 'left', width: 120, fontWeight: 500, fontSize: 11 }}>VAT Type</th>
+                      <th style={{ padding: '7px 5px', textAlign: 'right', width: 95, fontWeight: 500, fontSize: 11 }}>VAT Amount</th>
+                      <th style={{ padding: '7px 5px', textAlign: 'right', width: 105, fontWeight: 500, fontSize: 11 }}>Excl. Amount</th>
+                      <th style={{ width: 26 }}></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {lines.map((l, i) => (
-                      <tr key={i} style={{ borderBottom: '1px solid #e8edf2', background: i % 2 === 0 ? 'white' : '#fafbfc' }}>
-                        {/* Date — auto-copies from above */}
-                        <td style={{ padding: '4px 4px' }}>
-                          <input type="date" value={l.date || hdr.journal_date}
-                            onChange={e => setLine(i, 'date', e.target.value)}
-                            style={{ width: 108, fontSize: 11 }} />
-                        </td>
-                        {/* Description */}
-                        <td style={{ padding: '4px 4px' }}>
-                          <input value={l.description}
-                            onChange={e => setLine(i, 'description', e.target.value)}
-                            placeholder="Line description…"
-                            style={{ width: '100%', fontSize: 12 }} />
-                        </td>
-                        {/* Module */}
-                        <td style={{ padding: '4px 4px' }}>
-                          <select value={l.module} onChange={e => setLine(i, 'module', e.target.value)}
-                            style={{ width: 68, fontSize: 12 }}>
-                            <option value="GL">GL</option>
-                            <option value="AR">AR</option>
-                            <option value="AP">AP</option>
-                          </select>
-                        </td>
-                        {/* Account filtered by module */}
-                        <td style={{ padding: '4px 4px' }}>
-                          <select value={l.account_code} onChange={e => setLine(i, 'account_code', e.target.value)}
-                            style={{ width: '100%', fontSize: 11 }}>
-                            <option value="">— Select account —</option>
-                            {accountOptions(l.module).map(o => (
-                              <option key={o.value} value={o.value}>{o.label}</option>
-                            ))}
-                          </select>
-                        </td>
-                        {/* Debit */}
-                        <td style={{ padding: '4px 4px' }}>
-                          <input type="number" value={l.debit} onChange={e => setLine(i, 'debit', e.target.value)}
-                            placeholder="0.00" min="0" step="0.01"
-                            style={{ width: '100%', textAlign: 'right', fontSize: 12 }} />
-                        </td>
-                        {/* Credit */}
-                        <td style={{ padding: '4px 4px' }}>
-                          <input type="number" value={l.credit} onChange={e => setLine(i, 'credit', e.target.value)}
-                            placeholder="0.00" min="0" step="0.01"
-                            style={{ width: '100%', textAlign: 'right', fontSize: 12 }} />
-                        </td>
-                        {/* VAT applicable toggle */}
-                        <td style={{ padding: '4px 4px', textAlign: 'center' }}>
-                          <input type="checkbox" checked={l.vatApplicable}
-                            onChange={e => setLine(i, 'vatApplicable', e.target.checked)} />
-                        </td>
-                        {/* VAT Type */}
-                        <td style={{ padding: '4px 4px' }}>
-                          {l.vatApplicable ? (
-                            <select value={l.vat_type} onChange={e => setLine(i, 'vat_type', e.target.value)}
-                              style={{ width: '100%', fontSize: 11 }}>
-                              <option value="">— Type —</option>
-                              {vatTypes.map(v => <option key={v.vat_code} value={v.vat_code}>{v.vat_code} ({v.rate_pct}%)</option>)}
+                    {lines.map((l, i) => {
+                      const allowedVat = vatOptionsFor(l.account_code, l.module);
+                      const rowBg = i % 2 === 0 ? 'white' : '#f7f9fc';
+                      return (
+                        <tr key={i} style={{ borderBottom: '1px solid #e2e8f0', background: rowBg }}>
+                          {/* Line number */}
+                          <td style={{ padding: '3px 5px', color: '#aaa', fontSize: 11, textAlign: 'center' }}>{i + 1}</td>
+                          {/* Date */}
+                          <td style={{ padding: '3px 4px' }}>
+                            <input type="date" value={l.date || hdr.journal_date}
+                              onChange={e => setLine(i, 'date', e.target.value)}
+                              style={{ width: 106, fontSize: 11, border: '1px solid #cbd5e0', borderRadius: 3, padding: '2px 4px' }} />
+                          </td>
+                          {/* Module */}
+                          <td style={{ padding: '3px 4px' }}>
+                            <select value={l.module} onChange={e => setLine(i, 'module', e.target.value)}
+                              style={{ width: 62, fontSize: 11, border: '1px solid #cbd5e0', borderRadius: 3, padding: '2px 3px' }}>
+                              <option value="GL">GL</option>
+                              <option value="AR">AR</option>
+                              <option value="AP">AP</option>
                             </select>
-                          ) : <span style={{ color: '#ccc', fontSize: 11 }}>—</span>}
-                        </td>
-                        {/* VAT Amount */}
-                        <td style={{ padding: '4px 4px' }}>
-                          {l.vatApplicable ? (
-                            <input type="number" value={l.vat_amount}
-                              onChange={e => setLine(i, 'vat_amount', e.target.value)}
-                              style={{ width: '100%', textAlign: 'right', fontSize: 11 }} />
-                          ) : <span style={{ color: '#ccc', fontSize: 11, display: 'block', textAlign: 'right' }}>—</span>}
-                        </td>
-                        {/* Remove line */}
-                        <td style={{ padding: '4px 2px', textAlign: 'center' }}>
-                          <button onClick={() => removeLine(i)}
-                            disabled={lines.length <= 2}
-                            style={{ background: 'none', border: 'none', cursor: lines.length > 2 ? 'pointer' : 'default',
-                                     color: lines.length > 2 ? '#e53e3e' : '#ddd', fontSize: 14 }}>✕</button>
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                          {/* Account */}
+                          <td style={{ padding: '3px 4px' }}>
+                            <select value={l.account_code} onChange={e => setLine(i, 'account_code', e.target.value)}
+                              style={{ width: '100%', fontSize: 11, border: '1px solid #cbd5e0', borderRadius: 3, padding: '2px 3px' }}>
+                              <option value="">— Select —</option>
+                              {accountOptions(l.module).map(o => (
+                                <option key={o.value} value={o.value}>{o.label}</option>
+                              ))}
+                            </select>
+                          </td>
+                          {/* Description */}
+                          <td style={{ padding: '3px 4px' }}>
+                            <input value={l.description}
+                              onChange={e => setLine(i, 'description', e.target.value)}
+                              placeholder="Description…"
+                              style={{ width: '100%', fontSize: 11, border: '1px solid #cbd5e0', borderRadius: 3, padding: '2px 5px' }} />
+                          </td>
+                          {/* DR / CR toggle */}
+                          <td style={{ padding: '3px 4px' }}>
+                            <select value={l.side} onChange={e => setLine(i, 'side', e.target.value)}
+                              style={{ width: 60, fontSize: 11, border: '1px solid #cbd5e0', borderRadius: 3, padding: '2px 3px',
+                                       color: l.side === 'debit' ? '#005A8E' : '#c53030', fontWeight: 600 }}>
+                              <option value="debit">DR</option>
+                              <option value="credit">CR</option>
+                            </select>
+                          </td>
+                          {/* Inclusive amount (editable) */}
+                          <td style={{ padding: '3px 4px' }}>
+                            <input type="number" value={l.incl_amount}
+                              onChange={e => setLine(i, 'incl_amount', e.target.value)}
+                              placeholder="0.00" min="0" step="0.01"
+                              style={{ width: '100%', textAlign: 'right', fontSize: 12, fontWeight: 600,
+                                       border: '1px solid #cbd5e0', borderRadius: 3, padding: '2px 5px',
+                                       color: l.side === 'debit' ? '#005A8E' : '#c53030' }} />
+                          </td>
+                          {/* VAT Type — filtered to account's allowed codes */}
+                          <td style={{ padding: '3px 4px' }}>
+                            {allowedVat.length > 0 || l.module !== 'GL' ? (
+                              <select value={l.vat_type} onChange={e => setLine(i, 'vat_type', e.target.value)}
+                                style={{ width: '100%', fontSize: 11, border: '1px solid #cbd5e0', borderRadius: 3, padding: '2px 3px' }}>
+                                <option value="">— None —</option>
+                                {(l.module !== 'GL' ? vatTypes : allowedVat).map(v => (
+                                  <option key={v.vat_code} value={v.vat_code}>{v.vat_code} — {v.rate_pct}%</option>
+                                ))}
+                              </select>
+                            ) : (
+                              <span style={{ color: '#bbb', fontSize: 11, paddingLeft: 4 }}>N/A</span>
+                            )}
+                          </td>
+                          {/* VAT Amount (auto-calculated, read-only) */}
+                          <td style={{ padding: '3px 4px', textAlign: 'right', fontFamily: 'monospace', fontSize: 12,
+                                       color: parseFloat(l.vat_amount) > 0 ? '#c05621' : '#bbb' }}>
+                            {parseFloat(l.vat_amount) > 0 ? fmt(parseFloat(l.vat_amount)) : '—'}
+                          </td>
+                          {/* Exclusive Amount (auto-calculated, read-only) */}
+                          <td style={{ padding: '3px 4px', textAlign: 'right', fontFamily: 'monospace', fontSize: 12,
+                                       color: '#444' }}>
+                            {l.excl_amount ? fmt(parseFloat(l.excl_amount)) : (l.incl_amount ? fmt(parseFloat(l.incl_amount) || 0) : '—')}
+                          </td>
+                          {/* Remove */}
+                          <td style={{ padding: '3px 2px', textAlign: 'center' }}>
+                            <button onClick={() => removeLine(i)}
+                              disabled={lines.length <= 2}
+                              style={{ background: 'none', border: 'none', cursor: lines.length > 2 ? 'pointer' : 'default',
+                                       color: lines.length > 2 ? '#e53e3e' : '#ddd', fontSize: 15, lineHeight: 1 }}>✕</button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
-                  {/* Totals row */}
                   <tfoot>
-                    <tr style={{ background: '#eef2f7', fontWeight: 700 }}>
-                      <td colSpan={4} style={{ padding: '6px 4px', textAlign: 'right', fontSize: 12 }}>TOTALS</td>
-                      <td style={{ padding: '6px 4px', textAlign: 'right', fontFamily: 'monospace', color: '#005A8E' }}>{fmt(totalDR)}</td>
-                      <td style={{ padding: '6px 4px', textAlign: 'right', fontFamily: 'monospace', color: '#e53e3e' }}>{fmt(totalCR)}</td>
-                      <td colSpan={4} style={{ padding: '6px 4px', textAlign: 'right' }}>
+                    <tr style={{ background: '#1e3a5f', color: 'white', fontWeight: 700 }}>
+                      <td colSpan={6} style={{ padding: '7px 5px', textAlign: 'right', fontSize: 12 }}>TOTALS</td>
+                      <td style={{ padding: '7px 5px', textAlign: 'right', fontFamily: 'monospace' }}>
+                        <div style={{ color: '#7ec8f4' }}>DR {fmt(totalDR)}</div>
+                        <div style={{ color: '#fca5a5', fontSize: 11, marginTop: 1 }}>CR {fmt(totalCR)}</div>
+                      </td>
+                      <td colSpan={3} style={{ padding: '7px 5px', textAlign: 'center' }}>
                         {balanced
                           ? <span className="badge badge-green" style={{ fontSize: 11 }}>✓ Balanced</span>
-                          : <span className="badge badge-red" style={{ fontSize: 11 }}>Not balanced — diff: {fmt(Math.abs(totalDR - totalCR))}</span>
+                          : <span className="badge badge-red" style={{ fontSize: 11 }}>⚠ Diff: {fmt(Math.abs(totalDR - totalCR))}</span>
                         }
                       </td>
+                      <td></td>
                     </tr>
                   </tfoot>
                 </table>
@@ -1180,3 +1235,4 @@ export default function FinanceGL() {
     </div>
   );
 }
+
