@@ -3,9 +3,28 @@ import { useState, useEffect } from 'react';
 
 const API = import.meta.env.VITE_API_URL || '';
 const token = () => localStorage.getItem('lp_token');
-const req = (path) => fetch(API+'/api'+path, {
-  headers: {'Authorization':'Bearer '+token()}
-}).then(r=>r.json());
+const req = async (path) => {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 15000); // 15s timeout
+  try {
+    const r = await fetch(API+'/api'+path, {
+      headers: {'Authorization':'Bearer '+token()},
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+    if (r.status === 401) {
+      localStorage.removeItem('lp_token');
+      localStorage.removeItem('lp_user');
+      window.location.reload();
+      return {};
+    }
+    return r.json();
+  } catch (e) {
+    clearTimeout(timer);
+    if (e.name === 'AbortError') throw new Error('Network error — server may be starting up. Please wait a moment and try again.');
+    throw e;
+  }
+};
 
 function fmtR(n) {
   if (!n && n !== 0) return 'R 0';
@@ -505,8 +524,8 @@ export default function Dashboard({ onNavigate }) {
       }
       setLoadError('Could not connect to server. Please refresh the page.');
     } finally {
-      if (!retrying) setLoading(false);
       setLoading(false);
+      setRetrying(false);
     }
   };
 
@@ -730,4 +749,5 @@ export default function Dashboard({ onNavigate }) {
     </div>
   );
 }
+
 
