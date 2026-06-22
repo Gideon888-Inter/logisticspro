@@ -7,16 +7,24 @@ function getToken() {
 async function request(path, options = {}) {
   const token = getToken();
   let res;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 20000); // 20s timeout
   try {
     res = await fetch(`${BASE}/api${path}`, {
       ...options,
+      signal: ctrl.signal,
       headers: {
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(options.headers || {}),
       },
     });
+    clearTimeout(timer);
   } catch (networkErr) {
+    clearTimeout(timer);
+    if (networkErr.name === 'AbortError') {
+      throw new Error('Request timed out — server may be starting up. Please try again.');
+    }
     // Network failure — backend may be sleeping (Render cold start)
     throw new Error('Network error — server may be starting up. Please wait a moment and try again.');
   }
@@ -167,5 +175,6 @@ export const api = {
   approveInvoice:      (id, body)    => request(`/invoices/${id}/approve`, { method: 'POST', body: JSON.stringify(body) }),
   createCreditNote:    (id, body)    => request(`/invoices/${id}/credit-note`, { method: 'POST', body: JSON.stringify(body) }),
 };
+
 
 
