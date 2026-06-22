@@ -342,7 +342,7 @@ router.post('/po',
     const {
       supplier_code, supplier_name,
       allocation_type, vehicle_code, vehicle_name,
-      po_description, lines, notes,
+      po_description, lines, notes, supplier_invoice_no,
     } = req.body;
 
     // Validate required fields
@@ -350,9 +350,8 @@ router.post('/po',
     if (!allocation_type || !['VEHICLE','INVENTORY'].includes(allocation_type)) {
       return res.status(400).json({ error: "allocation_type must be 'VEHICLE' or 'INVENTORY'" });
     }
-    if (allocation_type === 'VEHICLE' && !vehicle_code) {
-      return res.status(400).json({ error: 'vehicle_code is required for VEHICLE POs' });
-    }
+    // vehicle_code is optional - derived from line items (Horse/Trailer selection)
+    // Lines carry the vehicle reference in their description and line_type
     if (allocation_type === 'INVENTORY' && !lines?.length) {
       return res.status(400).json({ error: 'At least one inventory line item is required' });
     }
@@ -386,11 +385,12 @@ router.post('/po',
         allocation_type,
         vehicle_code:    vehicle_code || null,
         vehicle_name:    vehicle_name || null,
-        po_description:  po_description || '',
-        status:          'PARKED',
-        is_capital:      req.body.is_capital === 'Y' ? 'Y' : 'N',
-        created_by:      req.user.username,
-        notes:           notes || null,
+        po_description:        po_description || '',
+        status:                'PARKED',
+        is_capital:            req.body.is_capital === 'Y' ? 'Y' : 'N',
+        supplier_invoice_no:   supplier_invoice_no || null,
+        created_by:            req.user.username,
+        notes:                 notes || null,
       })
       .select().single();
 
@@ -471,7 +471,7 @@ router.patch('/po/:id',
       return res.status(403).json({ error: 'Only the creator or Admin can edit a PO' });
     }
 
-    const allowed = ['supplier_code','supplier_name','vehicle_code','vehicle_name',
+    const allowed = ['supplier_code','supplier_name','vehicle_code','vehicle_name','supplier_invoice_no',
                      'po_description','notes','subtotal_excl_vat','vat_amount','total_incl_vat'];
     const updates = {};
     allowed.forEach(k => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
@@ -623,6 +623,26 @@ router.post('/po/:id/submit',
     if (req.user.role === ROLES.WORKSHOP_MANAGER && !po.attachment_filename) {
       return res.status(400).json({
         error: 'An attachment (supplier quote/invoice) is required before Workshop Manager can submit for approval'
+      });
+    }
+
+    // supplier_invoice_no is REQUIRED before any PO can be submitted for approval
+    if (!po.supplier_invoice_no) {
+      return res.status(400).json({ error: 'Supplier invoice number is required before submitting for approval' });
+    }
+
+    // Duplicate supplier invoice number check — warn if same supplier + inv no used before
+    const { data: dupCheck } = await supabase()
+      .from('lp_purchase_orders')
+      .select('po_number, status')
+      .eq('supplier_code', po.supplier_code)
+      .eq('supplier_invoice_no', po.supplier_invoice_no)
+      .neq('po_id', po.po_id)
+      .not('status', 'in', '(REJECTED,CANCELLED)')
+      .limit(1);
+    if (dupCheck && dupCheck.length > 0) {
+      return res.status(400).json({
+        error: `Duplicate supplier invoice: this invoice number was already used on ${dupCheck[0].po_number} (${dupCheck[0].status}). Please verify before proceeding.`
       });
     }
 
