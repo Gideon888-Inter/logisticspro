@@ -744,45 +744,91 @@ router.post('/po/:id/approve',
     const role = req.user.role;
     const now  = new Date().toISOString();
 
-    // Map current status to: who can approve it, what action to log, what next status is
-    const stageMap = {
-      'PENDING_L1':        { roles: [ROLES.STOCK_CONTROLLER, ROLES.ADMIN],     action_ok: 'L1_APPROVED',        action_rej: 'L1_REJECTED',        next: 'PENDING_L2',        stage: 'L1' },
-      'PENDING_L2':        { roles: [ROLES.WORKSHOP_ASSISTANT, ROLES.ADMIN], action_ok: 'L2_APPROVED',        action_rej: 'L2_REJECTED',        next: 'PENDING_L3',        stage: 'L2' },
-      'PENDING_L3':        { roles: [ROLES.WORKSHOP_MANAGER, ROLES.ADMIN],   action_ok: 'L3_APPROVED',        action_rej: 'L3_REJECTED',        next: 'PENDING_FINANCIAL', stage: 'L3' },
-      'PENDING_FINANCIAL': { roles: [ROLES.FINANCE, ROLES.ADMIN],             action_ok: 'FINANCIAL_APPROVED', action_rej: 'FINANCIAL_REJECTED',  next: 'APPROVED',          stage: 'FINANCIAL' },
-    };
+    // ── Approval hierarchy with bypass ──────────────────────────────────────
+    // Role hierarchy (highest first): ADMIN/FINANCE > WORKSHOP_MANAGER > WORKSHOP_ASSISTANT > STOCK_CONTROLLER
+    // A higher-level approver can approve from any pending stage, bypassing lower stages.
+    // Rejections always work at whatever stage the PO is currently at.
 
-    const stage = stageMap[po.status];
-    if (!stage) {
+    const PENDING_STAGES = ['PENDING_L1','PENDING_L2','PENDING_L3','PENDING_FINANCIAL'];
+    if (!PENDING_STAGES.includes(po.status)) {
       return res.status(400).json({ error: `PO is ${po.status} — not awaiting approval` });
     }
-    if (!stage.roles.includes(role)) {
-      return res.status(403).json({ error: `Your role cannot approve at this stage (${po.status})` });
+
+    // Define which roles can approve at each stage (minimum level)
+    // A role can approve its own stage AND all stages below it
+    const STAGE_MIN_ROLE = {
+      'PENDING_L1':        [ROLES.STOCK_CONTROLLER, ROLES.WORKSHOP_ASSISTANT, ROLES.WORKSHOP_MANAGER, ROLES.FINANCE, ROLES.ADMIN],
+      'PENDING_L2':        [ROLES.WORKSHOP_ASSISTANT, ROLES.WORKSHOP_MANAGER, ROLES.FINANCE, ROLES.ADMIN],
+      'PENDING_L3':        [ROLES.WORKSHOP_MANAGER, ROLES.FINANCE, ROLES.ADMIN],
+      'PENDING_FINANCIAL': [ROLES.FINANCE, ROLES.ADMIN],
+    };
+
+    const allowedRoles = STAGE_MIN_ROLE[po.status];
+    if (!allowedRoles.includes(role)) {
+      return res.status(403).json({ error: `Your role (${role}) cannot approve at this stage (${po.status})` });
     }
 
-    const logAction  = action === 'APPROVE' ? stage.action_ok : stage.action_rej;
-    const newStatus  = action === 'APPROVE' ? stage.next : 'REJECTED';
+    // Determine the target status after this approval
+    // Higher-level approvers bypass lower stages and jump to APPROVED directly
+    // FINANCE/ADMIN always jump to APPROVED from any stage
+    // WORKSHOP_MANAGER jumps to PENDING_FINANCIAL (skips L1/L2 if approving from there)
+    // WORKSHOP_ASSISTANT only advances one step at a time (L1→L2→L3)
+    // STOCK_CONTROLLER only approves L1
+    let newStatus;
+    let logAction;
+    const currentStage = po.status;
 
-    // Build update fields for this stage
+    if (action === 'REJECT') {
+      newStatus = 'REJECTED';
+      logAction = `${currentStage.replace('PENDING_','')}_REJECTED`;
+    } else {
+      // Determine bypass based on approver role
+      if ([ROLES.FINANCE, ROLES.ADMIN].includes(role)) {
+        // Finance and Admin fully approve — bypass all remaining stages
+        newStatus = 'APPROVED';
+        logAction = 'FINANCIAL_APPROVED';
+      } else if (role === ROLES.WORKSHOP_MANAGER) {
+        // Workshop Manager covers L1, L2, L3 — jumps to PENDING_FINANCIAL
+        newStatus = 'PENDING_FINANCIAL';
+        logAction = 'L3_APPROVED';
+      } else if (role === ROLES.WORKSHOP_ASSISTANT) {
+        // Workshop Assistant covers L1, L2 — advances one step based on current stage
+        if (currentStage === 'PENDING_L1') { newStatus = 'PENDING_L2'; logAction = 'L1_APPROVED'; }
+        else if (currentStage === 'PENDING_L2') { newStatus = 'PENDING_L3'; logAction = 'L2_APPROVED'; }
+        else { newStatus = 'PENDING_L3'; logAction = 'L2_APPROVED'; } // fallback
+      } else {
+        // STOCK_CONTROLLER — only L1
+        newStatus = 'PENDING_L2'; logAction = 'L1_APPROVED';
+      }
+    }
+
+    // Build update fields — stamp all skipped levels with this approver
     const updates = { status: newStatus, updated_at: now };
-    if (stage.stage === 'L1' && action === 'APPROVE') {
-      updates.l1_approver = req.user.username;
-      updates.l1_approved_at = now;
-    } else if (stage.stage === 'L2' && action === 'APPROVE') {
-      updates.l2_approver = req.user.username;
-      updates.l2_approved_at = now;
-    } else if (stage.stage === 'L3' && action === 'APPROVE') {
-      updates.l3_approver = req.user.username;
-      updates.l3_approved_at = now;
-    } else if (stage.stage === 'FINANCIAL' && action === 'APPROVE') {
-      updates.financial_approver = req.user.username;
-      updates.financial_approved_at = now;
+
+    if (action === 'APPROVE') {
+      // Stamp all stages from current through the ones being bypassed
+      const stageOrder = ['PENDING_L1','PENDING_L2','PENDING_L3','PENDING_FINANCIAL'];
+      const fromIdx = stageOrder.indexOf(currentStage);
+      const toIdx   = newStatus === 'APPROVED' ? 3 : stageOrder.indexOf(newStatus) - 1;
+      const stageFields = {
+        'PENDING_L1':        ['l1_approver','l1_approved_at'],
+        'PENDING_L2':        ['l2_approver','l2_approved_at'],
+        'PENDING_L3':        ['l3_approver','l3_approved_at'],
+        'PENDING_FINANCIAL': ['financial_approver','financial_approved_at'],
+      };
+      // Stamp every stage from fromIdx to toIdx (inclusive) with this approver
+      for (let i = fromIdx; i <= toIdx && i < stageOrder.length; i++) {
+        const [approverField, atField] = stageFields[stageOrder[i]];
+        updates[approverField] = req.user.username;
+        updates[atField] = now;
+      }
     }
+
     if (action === 'REJECT') {
       updates.rejected_by      = req.user.username;
       updates.rejected_at      = now;
-      updates.rejection_reason  = notes;
-      updates.rejection_stage   = stage.stage;
+      updates.rejection_reason = notes;
+      updates.rejection_stage  = currentStage.replace('PENDING_','');
     }
 
     const { data, error } = await supabase()
