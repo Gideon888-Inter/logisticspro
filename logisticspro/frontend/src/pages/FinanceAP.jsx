@@ -361,6 +361,7 @@ function SupplierInvoicesTab({ suppliers, periods }) {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
@@ -741,5 +742,6 @@ export default function FinanceAP() {
     </div>
   );
 }
+
 
 
