@@ -101,6 +101,7 @@ function CustomerTransactions({ customers }) {
             <button className="btn btn-primary btn-sm" onClick={search} disabled={loading}>{loading ? 'Loading…' : '🔍 Search'}</button>
             {searched && <button className="btn btn-sm" onClick={clear}>Clear</button>}
             {searched && rows.length > 0 && <button className="btn btn-sm" onClick={doExport}>⬇ CSV</button>}
+            {searched && rows.length > 0 && <button className="btn btn-sm" onClick={() => window.print()}>🖨 Print</button>}
           </div>
         </div>
         {selectedCustomer && (
@@ -479,5 +480,6 @@ export default function FinanceAR() {
     </div>
   );
 }
+
 
 
