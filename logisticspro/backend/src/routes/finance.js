@@ -529,7 +529,7 @@ router.get('/suppliers', requireFin, async (req, res) => {
 
 // POST /fin/suppliers — create supplier
 router.post('/suppliers', requireFin, async (req, res) => {
-  const { supplier_code, supplier_name, telephone, email, vat_number, vat_enabled, payment_terms_days, credit_limit } = req.body;
+  const { supplier_code, supplier_name, telephone, email, vat_number, vat_enabled, payment_terms_days, credit_limit, supplier_type_id, discount_id } = req.body;
   if (!supplier_code?.trim()) return res.status(400).json({ error: 'supplier_code is required' });
   if (!supplier_name?.trim()) return res.status(400).json({ error: 'supplier_name is required' });
   const { data, error } = await supabase.from('fin_suppliers').insert({
@@ -542,6 +542,8 @@ router.post('/suppliers', requireFin, async (req, res) => {
     payment_terms_days:  parseInt(payment_terms_days) || 30,
     gl_control_account:  '2000',
     credit_limit:        parseFloat(credit_limit) || null,
+    supplier_type_id:    supplier_type_id ? parseInt(supplier_type_id) : null,
+    discount_id:         discount_id ? parseInt(discount_id) : null,
     active:              true,
     on_hold:             false,
     workshop_allowed:    false,
@@ -553,7 +555,7 @@ router.post('/suppliers', requireFin, async (req, res) => {
 
 // PATCH /fin/suppliers/:code — edit supplier details
 router.patch('/suppliers/:code', requireFin, async (req, res) => {
-  const { supplier_name, telephone, email, vat_number, vat_enabled, payment_terms_days, credit_limit } = req.body;
+  const { supplier_name, telephone, email, vat_number, vat_enabled, payment_terms_days, credit_limit, supplier_type_id, discount_id } = req.body;
   const updates = {};
   if (supplier_name      !== undefined) updates.supplier_name      = supplier_name.trim();
   if (telephone          !== undefined) updates.telephone          = telephone || null;
@@ -562,6 +564,8 @@ router.patch('/suppliers/:code', requireFin, async (req, res) => {
   if (vat_enabled        !== undefined) updates.vat_enabled        = !!vat_enabled;
   if (payment_terms_days !== undefined) updates.payment_terms_days = parseInt(payment_terms_days) || 30;
   if (credit_limit       !== undefined) updates.credit_limit       = parseFloat(credit_limit) || null;
+  if (supplier_type_id   !== undefined) updates.supplier_type_id   = supplier_type_id ? parseInt(supplier_type_id) : null;
+  if (discount_id        !== undefined) updates.discount_id        = discount_id ? parseInt(discount_id) : null;
   if (!Object.keys(updates).length) return res.status(400).json({ error: 'No fields to update' });
   const { data, error } = await supabase
     .from('fin_suppliers')
@@ -2296,6 +2300,58 @@ router.patch('/cashbook/bank-recon/:id/lock', requireFin, async (req, res) => {
 // POST /fin/ap/invoices — create supplier invoice (optionally from PO)
 // PATCH /fin/ap/invoices/:id — update invoice status
 // ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
+// SUPPLIER CATEGORIES
+// ─────────────────────────────────────────────────────────────
+
+// GET /fin/supplier-categories
+router.get('/supplier-categories', requireFin, async (req, res) => {
+  const { data, error } = await supabase
+    .from('fin_supplier_categories')
+    .select('*')
+    .order('category_type').order('name');
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data || []);
+});
+
+// POST /fin/supplier-categories
+router.post('/supplier-categories', requireFin, async (req, res) => {
+  const { name, category_type } = req.body;
+  if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
+  if (!['SUPPLIER_TYPE','DISCOUNT'].includes(category_type)) {
+    return res.status(400).json({ error: "category_type must be 'SUPPLIER_TYPE' or 'DISCOUNT'" });
+  }
+  const { data, error } = await supabase
+    .from('fin_supplier_categories')
+    .insert({ name: name.trim(), category_type, created_by: req.user.username })
+    .select().single();
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data);
+});
+
+// PATCH /fin/supplier-categories/:id
+router.patch('/supplier-categories/:id', requireFin, async (req, res) => {
+  const { name } = req.body;
+  if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
+  const { data, error } = await supabase
+    .from('fin_supplier_categories')
+    .update({ name: name.trim() })
+    .eq('id', req.params.id)
+    .select().single();
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data);
+});
+
+// DELETE /fin/supplier-categories/:id
+router.delete('/supplier-categories/:id', requireRole(ROLES.ADMIN, ROLES.FINANCE), async (req, res) => {
+  const { error } = await supabase
+    .from('fin_supplier_categories')
+    .delete()
+    .eq('id', req.params.id);
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ success: true });
+});
+
 router.get('/ap/invoices', requireFin, async (req, res) => {
   const { supplier_code, status, period_id } = req.query;
   let query = supabase
@@ -2329,10 +2385,27 @@ router.post('/ap/invoices', requireFin, async (req, res) => {
     document_ref, po_id,
   } = req.body;
 
-  if (!supplier_code)    return res.status(400).json({ error: 'supplier_code is required' });
-  if (!invoice_date)     return res.status(400).json({ error: 'invoice_date is required' });
-  if (!period_id)        return res.status(400).json({ error: 'period_id is required' });
-  if (!total_incl_vat)   return res.status(400).json({ error: 'total_incl_vat is required' });
+  if (!supplier_code)       return res.status(400).json({ error: 'supplier_code is required' });
+  if (!supplier_invoice_no) return res.status(400).json({ error: 'Supplier invoice number is required' });
+  if (!invoice_date)        return res.status(400).json({ error: 'invoice_date is required' });
+  if (!period_id)           return res.status(400).json({ error: 'period_id is required' });
+  if (!total_incl_vat)      return res.status(400).json({ error: 'total_incl_vat is required' });
+
+  // Duplicate supplier invoice number check
+  if (supplier_invoice_no) {
+    const { data: dupCheck } = await supabase
+      .from('fin_ap_invoices')
+      .select('invoice_ref, supplier_code')
+      .eq('supplier_code', supplier_code)
+      .eq('supplier_invoice_no', supplier_invoice_no)
+      .not('status', 'in', '(CANCELLED)')
+      .limit(1);
+    if (dupCheck && dupCheck.length > 0) {
+      return res.status(400).json({
+        error: `Duplicate: supplier invoice ${supplier_invoice_no} has already been processed as ${dupCheck[0].invoice_ref}.`
+      });
+    }
+  }
 
   // Auto-generate invoice ref: API-YYYYMM-NNNNN
   const datePart = invoice_date.replace(/-/g,'').slice(0,6);
