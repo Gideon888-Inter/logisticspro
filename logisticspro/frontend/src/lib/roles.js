@@ -336,12 +336,14 @@ export function canSelectInventoryOnPO(user) {
  * because they are already at or above L1 in the hierarchy.
  */
 export function myPOApprovalStatuses(user) {
+  // Higher-level roles can approve lower stages (hierarchy bypass).
+  // The backend enforces the same logic — this drives UI button visibility.
   const map = {
     [ROLES.STOCK_CONTROLLER]:   ['PENDING_L1'],
-    [ROLES.WORKSHOP_ASSISTANT]: ['PENDING_L2'],
-    [ROLES.WORKSHOP_MANAGER]:   ['PENDING_L3'],
-    [ROLES.FINANCE]:            ['PENDING_FINANCIAL'],
-    [ROLES.ADMIN]:              ['PENDING_FINANCIAL'],
+    [ROLES.WORKSHOP_ASSISTANT]: ['PENDING_L1', 'PENDING_L2'],
+    [ROLES.WORKSHOP_MANAGER]:   ['PENDING_L1', 'PENDING_L2', 'PENDING_L3'],
+    [ROLES.FINANCE]:            ['PENDING_L1', 'PENDING_L2', 'PENDING_L3', 'PENDING_FINANCIAL'],
+    [ROLES.ADMIN]:              ['PENDING_L1', 'PENDING_L2', 'PENDING_L3', 'PENDING_FINANCIAL'],
   };
   return map[user?.role] || [];
 }
