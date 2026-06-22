@@ -9,12 +9,12 @@
  *   - Notification triggers at each approval stage
  *
  * Role mapping:
- *   CONTROL_ROOM  → can create POs (VEHICLE only), no inventory access
- *   ACCOUNTING    → Stock Controller: L1 approver, can create POs
- *   OPS_ASSISTANT → Workshop Assistant: L2 approver, can create POs, can approve inventory
- *   WORKSHOP      → Workshop Manager: L3 approver, can create inventory items, full PO access
- *   ADMIN         → Financial user: financial approver, GL journal access, all access
- *   MANAGER       → View only for POs/inventory
+ *   CONTROL_ROOM       → can create POs (VEHICLE only), no inventory access
+ *   STOCK_CONTROLLER   → L1 approver, can create POs
+ *   WORKSHOP_ASSISTANT → L2 approver, can create POs, can approve inventory items
+ *   WORKSHOP_MANAGER   → L3 approver, can create inventory items, full PO access
+ *   FINANCE / ADMIN    → financial approver (L4), GL journal access, all access
+ *   MANAGER            → view only for POs/inventory
  *
  * PO status flow:
  *   PARKED → PENDING_L1 → PENDING_L2 → PENDING_L3 → PENDING_FINANCIAL → APPROVED → ...
@@ -334,7 +334,7 @@ router.get('/po',
 );
 
 // POST /inventory/po — create new PO
-// Roles: CONTROL_ROOM, ACCOUNTING, OPS_ASSISTANT, WORKSHOP, ADMIN
+// Roles: CONTROL_ROOM, STOCK_CONTROLLER, WORKSHOP_ASSISTANT, WORKSHOP_MANAGER, FINANCE, ADMIN
 router.post('/po',
   requireRole(ROLES.ADMIN, ROLES.FINANCE, ROLES.CONTROL_ROOM, ROLES.STOCK_CONTROLLER,
              ROLES.WORKSHOP_ASSISTANT, ROLES.WORKSHOP_MANAGER),
@@ -972,5 +972,6 @@ router.get('/po/pending-approval',
 );
 
 module.exports = router;
+
 
 
