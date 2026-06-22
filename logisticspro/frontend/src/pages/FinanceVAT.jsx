@@ -549,6 +549,11 @@ function VATReturn() {
 
 // ── VAT TYPES MANAGER ────────────────────────────────────────────────────────
 function VATTypeManager({ vatTypes: initial, onRefresh }) {
+  // Local req with Content-Type for POST/PATCH calls
+  const vatReq = (path, opts = {}) => fetch(API + path, {
+    ...opts,
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token(), ...(opts.headers || {}) },
+  }).then(r => r.json());
   const [types, setTypes] = useState(initial || []);
   const [editing, setEditing] = useState(null); // vat_code being edited
   const [adding, setAdding]   = useState(false);
@@ -557,7 +562,7 @@ function VATTypeManager({ vatTypes: initial, onRefresh }) {
   const [err, setErr] = useState('');
 
   const load = async () => {
-    const data = await req('/fin/vat-types?all=1');
+    const data = await vatReq('/fin/vat-types?all=1');
     setTypes(Array.isArray(data) ? data : []);
     onRefresh && onRefresh();
   };
@@ -581,9 +586,9 @@ function VATTypeManager({ vatTypes: initial, onRefresh }) {
     let res;
     if (adding) {
       if (!form.vat_code.trim()) return setErr('VAT Code is required');
-      res = await req('/fin/vat-types', { method: 'POST', body: JSON.stringify({ ...form, rate_pct: Number(form.rate_pct) }) });
+      res = await vatReq('/fin/vat-types', { method: 'POST', body: JSON.stringify({ ...form, rate_pct: Number(form.rate_pct) }) });
     } else {
-      res = await req(`/fin/vat-types/${editing}`, { method: 'PATCH', body: JSON.stringify({ description: form.description, rate_pct: Number(form.rate_pct), vat_direction: form.vat_direction, vat201_field: form.vat201_field || null, is_capital_goods: form.is_capital_goods, active: form.active }) });
+      res = await vatReq(`/fin/vat-types/${editing}`, { method: 'PATCH', body: JSON.stringify({ description: form.description, rate_pct: Number(form.rate_pct), vat_direction: form.vat_direction, vat201_field: form.vat201_field || null, is_capital_goods: form.is_capital_goods, active: form.active }) });
     }
     setSaving(false);
     if (res?.error) return setErr(res.error);
@@ -695,5 +700,6 @@ export default function FinanceVAT() {
     </div>
   );
 }
+
 
 
