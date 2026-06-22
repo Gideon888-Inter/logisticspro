@@ -338,12 +338,15 @@ export function canSelectInventoryOnPO(user) {
 export function myPOApprovalStatuses(user) {
   // Higher-level roles can approve lower stages (hierarchy bypass).
   // The backend enforces the same logic — this drives UI button visibility.
+  // PENDING_FINANCIAL is no longer an approval step — it means Finance has approved
+  // and the PO is waiting for an AP invoice to be captured against it.
+  // Finance/Admin approve FROM lower stages, pushing the PO TO PENDING_FINANCIAL.
   const map = {
     [ROLES.STOCK_CONTROLLER]:   ['PENDING_L1'],
     [ROLES.WORKSHOP_ASSISTANT]: ['PENDING_L1', 'PENDING_L2'],
     [ROLES.WORKSHOP_MANAGER]:   ['PENDING_L1', 'PENDING_L2', 'PENDING_L3'],
-    [ROLES.FINANCE]:            ['PENDING_L1', 'PENDING_L2', 'PENDING_L3', 'PENDING_FINANCIAL'],
-    [ROLES.ADMIN]:              ['PENDING_L1', 'PENDING_L2', 'PENDING_L3', 'PENDING_FINANCIAL'],
+    [ROLES.FINANCE]:            ['PENDING_L1', 'PENDING_L2', 'PENDING_L3'],
+    [ROLES.ADMIN]:              ['PENDING_L1', 'PENDING_L2', 'PENDING_L3'],
   };
   return map[user?.role] || [];
 }
