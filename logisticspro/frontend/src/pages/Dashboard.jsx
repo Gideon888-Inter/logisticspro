@@ -455,6 +455,8 @@ export default function Dashboard({ onNavigate }) {
   const [vehicles, setVehicles] = useState([]);
   const [drivers, setDrivers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [retrying, setRetrying] = useState(false);
   const monthOptions = generateMonthOptions();
   const now = new Date();
   const [selectedMonth, setSelectedMonth] = useState(
@@ -474,20 +476,63 @@ export default function Dashboard({ onNavigate }) {
     }).catch(console.error);
   }, []);
 
-  // Fetch loads when selected month changes
-  useEffect(() => {
+  // Fetch loads when selected month changes — with cold-start retry
+  const fetchLoads = async (month, attempt = 1) => {
+    setLoadError('');
     setLoading(true);
-    const [selYear, selMon] = selectedMonth.split('-');
-    const from = `${selYear}-${selMon}-01`;
-    const lastDay = new Date(Number(selYear), Number(selMon), 0).getDate();
-    const to = `${selYear}-${selMon}-${String(lastDay).padStart(2,'0')}`;
-    req(`/loads?date_from=${from}&date_to=${to}&limit=2000`)
-      .then(l => setLoads(l.data || []))
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, [selectedMonth]);
+    try {
+      const [selYear, selMon] = month.split('-');
+      const from = `${selYear}-${selMon}-01`;
+      const lastDay = new Date(Number(selYear), Number(selMon), 0).getDate();
+      const to = `${selYear}-${selMon}-${String(lastDay).padStart(2,'0')}`;
+      const l = await req(`/loads?date_from=${from}&date_to=${to}&limit=2000`);
+      if (l && l.error && attempt < 3) {
+        // Server returned an error — may be waking up; retry after delay
+        setRetrying(true);
+        await new Promise(r => setTimeout(r, 5000));
+        setRetrying(false);
+        return fetchLoads(month, attempt + 1);
+      }
+      setLoads(l.data || []);
+    } catch (err) {
+      if (attempt < 3) {
+        // Network error — backend cold-starting on Render free tier
+        setRetrying(true);
+        setLoadError(`Server is starting up… retrying (${attempt}/3)`);
+        await new Promise(r => setTimeout(r, 6000));
+        setRetrying(false);
+        return fetchLoads(month, attempt + 1);
+      }
+      setLoadError('Could not connect to server. Please refresh the page.');
+    } finally {
+      if (!retrying) setLoading(false);
+      setLoading(false);
+    }
+  };
 
-  if (loading) return <div className="loading" style={{paddingTop:40}}>Loading dashboard…</div>;
+  useEffect(() => { fetchLoads(selectedMonth); }, [selectedMonth]);
+
+  if (loading) return (
+    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'50vh', gap:16 }}>
+      <div className="loading" style={{ paddingTop: 0 }}>
+        {retrying ? '⏳ Server is waking up…' : 'Loading dashboard…'}
+      </div>
+      {loadError && (
+        <div style={{ fontSize:13, color:'#c05621', background:'#fffaf0', border:'1px solid #fbd38d', borderRadius:6, padding:'8px 16px', maxWidth:400, textAlign:'center' }}>
+          {loadError}
+        </div>
+      )}
+    </div>
+  );
+
+  if (loadError && !loading) return (
+    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'50vh', gap:16 }}>
+      <div style={{ fontSize:40 }}>⚠️</div>
+      <div style={{ fontSize:16, fontWeight:600, color:'#c05621' }}>Could not load dashboard</div>
+      <div style={{ fontSize:13, color:'#666', maxWidth:380, textAlign:'center' }}>{loadError}</div>
+      <button className="btn btn-primary" onClick={() => fetchLoads(selectedMonth)}>Retry</button>
+    </div>
+  );
 
   // ── Calculations ──────────────────────────────────────────
   const activeLoads = loads.filter(l=>l.m_status!=='DELETED');
@@ -685,3 +730,4 @@ export default function Dashboard({ onNavigate }) {
     </div>
   );
 }
+
