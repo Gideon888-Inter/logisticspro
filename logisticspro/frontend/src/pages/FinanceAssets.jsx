@@ -711,6 +711,20 @@ function ProcessDepreciation() {
     setPreview(d);
   };
 
+  const doPreviewExport = () => {
+    if (!preview?.assets?.length) return;
+    exportCSV(preview.assets.map(a => ({
+      'Asset Code':    a.asset_code,
+      Description:    a.description,
+      Class:          a.class_code,
+      Cost:           a.purchase_price,
+      'Book NBV Before': a.book_nbv,
+      'Book Depre':   a.book_depre_amount,
+      'Tax Depre':    a.tax_depre_amount,
+      'Book NBV After': a.book_nbv_after,
+    })), 'depreciation_preview.csv');
+  };
+
   const runDepreciation = async () => {
     if (!preview) return;
     if (!confirm(`Run depreciation for ${preview.period_name}? This will update ${preview.asset_count} assets and create an UNPOSTED journal.`)) return;
@@ -784,17 +798,7 @@ function ProcessDepreciation() {
           <div style={{ fontWeight: 600, fontSize: 13, color: '#555', marginBottom: 6 }}>Asset Detail</div>
           {preview?.assets?.length > 0 && (
             <div style={{ display:'flex', gap:6, marginBottom:6 }}>
-              <button className="btn btn-sm" onClick={() => {
-                const rows = (preview.assets || []).map(a => ({
-                  'Asset Code': a.asset_code, 'Description': a.description, 'Class': a.class_code,
-                  'Cost': a.purchase_price, 'Book NVB Before': a.book_nbv,
-                  'Book Depre': a.book_depre_amount, 'Tax Depre': a.tax_depre_amount,
-                  'Book NBV After': a.book_nbv_after,
-                }));
-                const headers = Object.keys(rows[0]);
-                const csv = [headers, ...rows.map(r => headers.map(h => `"${String(r[h]??'').replace(/"/g,'""')}"`))].map(r=>r.join(',')).join('\n');
-                const a = document.createElement('a'); a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv); a.download='depreciation_preview.csv'; a.click();
-              }}>⬇ Export Preview CSV</button>
+              <button className="btn btn-sm" onClick={doPreviewExport}>⬇ Export Preview CSV</button>
             </div>
           )}
           <div className="table-wrap" style={{ marginBottom: 16 }}>
@@ -885,5 +889,6 @@ export default function FinanceAssets() {
     </div>
   );
 }
+
 
 
