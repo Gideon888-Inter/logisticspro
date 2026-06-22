@@ -30,10 +30,9 @@
  *   GET  /fin/assets/:code          Asset detail
  *   GET  /fin/aging/debtors         Debtor aging view
  *   GET  /fin/aging/suppliers       Supplier aging view
- *   GET  /fin/vat201                VAT201 summary by period
  *   GET  /fin/cashbook/staging      Cashbook staging entries
- *   GET  /fin/periods/status        Period status dashboard
  *   GET  /fin/dashboard             Finance dashboard summary
+ *   (See route definitions below for full list — file has grown beyond this header)
  */
 
 const express = require('express');
