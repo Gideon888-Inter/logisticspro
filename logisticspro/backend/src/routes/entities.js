@@ -104,41 +104,6 @@ maintenanceRouter.patch('/:id', async (req, res) => {
   res.json(data);
 });
 
-// ── INVENTORY ─────────────────────────────────────────────────
-const inventoryRouter = express.Router();
-inventoryRouter.use(authMiddleware);
-
-inventoryRouter.get('/', async (req, res) => {
-  const { data, error } = await supabase.from('lp_inventory').select('*').order('p_partno');
-  if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
-});
-
-// FIX: low-stock — PostgREST cannot compare two columns directly via the JS client.
-// Fetch all and filter server-side instead.
-inventoryRouter.get('/low-stock', async (req, res) => {
-  const { data, error } = await supabase.from('lp_inventory').select('*').order('p_partno');
-  if (error) return res.status(500).json({ error: error.message });
-  // Return items where quantity is below minimum
-  const lowStock = (data || []).filter(item => Number(item.p_qty) < Number(item.p_min));
-  res.json(lowStock);
-});
-
-inventoryRouter.post('/', requireRole('ADMIN', 'MANAGER'), async (req, res) => {
-  const { data, error } = await supabase.from('lp_inventory').insert([req.body]).select().single();
-  if (error) return res.status(400).json({ error: error.message });
-  res.status(201).json(data);
-});
-
-// FIX: was using wrong primary key 'l_id' — changed to 'p_partno' (the inventory table's PK)
-inventoryRouter.patch('/:id', async (req, res) => {
-  const { data, error } = await supabase
-    .from('lp_inventory').update({ ...req.body, updated_at: new Date().toISOString() })
-    .eq('p_partno', req.params.id).select().single();
-  if (error) return res.status(400).json({ error: error.message });
-  res.json(data);
-});
-
 // ── ROUTES (freight routes) ───────────────────────────────────
 const routesRouter = express.Router();
 routesRouter.use(authMiddleware);
@@ -161,5 +126,6 @@ routesRouter.patch('/:id', requireRole('ADMIN', 'MANAGER'), async (req, res) => 
   res.json(data);
 });
 
-module.exports = { driversRouter, customersRouter, maintenanceRouter, inventoryRouter, routesRouter };
+module.exports = { driversRouter, customersRouter, maintenanceRouter, routesRouter };
+
 
