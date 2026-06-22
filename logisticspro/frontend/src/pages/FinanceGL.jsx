@@ -460,7 +460,7 @@ function AccountTransactions() {
                     <div style={{ fontSize: 11, color: '#888' }}>{r.journal_desc}</div>
                   )}
                 </td>
-                <td style={{ fontSize: 11, color: '#888' }}>{r.reference || '—'}</td>
+                <td style={{ fontSize: 11, color: '#888' }}>{r.journal_ref || r.reference || '—'}</td>
                 <td style={{ textAlign: 'right', fontFamily: 'monospace', color: r.debit > 0 ? '#005A8E' : '#ccc' }}>
                   {r.debit > 0 ? fmt(r.debit) : '—'}
                 </td>
@@ -625,8 +625,9 @@ function GLJournals({ user }) {
   const save = async () => {
     setSaveErr('');
     if (!hdr.description.trim()) return setSaveErr('Journal description is required');
-    if (!hdr.period_id)           return setSaveErr('Period is required');
-    if (!hdr.journal_date)        return setSaveErr('Date is required');
+    // Period and date are derived from the first line's date on the backend
+    const firstDate = lines[0]?.date || lines[0]?.incl_amount ? lines[0].date : null;
+    if (!firstDate) return setSaveErr('Line date is required');
     if (lines.length < 2)         return setSaveErr('At least 2 lines required');
     for (let i = 0; i < lines.length; i++) {
       if (!lines[i].account_code)  return setSaveErr(`Line ${i + 1}: account is required`);
@@ -649,9 +650,10 @@ function GLJournals({ user }) {
       };
     });
 
+    const journalDate = lines[0]?.date || new Date().toISOString().slice(0,10);
     const result = await req('/fin/journals', {
       method: 'POST',
-      body: JSON.stringify({ ...hdr, lines: apiLines, journal_type: 'GL' }),
+      body: JSON.stringify({ ...hdr, journal_date: journalDate, period_id: hdr.period_id || '', lines: apiLines, journal_type: 'GL' }),
     });
     setSaving(false);
     if (result.error) return setSaveErr(result.error);
@@ -666,45 +668,15 @@ function GLJournals({ user }) {
   return (
     <div>
       <div className="filter-bar">
-        <span style={{ fontWeight: 600, fontSize: 14 }}>{journals.length} journals</span>
-        {isAdmin && (
-          <button className="btn btn-primary btn-sm" onClick={() => { setSaveErr(''); setShowNew(true); }}>
-            + New Journal
-          </button>
-        )}
+        <span style={{ fontWeight: 600, fontSize: 14 }}>GL Journal Entry</span>
       </div>
 
-      {/* Journal list */}
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Journal Ref</th><th>Date</th><th>Description</th>
-              <th style={{ textAlign: 'right' }}>Amount</th><th style={{ textAlign: 'center' }}>Posted</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading && <tr><td colSpan={5}><div className="loading">Loading journals…</div></td></tr>}
-            {!loading && journals.length === 0 && <tr><td colSpan={5}><div className="empty-state">No journals yet</div></td></tr>}
-            {!loading && journals.map(j => (
-              <tr key={j.journal_id} onClick={() => openDetail(j)} style={{ cursor: 'pointer' }}
-                  className={selected?.journal_id === j.journal_id ? 'row-selected' : ''}>
-                <td className="mono" style={{ fontWeight: 700, color: '#005A8E' }}>{j.journal_ref}</td>
-                <td style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{fmtDate(j.journal_date)}</td>
-                <td style={{ fontSize: 13 }}>{j.description}</td>
-                <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 13 }}>
-                  {fmt(j.total_debit || 0)}
-                </td>
-                <td style={{ textAlign: 'center' }}>
-                  <span className={`badge ${j.posted ? 'badge-green' : 'badge-amber'}`} style={{ fontSize: 10 }}>
-                    {j.posted ? 'Posted' : 'Draft'}
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {/* Posted journals are visible in Account Transactions — this screen is for entry only */}
+      {journals.length > 0 && (
+        <div style={{ fontSize: 12, color: '#888', marginBottom: 8 }}>
+          {journals.length} posted journals — view in Account Transactions tab
+        </div>
+      )}
 
       {/* Journal detail panel */}
       {selected && detail && (
@@ -747,31 +719,21 @@ function GLJournals({ user }) {
       )}
 
       {/* New Journal Modal */}
-      {showNew && (
-        <div className="modal-overlay" onClick={() => setShowNew(false)}>
-          <div className="modal" style={{ maxWidth: 960, width: '95vw' }} onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>New GL Journal</h3>
-              <button onClick={() => setShowNew(false)} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', fontSize: 18 }}>✕</button>
-            </div>
-            <div className="modal-body" style={{ maxHeight: '75vh', overflowY: 'auto' }}>
+      {isAdmin && (
+        <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+          <div style={{ fontWeight: 600, fontSize: 14, color: '#1e3a5f', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+            📝 New Journal Entry
+          </div>
+          <div>
 
-              {/* Journal Header */}
+              {/* Journal Header — description only; period and date derived from line dates */}
               <div className="form-row" style={{ marginBottom: 12 }}>
-                <div className="form-group" style={{ flex: 2 }}>
+                <div className="form-group" style={{ flex: 1 }}>
                   <label>Journal Description *</label>
                   <input value={hdr.description} onChange={e => setHdr(h => ({ ...h, description: e.target.value }))} placeholder="e.g. Monthly accruals — June 2026" />
                 </div>
-                <div className="form-group">
-                  <label>Period *</label>
-                  <select value={hdr.period_id} onChange={e => setHdr(h => ({ ...h, period_id: e.target.value }))}>
-                    <option value="">— Select —</option>
-                    {periods.map(p => <option key={p.period_id} value={p.period_id}>{p.period_name}</option>)}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label>Journal Date *</label>
-                  <input type="date" value={hdr.journal_date} onChange={e => setHdr(h => ({ ...h, journal_date: e.target.value }))} />
+                <div style={{ fontSize: 12, color: '#888', alignSelf: 'flex-end', paddingBottom: 8, paddingLeft: 8 }}>
+                  Period and date are set per line below
                 </div>
               </div>
 
@@ -905,22 +867,24 @@ function GLJournals({ user }) {
                 </table>
               </div>
 
-              <div style={{ marginTop: 10 }}>
-                <button className="btn btn-sm" onClick={addLine}>+ Add Line</button>
-              </div>
+
 
               {saveErr && (
                 <div style={{ marginTop: 10, padding: '8px 12px', background: '#fff5f5', border: '1px solid #fc8181', borderRadius: 6, color: '#c53030', fontSize: 13 }}>
                   {saveErr}
                 </div>
               )}
-            </div>
-            <div className="modal-footer">
-              <button className="btn" onClick={() => setShowNew(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={save} disabled={saving || !balanced}>
-                {saving ? 'Saving…' : 'Post Journal'}
-              </button>
-            </div>
+              <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
+                <button className="btn btn-primary" onClick={save} disabled={saving || !balanced}>
+                  {saving ? 'Saving…' : '⬆ Post Journal'}
+                </button>
+                <button className="btn btn-sm" onClick={addLine}>+ Add Line</button>
+                <button className="btn btn-sm" onClick={() => {
+                  setLines([{ ...EMPTY_LINE }, { ...EMPTY_LINE }]);
+                  setHdr(h => ({ ...h, description: '' }));
+                  setSaveErr('');
+                }}>↺ Clear</button>
+              </div>
           </div>
         </div>
       )}
@@ -1036,13 +1000,13 @@ function IncomeStatement() {
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
-              <tr style={{ background: '#f0f4f8', borderBottom: '2px solid #cbd5e0' }}>
-                <th style={{ padding: '8px 10px', textAlign: 'left', minWidth: 80 }}>Code</th>
-                <th style={{ padding: '8px 10px', textAlign: 'left', minWidth: 200 }}>Account</th>
+              <tr style={{ background: '#1e3a5f', borderBottom: '2px solid #0f2440' }}>
+                <th style={{ padding: '8px 10px', textAlign: 'left', minWidth: 80, color: 'white' }}>Code</th>
+                <th style={{ padding: '8px 10px', textAlign: 'left', minWidth: 200, color: 'white' }}>Account</th>
                 {showPeriods && periods.map(p => (
-                  <th key={p.period_id} style={{ padding: '8px 6px', textAlign: 'right', minWidth: 100, whiteSpace: 'nowrap' }}>{p.period_name}</th>
+                  <th key={p.period_id} style={{ padding: '8px 6px', textAlign: 'right', minWidth: 100, whiteSpace: 'nowrap', color: 'white' }}>{p.period_name}</th>
                 ))}
-                <th style={{ padding: '8px 10px', textAlign: 'right', minWidth: 120, fontWeight: 700 }}>YTD</th>
+                <th style={{ padding: '8px 10px', textAlign: 'right', minWidth: 120, color: 'white', fontWeight: 700 }}>YTD</th>
               </tr>
             </thead>
             <tbody>
@@ -1145,6 +1109,8 @@ function AuditLog() {
     setLoading(false);
   };
 
+  useEffect(() => { load(); }, []);
+
   const doExport = () => {
     if (!rows.length) return;
     exportCSV(rows.map(r => ({
@@ -1235,4 +1201,5 @@ export default function FinanceGL() {
     </div>
   );
 }
+
 
