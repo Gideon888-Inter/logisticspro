@@ -186,7 +186,7 @@ function SupplierInvoicesTab({ suppliers, periods }) {
   const [loading, setLoading]        = useState(true);
   const [openId, setOpenId]          = useState(null);  // invoice_id or "po-{po_id}"
   const [capturePO, setCapturePO]    = useState(null);  // PO being captured inline
-  const [captureForm, setCaptureForm]= useState({ supplier_invoice_no: '', invoice_date: new Date().toISOString().slice(0,10), period_id: '' });
+  const [captureForm, setCaptureForm]= useState({ supplier_invoice_no: '', invoice_date: new Date().toISOString().slice(0,10) });
   const [showNew, setShowNew]        = useState(false);
   const [newForm, setNewForm]        = useState({ supplier_code: '', supplier_invoice_no: '', invoice_date: new Date().toISOString().slice(0,10), period_id: '', subtotal_excl_vat: '', vat_amount: '', total_incl_vat: '', document_ref: '' });
   const [saving, setSaving]          = useState(false);
@@ -223,22 +223,21 @@ function SupplierInvoicesTab({ suppliers, periods }) {
   // Capture invoice from PO — inline, no modal
   const captureFromPO = async (po) => {
     setSaveErr('');
-    if (!captureForm.period_id) { setSaveErr('GL Period is required'); return; }
     const invNo = captureForm.supplier_invoice_no || po.supplier_invoice_no;
     if (!invNo) { setSaveErr('Supplier invoice number is required'); return; }
     setSaving(true);
     const r = await req('/fin/ap/invoices', {
       method: 'POST',
       body: JSON.stringify({
-        supplier_code: po.supplier_code,
+        supplier_code:       po.supplier_code,
         supplier_invoice_no: invNo,
-        invoice_date: captureForm.invoice_date,
-        period_id: captureForm.period_id,
-        subtotal_excl_vat: po.subtotal_excl_vat,
-        vat_amount: po.vat_amount,
-        total_incl_vat: po.total_incl_vat,
-        document_ref: po.onedrive_url || null,
-        po_id: po.po_id,
+        invoice_date:        captureForm.invoice_date,
+        // period_id auto-resolved from invoice_date on the backend
+        subtotal_excl_vat:   po.subtotal_excl_vat,
+        vat_amount:          po.vat_amount,
+        total_incl_vat:      po.total_incl_vat,
+        document_ref:        po.onedrive_url || null,
+        po_id:               po.po_id,
       }),
     });
     setSaving(false);
@@ -525,7 +524,7 @@ function SupplierInvoicesTab({ suppliers, periods }) {
                           onClick={() => {
                             setOpenId(rowKey);
                             setCapturePO(po);
-                            setCaptureForm({ supplier_invoice_no: po.supplier_invoice_no || '', invoice_date: new Date().toISOString().slice(0,10), period_id: '' });
+                            setCaptureForm({ supplier_invoice_no: po.supplier_invoice_no || '', invoice_date: new Date().toISOString().slice(0,10) });
                             setSaveErr('');
                           }}>
                           📥 Capture
@@ -558,31 +557,53 @@ function SupplierInvoicesTab({ suppliers, periods }) {
                           </div>
 
                           <div style={{ padding: '12px 18px' }}>
-                            {/* Financials table — same style as PO lines */}
-                            <div className="table-wrap" style={{ marginBottom: 12 }}>
-                              <table>
-                                <thead>
-                                  <tr style={{ background: '#4a90b8', color: 'white' }}>
-                                    <th>Field</th>
-                                    <th style={{ textAlign: 'right' }}>Amount</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  <tr>
-                                    <td style={{ fontSize: 12 }}>Excl VAT</td>
-                                    <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 12 }}>{fmt(po.subtotal_excl_vat)}</td>
-                                  </tr>
-                                  <tr style={{ background: '#f7f9fc' }}>
-                                    <td style={{ fontSize: 12 }}>VAT</td>
-                                    <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 12, color: '#c05621' }}>{fmt(po.vat_amount)}</td>
-                                  </tr>
-                                  <tr>
-                                    <td style={{ fontSize: 12, fontWeight: 600 }}>Total Incl VAT</td>
-                                    <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 13, fontWeight: 700, color: '#005A8E' }}>{fmt(po.total_incl_vat)}</td>
-                                  </tr>
-                                </tbody>
-                              </table>
-                            </div>
+                            {/* PO line items — identical to PO card */}
+                            {(po.lines || []).length > 0 && (
+                              <div className="table-wrap" style={{ marginBottom: 12 }}>
+                                <table>
+                                  <thead>
+                                    <tr style={{ background: '#4a90b8', color: 'white' }}>
+                                      <th style={{ width: 28 }}>#</th>
+                                      <th style={{ width: 100 }}>Category</th>
+                                      <th style={{ width: 130 }}>Item</th>
+                                      <th>Description</th>
+                                      <th style={{ textAlign: 'right' }}>Excl VAT</th>
+                                      <th style={{ textAlign: 'right' }}>VAT</th>
+                                      <th style={{ textAlign: 'right' }}>Incl VAT</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {po.lines.map((l, idx) => {
+                                      let cat = 'Horse', catColor = '#005A8E';
+                                      if (l.line_type === 'INVENTORY') { cat = 'Inventory'; catColor = '#059669'; }
+                                      else if (l.item_name && l.item_name.startsWith('TRAILER')) { cat = 'Trailer'; catColor = '#7c3aed'; }
+                                      let itemCode = l.item_code || '';
+                                      if (!itemCode && l.item_name && l.item_name.includes(':')) itemCode = l.item_name.split(':')[1] || '';
+                                      if (!itemCode) { const m = (l.description || '').toUpperCase().match(/(MH|RH|BT|ST)\d+/); if (m) itemCode = m[0]; }
+                                      return (
+                                        <tr key={idx} style={{ background: idx % 2 === 0 ? 'white' : '#f7f9fc' }}>
+                                          <td style={{ fontSize: 11, color: '#888' }}>{l.line_number}</td>
+                                          <td><span style={{ fontSize: 11, fontWeight: 600, color: catColor }}>{cat}</span></td>
+                                          <td className="mono" style={{ fontSize: 11 }}>{itemCode || <span style={{ color: '#bbb' }}>—</span>}</td>
+                                          <td style={{ fontSize: 12 }}>{l.description}</td>
+                                          <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 12 }}>{fmt(l.line_total_excl)}</td>
+                                          <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 12, color: '#c05621' }}>{l.vat_amount > 0 ? fmt(l.vat_amount) : '—'}</td>
+                                          <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 13, fontWeight: 600, color: '#005A8E' }}>{fmt(l.line_total_incl)}</td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                  <tfoot>
+                                    <tr style={{ background: '#2d6a96', color: 'white', fontWeight: 700 }}>
+                                      <td colSpan={4} style={{ padding: '6px 8px', textAlign: 'right', fontSize: 11 }}>TOTALS</td>
+                                      <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'monospace', fontSize: 11 }}>{fmt(po.subtotal_excl_vat)}</td>
+                                      <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'monospace', fontSize: 11, color: '#fbd38d' }}>{po.vat_amount > 0 ? fmt(po.vat_amount) : '—'}</td>
+                                      <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: 'monospace', fontSize: 11, color: '#90cdf4' }}>{fmt(po.total_incl_vat)}</td>
+                                    </tr>
+                                  </tfoot>
+                                </table>
+                              </div>
+                            )}
 
                             {po.po_description && (
                               <div style={{ fontSize: 12, color: '#555', marginBottom: 12 }}>
@@ -626,17 +647,7 @@ function SupplierInvoicesTab({ suppliers, periods }) {
                                     onChange={e => setCF('invoice_date', e.target.value)}
                                     style={{ width: '100%', fontSize: 12 }} />
                                 </div>
-                                <div style={{ flex: '1 1 180px' }}>
-                                  <label style={{ fontSize: 11, fontWeight: 600, color: '#555', display: 'block', marginBottom: 3 }}>
-                                    GL Period *
-                                  </label>
-                                  <select value={captureForm.period_id}
-                                    onChange={e => setCF('period_id', e.target.value)}
-                                    style={{ width: '100%', fontSize: 12 }}>
-                                    <option value="">— Select period —</option>
-                                    {periods.map(p => <option key={p.period_id} value={p.period_id}>{p.period_name}</option>)}
-                                  </select>
-                                </div>
+  
                                 <div style={{ display: 'flex', gap: 6, paddingBottom: 1 }}>
                                   <button className="btn btn-primary btn-sm" style={{ fontSize: 11 }}
                                     onClick={() => captureFromPO(po)} disabled={saving}>
