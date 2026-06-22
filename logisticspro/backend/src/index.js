@@ -6,7 +6,7 @@ const rateLimit = require('express-rate-limit');
 const authRoutes = require('./routes/auth');
 const loadsRoutes = require('./routes/loads');
 const vehiclesRoutes = require('./routes/vehicles');
-const { driversRouter, customersRouter, maintenanceRouter, inventoryRouter, routesRouter } = require('./routes/entities');
+const { driversRouter, customersRouter, maintenanceRouter, routesRouter } = require('./routes/entities');
 const clientRatesRouter = require('./routes/clientRates');
 const usersRouter = require('./routes/users');
 const costsRouter = require('./routes/costs');
@@ -52,7 +52,6 @@ app.use('/api/vehicles',    vehiclesRoutes);
 app.use('/api/drivers',     driversRouter);
 app.use('/api/customers',   customersRouter);
 app.use('/api/maintenance', maintenanceRouter);
-app.use('/api/inventory',   inventoryRouter);   // legacy entities inventory (vehicle parts etc.)
 app.use('/api/stock',       stockRouter);       // LP2.0 Inventory & Purchase Orders module
 app.use('/api/roles',       rolesRouter);       // LP2.0 Role Manager (Admin only)
 app.use('/api/fin',         financeRouter);    // LP2.0 Financial Module
@@ -79,3 +78,4 @@ app.use((err, _req, res, _next) => {
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => console.log(`LogisticsPro API running on port ${PORT}`));
+
