@@ -344,7 +344,67 @@ router.post('/journals', requireFin, async (req, res) => {
     await supabase.from('fin_vat_transactions').insert(vatRows);
   }
 
-  res.json({ success: true, journal_id: journal.journal_id, journal_ref });
+  // ── Sub-ledger posting for AP/AR lines ───────────────────────────────────
+  // Journal lines with reference='AP' or 'AR' affect supplier/customer balances.
+  // We write an adjustment against the most recent open invoice for that party.
+  const apLines = lines.filter(l => l.reference === 'AP');
+  const arLines = lines.filter(l => l.reference === 'AR');
+
+  for (const l of apLines) {
+    const adjAmt = (parseFloat(l.debit) || 0) - (parseFloat(l.credit) || 0);
+    if (!adjAmt || !l.account_code) continue;
+
+    // Find the oldest open AP invoice for this supplier to apply adjustment against
+    const { data: openInvs } = await supabase
+      .from('fin_ap_invoices')
+      .select('invoice_id, balance_due, amount_written_off')
+      .eq('supplier_code', l.account_code)
+      .gt('balance_due', 0)
+      .not('status', 'eq', 'CANCELLED')
+      .order('invoice_date', { ascending: true })
+      .limit(1);
+
+    if (openInvs?.length) {
+      const inv = openInvs[0];
+      const apply = Math.min(Math.abs(adjAmt), inv.balance_due);
+      const newWriteOff = Number(inv.amount_written_off || 0) + apply;
+      const newBalance  = Number(inv.balance_due) - apply;
+      await supabase.from('fin_ap_invoices').update({
+        amount_written_off: Math.round(newWriteOff * 100) / 100,
+        balance_due:        Math.round(newBalance  * 100) / 100,
+        status:             newBalance < 0.01 ? 'PAID' : 'PARTIAL',
+      }).eq('invoice_id', inv.invoice_id);
+    }
+  }
+
+  for (const l of arLines) {
+    const adjAmt = (parseFloat(l.credit) || 0) - (parseFloat(l.debit) || 0);
+    if (!adjAmt || !l.account_code) continue;
+
+    const { data: openInvs } = await supabase
+      .from('fin_ar_invoices')
+      .select('invoice_id, balance_due, amount_written_off')
+      .eq('customer_code', l.account_code)
+      .gt('balance_due', 0)
+      .not('status', 'eq', 'CANCELLED')
+      .order('invoice_date', { ascending: true })
+      .limit(1);
+
+    if (openInvs?.length) {
+      const inv = openInvs[0];
+      const apply = Math.min(Math.abs(adjAmt), inv.balance_due);
+      const newWriteOff = Number(inv.amount_written_off || 0) + apply;
+      const newBalance  = Number(inv.balance_due) - apply;
+      await supabase.from('fin_ar_invoices').update({
+        amount_written_off: Math.round(newWriteOff * 100) / 100,
+        balance_due:        Math.round(newBalance  * 100) / 100,
+        status:             newBalance < 0.01 ? 'PAID' : 'PARTIAL',
+      }).eq('invoice_id', inv.invoice_id);
+    }
+  }
+
+  res.json({ success: true, journal_id: journal.journal_id, journal_ref,
+    ap_adjustments: apLines.length, ar_adjustments: arLines.length });
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -2595,5 +2655,6 @@ router.post('/depreciation/run', requireFin, async (req, res) => {
 
 
 module.exports = router;
+
 
 
