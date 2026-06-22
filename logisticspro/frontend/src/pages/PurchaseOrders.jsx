@@ -141,7 +141,7 @@ export default function PurchaseOrders() {
       });
       if (result.error) throw new Error(result.error);
       if (!park) {
-        await req(\`/stock/po/\${result.po_id}/submit\`, { method: 'POST', body: '{}' });
+        await req(`/stock/po/${result.po_id}/submit`, { method: 'POST', body: '{}' });
       }
       setShowNew(false);
       setForm({ supplier_code: '', supplier_name: '', supplier_vat: '', lines: [{ type: 'VEHICLE', description: '', excl: '', vat: '', incl: '' }] });
@@ -649,6 +649,7 @@ export default function PurchaseOrders() {
     </div>
   );
 }
+
 
 
 
