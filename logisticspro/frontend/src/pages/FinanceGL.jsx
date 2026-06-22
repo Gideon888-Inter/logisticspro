@@ -1172,6 +1172,138 @@ function AuditLog() {
 }
 
 // ── MAIN EXPORT ────────────────────────────────────────────────────────────
+
+// ── AP SUPPLIER CATEGORIES ────────────────────────────────────
+function APCategories() {
+  const [categories, setCategories] = useState([]);
+  const [loading, setLoading]       = useState(true);
+  const [editId, setEditId]         = useState(null);
+  const [editName, setEditName]     = useState('');
+  const [addType, setAddType]       = useState('SUPPLIER_TYPE');
+  const [addName, setAddName]       = useState('');
+  const [saving, setSaving]         = useState(false);
+  const [deleting, setDeleting]     = useState(null);
+  const [err, setErr]               = useState('');
+
+  const API   = `${import.meta.env.VITE_API_URL}/api`;
+  const token = () => localStorage.getItem('lp_token');
+  const req   = (path, opts = {}) => fetch(API + path, {
+    ...opts,
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token(), ...(opts.headers || {}) },
+  }).then(r => r.json());
+
+  const load = async () => {
+    setLoading(true);
+    const data = await req('/fin/supplier-categories');
+    setCategories(Array.isArray(data) ? data : []);
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  const byType = (type) => categories.filter(c => c.category_type === type);
+
+  const startEdit = (c) => { setEditId(c.id); setEditName(c.name); setErr(''); };
+  const cancelEdit = () => { setEditId(null); setEditName(''); };
+
+  const saveEdit = async (id) => {
+    if (!editName.trim()) return setErr('Name cannot be empty');
+    setSaving(true);
+    const r = await req(`/fin/supplier-categories/${id}`, { method: 'PATCH', body: JSON.stringify({ name: editName.trim() }) });
+    setSaving(false);
+    if (r.error) return setErr(r.error);
+    setEditId(null); load();
+  };
+
+  const doDelete = async (id) => {
+    if (!window.confirm('Delete this category? This cannot be undone.')) return;
+    setDeleting(id);
+    const r = await req(`/fin/supplier-categories/${id}`, { method: 'DELETE' });
+    setDeleting(null);
+    if (r.error) return setErr(r.error);
+    load();
+  };
+
+  const doAdd = async () => {
+    if (!addName.trim()) return setErr('Name is required');
+    setSaving(true);
+    const r = await req('/fin/supplier-categories', { method: 'POST', body: JSON.stringify({ name: addName.trim(), category_type: addType }) });
+    setSaving(false);
+    if (r.error) return setErr(r.error);
+    setAddName(''); load();
+  };
+
+  const Section = ({ type, label }) => (
+    <div style={{ marginBottom: 28 }}>
+      <div style={{ fontWeight: 600, fontSize: 13, color: '#005A8E', marginBottom: 8, paddingBottom: 4, borderBottom: '1px solid #e8edf2' }}>{label}</div>
+      {loading ? <div className="loading">Loading…</div> : (
+        <div className="table-wrap" style={{ marginBottom: 10 }}>
+          <table>
+            <thead><tr><th>Name</th><th style={{ width: 120 }}>Actions</th></tr></thead>
+            <tbody>
+              {byType(type).length === 0 && (
+                <tr><td colSpan={2}><div className="empty-state" style={{ padding: '12px 0' }}>No {label.toLowerCase()} defined yet</div></td></tr>
+              )}
+              {byType(type).map(c => (
+                <tr key={c.id}>
+                  <td>
+                    {editId === c.id ? (
+                      <input value={editName} onChange={e => setEditName(e.target.value)}
+                        style={{ width: '100%', fontSize: 13 }}
+                        onKeyDown={e => { if (e.key === 'Enter') saveEdit(c.id); if (e.key === 'Escape') cancelEdit(); }}
+                        autoFocus />
+                    ) : (
+                      <span style={{ fontSize: 13 }}>{c.name}</span>
+                    )}
+                  </td>
+                  <td>
+                    {editId === c.id ? (
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <button className="btn btn-primary btn-sm" style={{ fontSize: 11 }} onClick={() => saveEdit(c.id)} disabled={saving}>Save</button>
+                        <button className="btn btn-sm" style={{ fontSize: 11 }} onClick={cancelEdit}>Cancel</button>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <button className="btn btn-sm" style={{ fontSize: 11 }} onClick={() => startEdit(c)}>✏ Edit</button>
+                        <button className="btn btn-sm" style={{ fontSize: 11, color: '#e53e3e', borderColor: '#e53e3e' }}
+                          onClick={() => doDelete(c.id)} disabled={deleting === c.id}>
+                          {deleting === c.id ? '…' : '🗑'}
+                        </button>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {/* Add row for this type */}
+      {addType === type && (
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <input value={addName} onChange={e => setAddName(e.target.value)} placeholder={`New ${label} name…`}
+            style={{ flex: 1, maxWidth: 280 }}
+            onKeyDown={e => { if (e.key === 'Enter') doAdd(); }} />
+          <button className="btn btn-primary btn-sm" onClick={doAdd} disabled={saving}>{saving ? 'Adding…' : '+ Add'}</button>
+          <button className="btn btn-sm" onClick={() => { setAddName(''); setErr(''); }}>Clear</button>
+        </div>
+      )}
+      {addType !== type && (
+        <button className="btn btn-sm" style={{ fontSize: 11 }} onClick={() => { setAddType(type); setAddName(''); setErr(''); }}>
+          + Add {label}
+        </button>
+      )}
+    </div>
+  );
+
+  return (
+    <div style={{ maxWidth: 640 }}>
+      {err && <div style={{ background: '#fff5f5', border: '1px solid #fca5a5', borderRadius: 4, padding: '8px 12px', marginBottom: 12, color: '#e53e3e', fontSize: 13 }}>⚠ {err}</div>}
+      <Section type="SUPPLIER_TYPE" label="Supplier Types" />
+      <Section type="DISCOUNT"      label="Supplier Discounts" />
+    </div>
+  );
+}
+
 export default function FinanceGL() {
   const { user } = useAuth();
   const [tab, setTab] = useState('coa');
@@ -1190,7 +1322,8 @@ export default function FinanceGL() {
         <div style={tabStyle('ledger')}   onClick={() => setTab('ledger')}>Account Transactions</div>
         <div style={tabStyle('journals')} onClick={() => setTab('journals')}>GL Journals</div>
         <div style={tabStyle('is')}       onClick={() => setTab('is')}>Income Statement</div>
-        <div style={tabStyle('audit')}    onClick={() => setTab('audit')}>Audit Trail</div>
+        <div style={tabStyle('audit')}      onClick={() => setTab('audit')}>Audit Trail</div>
+        <div style={tabStyle('ap-cats')}    onClick={() => setTab('ap-cats')}>AP Categories</div>
       </div>
       {tab === 'coa'      && <ChartOfAccounts />}
       {tab === 'tb'       && <TrialBalance />}
@@ -1198,6 +1331,7 @@ export default function FinanceGL() {
       {tab === 'journals' && <GLJournals user={user} />}
       {tab === 'is'       && <IncomeStatement />}
       {tab === 'audit'    && <AuditLog />}
+      {tab === 'ap-cats'  && <APCategories />}
     </div>
   );
 }
