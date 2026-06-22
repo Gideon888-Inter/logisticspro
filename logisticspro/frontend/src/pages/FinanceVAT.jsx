@@ -206,7 +206,16 @@ function VATTransactions() {
         <div style={{ display: 'flex', gap: 6, marginBottom: 10, justifyContent: 'flex-end' }}>
           <button className="btn btn-sm" onClick={doExport}>⬇ CSV</button>
           <button className="btn btn-sm" onClick={doExport}>⬇ Excel</button>
-          <button className="btn btn-sm" onClick={() => window.print()}>🖨 Print</button>
+          <button className="btn btn-sm" onClick={() => {
+            const w = window.open('','_blank','width=900,height=700');
+            const tbl = document.getElementById('vat-tx-table');
+            if (!tbl || !w) return;
+            w.document.write('<html><head><title>VAT Transactions</title><style>body{font-family:sans-serif;font-size:12px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:4px 6px}th{background:#f0f0f0}</style></head><body>');
+            w.document.write('<h2>VAT Transactions</h2>');
+            w.document.write(tbl.outerHTML);
+            w.document.write('</body></html>');
+            w.document.close(); w.print();
+          }}>🖨 Print</button>
         </div>
       )}
 
@@ -344,7 +353,15 @@ function VATReturn() {
     setLoading(false);
   };
 
-  const doPrint = () => window.print();
+  const doPrint = () => {
+    const w = window.open('', '_blank', 'width=900,height=700');
+    if (!w) return;
+    const el = document.getElementById('vat201-report');
+    w.document.write('<html><head><title>VAT 201 Return</title><style>body{font-family:sans-serif;font-size:13px;padding:24px}table{border-collapse:collapse;width:100%}th,td{padding:6px 10px;border-bottom:1px solid #ddd}th{text-align:left;background:#f5f5f5}.section-head{background:#1e3a5f;color:white;padding:6px 10px;font-weight:bold;margin:16px 0 4px}.field-row{display:flex;justify-content:space-between;padding:5px 10px;border-bottom:1px solid #eee}.field-label{color:#444}.field-value{font-family:monospace;font-weight:bold}</style></head><body>');
+    w.document.write(el ? el.innerHTML : '<p>Report not loaded</p>');
+    w.document.write('</body></html>');
+    w.document.close(); w.print();
+  };
 
   // Helper row renderer — matches VAT201 layout
   const Row = ({ field, label, value, isTotal, color, indent }) => (
@@ -403,7 +420,7 @@ function VATReturn() {
       )}
 
       {data && (
-        <div style={{ maxWidth: 740, margin: '0 auto' }}>
+        <div id="vat201-report" style={{ maxWidth: 740, margin: '0 auto' }}>
           {/* Header */}
           <div style={{ border: '2px solid #005A8E', borderRadius: 6, overflow: 'hidden', fontFamily: 'Arial, sans-serif' }}>
 
@@ -498,6 +515,126 @@ function VATReturn() {
 }
 
 // ── MAIN VAT PAGE ─────────────────────────────────────────────
+
+// ── VAT TYPES MANAGER ────────────────────────────────────────────────────────
+function VATTypeManager({ vatTypes: initial, onRefresh }) {
+  const [types, setTypes] = useState(initial || []);
+  const [editing, setEditing] = useState(null); // vat_code being edited
+  const [adding, setAdding]   = useState(false);
+  const [form, setForm] = useState({ vat_code: '', description: '', rate_pct: '', vat_direction: 'OUTPUT', vat201_field: '', is_capital_goods: false, active: true });
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+
+  const load = async () => {
+    const data = await req('/fin/vat-types?all=1');
+    setTypes(Array.isArray(data) ? data : []);
+    onRefresh && onRefresh();
+  };
+  useEffect(() => { load(); }, []);
+
+  const startAdd = () => {
+    setForm({ vat_code: '', description: '', rate_pct: '', vat_direction: 'OUTPUT', vat201_field: '', is_capital_goods: false, active: true });
+    setAdding(true); setEditing(null); setErr('');
+  };
+  const startEdit = (v) => {
+    setForm({ vat_code: v.vat_code, description: v.description, rate_pct: String(v.rate_pct), vat_direction: v.vat_direction, vat201_field: v.vat201_field || '', is_capital_goods: !!v.is_capital_goods, active: v.active });
+    setEditing(v.vat_code); setAdding(false); setErr('');
+  };
+  const cancel = () => { setAdding(false); setEditing(null); setErr(''); };
+
+  const save = async () => {
+    setErr('');
+    if (!form.description.trim()) return setErr('Description is required');
+    if (form.rate_pct === '' || isNaN(Number(form.rate_pct))) return setErr('Rate % is required');
+    setSaving(true);
+    let res;
+    if (adding) {
+      if (!form.vat_code.trim()) return setErr('VAT Code is required');
+      res = await req('/fin/vat-types', { method: 'POST', body: JSON.stringify({ ...form, rate_pct: Number(form.rate_pct) }) });
+    } else {
+      res = await req(`/fin/vat-types/${editing}`, { method: 'PATCH', body: JSON.stringify({ description: form.description, rate_pct: Number(form.rate_pct), vat_direction: form.vat_direction, vat201_field: form.vat201_field || null, is_capital_goods: form.is_capital_goods, active: form.active }) });
+    }
+    setSaving(false);
+    if (res?.error) return setErr(res.error);
+    cancel(); load();
+  };
+
+  const DIR_BADGE = { OUTPUT: 'badge-green', INPUT: 'badge-blue', BOTH: 'badge-purple' };
+  const setF = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  return (
+    <div>
+      <div className="filter-bar">
+        <span style={{ fontWeight: 600, fontSize: 14 }}>VAT Types ({types.length})</span>
+        <button className="btn btn-primary btn-sm" onClick={startAdd}>+ Add VAT Type</button>
+      </div>
+
+      {(adding || editing) && (
+        <div style={{ background: '#f0f7ff', border: '1px solid #bee3f8', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+          <h4 style={{ marginBottom: 12, color: '#005A8E' }}>{adding ? 'New VAT Type' : `Edit — ${editing}`}</h4>
+          <div className="form-row">
+            {adding && (
+              <div className="form-group" style={{ width: 120 }}>
+                <label>VAT Code *</label>
+                <input value={form.vat_code} onChange={e => setF('vat_code', e.target.value.toUpperCase())} placeholder="e.g. IN_STD" style={{ textTransform: 'uppercase' }} />
+              </div>
+            )}
+            <div className="form-group" style={{ flex: 2 }}>
+              <label>Description *</label>
+              <input value={form.description} onChange={e => setF('description', e.target.value)} placeholder="e.g. Standard rate (15%)" />
+            </div>
+            <div className="form-group" style={{ width: 90 }}>
+              <label>Rate % *</label>
+              <input type="number" value={form.rate_pct} onChange={e => setF('rate_pct', e.target.value)} min="0" max="100" step="0.01" />
+            </div>
+            <div className="form-group" style={{ width: 110 }}>
+              <label>Direction</label>
+              <select value={form.vat_direction} onChange={e => setF('vat_direction', e.target.value)}>
+                <option value="OUTPUT">OUTPUT</option>
+                <option value="INPUT">INPUT</option>
+                <option value="BOTH">BOTH</option>
+              </select>
+            </div>
+            <div className="form-group" style={{ width: 90 }}>
+              <label>VAT201 Field</label>
+              <input value={form.vat201_field} onChange={e => setF('vat201_field', e.target.value)} placeholder="e.g. 1" />
+            </div>
+            <div className="form-group" style={{ width: 90, justifyContent: 'flex-end' }}>
+              <label>Active</label>
+              <input type="checkbox" checked={form.active} onChange={e => setF('active', e.target.checked)} style={{ width: 16, height: 16, marginTop: 8 }} />
+            </div>
+          </div>
+          {err && <div style={{ color: '#c53030', fontSize: 13, marginBottom: 8 }}>{err}</div>}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-primary btn-sm" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
+            <button className="btn btn-sm" onClick={cancel}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th>Code</th><th>Description</th><th>Rate %</th><th>Direction</th><th>VAT201 Field</th><th>Capital</th><th>Active</th><th></th></tr></thead>
+          <tbody>
+            {types.map(v => (
+              <tr key={v.vat_code} style={{ opacity: v.active ? 1 : 0.5 }}>
+                <td className="mono" style={{ fontWeight: 700 }}>{v.vat_code}</td>
+                <td style={{ fontSize: 13 }}>{v.description}</td>
+                <td style={{ textAlign: 'right', fontFamily: 'monospace' }}>{v.rate_pct}%</td>
+                <td><span className={`badge ${DIR_BADGE[v.vat_direction] || 'badge-gray'}`} style={{ fontSize: 11 }}>{v.vat_direction}</span></td>
+                <td style={{ textAlign: 'center', color: '#888', fontSize: 13 }}>{v.vat201_field || '—'}</td>
+                <td style={{ textAlign: 'center' }}>{v.is_capital_goods ? '✓' : '—'}</td>
+                <td><span className={`badge ${v.active ? 'badge-green' : 'badge-gray'}`} style={{ fontSize: 10 }}>{v.active ? 'Active' : 'Inactive'}</span></td>
+                <td><button className="btn btn-sm" style={{ fontSize: 11, padding: '2px 8px' }} onClick={() => startEdit(v)}>Edit</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export default function FinanceVAT() {
   const [tab, setTab]         = useState('summary');
   const [vatTypes, setVatTypes] = useState([]);
@@ -518,10 +655,13 @@ export default function FinanceVAT() {
         <div style={tabStyle('summary')}      onClick={() => setTab('summary')}>Summary</div>
         <div style={tabStyle('transactions')} onClick={() => setTab('transactions')}>VAT Transactions</div>
         <div style={tabStyle('return')}       onClick={() => setTab('return')}>VAT Return (VAT201)</div>
+        <div style={tabStyle('vattypes')}     onClick={() => setTab('vattypes')}>VAT Types</div>
       </div>
       {tab === 'summary'      && <VATSummary vatTypes={vatTypes} />}
       {tab === 'transactions' && <VATTransactions />}
       {tab === 'return'       && <VATReturn />}
+      {tab === 'vattypes'     && <VATTypeManager vatTypes={vatTypes} onRefresh={load} />}
     </div>
   );
 }
+
