@@ -51,7 +51,7 @@ export default function PurchaseOrders() {
   const loadSupport = async () => {
     try {
       const [supRes, vehRes, invRes] = await Promise.all([
-        req('/stock/suppliers').catch(() => []),
+        req('/fin/suppliers/workshop').catch(() => []),
         fetch(API + '/vehicles', { headers: { Authorization: 'Bearer ' + token() } }).then(r => r.json()).catch(() => []),
         req('/stock/items?status=ACTIVE').catch(() => []),
       ]);
@@ -411,3 +411,4 @@ export default function PurchaseOrders() {
     </div>
   );
 }
+
