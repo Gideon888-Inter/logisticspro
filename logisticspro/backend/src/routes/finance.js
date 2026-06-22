@@ -2352,23 +2352,10 @@ router.delete('/supplier-categories/:id', requireRole(ROLES.ADMIN, ROLES.FINANCE
   res.json({ success: true });
 });
 
-router.get('/ap/invoices', requireFin, async (req, res) => {
-  const { supplier_code, status, period_id } = req.query;
-  let query = supabase
-    .from('fin_ap_invoices')
-    .select('*, fin_suppliers(supplier_name, payment_terms_days)')
-    .order('invoice_date', { ascending: false })
-    .limit(200);
-  if (supplier_code) query = query.eq('supplier_code', supplier_code);
-  if (status)        query = query.eq('status', status);
-  if (period_id)     query = query.eq('period_id', period_id);
-  const { data, error } = await query;
-  if (error) return res.status(500).json({ error: error.message });
-  res.json(data || []);
-});
-
 // GET /fin/ap/invoices/pending-pos — POs in PENDING_FINANCIAL awaiting invoice capture
 // Includes line items so the UI can show Category/Item/Description exactly like the PO card
+// NOTE: Must be registered BEFORE /ap/invoices GET to avoid Express treating
+//       "pending-pos" as a query against fin_ap_invoices with no match.
 router.get('/ap/invoices/pending-pos', requireFin, async (req, res) => {
   const { data: pos, error } = await supabase
     .from('lp_purchase_orders')
@@ -2394,6 +2381,21 @@ router.get('/ap/invoices/pending-pos', requireFin, async (req, res) => {
   });
 
   res.json(pos.map(p => ({ ...p, lines: linesByPo[p.po_id] || [] })));
+});
+
+router.get('/ap/invoices', requireFin, async (req, res) => {
+  const { supplier_code, status, period_id } = req.query;
+  let query = supabase
+    .from('fin_ap_invoices')
+    .select('*, fin_suppliers(supplier_name, payment_terms_days)')
+    .order('invoice_date', { ascending: false })
+    .limit(200);
+  if (supplier_code) query = query.eq('supplier_code', supplier_code);
+  if (status)        query = query.eq('status', status);
+  if (period_id)     query = query.eq('period_id', period_id);
+  const { data, error } = await query;
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data || []);
 });
 
 router.post('/ap/invoices', requireFin, async (req, res) => {
@@ -2791,6 +2793,7 @@ router.post('/depreciation/run', requireFin, async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
