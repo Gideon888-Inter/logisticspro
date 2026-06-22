@@ -1163,10 +1163,14 @@ router.get('/vat-return/:period', requireFin, async (req, res) => {
   const sum = (arr, field) => arr.reduce((s, r) => s + (r[field] || 0), 0);
 
   // Output rows
-  const output_std    = rows.filter(r => r.vat_direction === 'OUTPUT' && !r.is_capital_goods && r._vt.rate_pct === 15);
+  // Use Number() coercion — Supabase can return numeric as string or float
+  const rate = (r) => Number(r._vt?.rate_pct ?? -1);
+  const field = (r) => r._vt?.vat201_field;
+
+  const output_std    = rows.filter(r => r.vat_direction === 'OUTPUT' && !r.is_capital_goods && rate(r) > 0);
   const output_cap    = rows.filter(r => r.vat_direction === 'OUTPUT' && r.is_capital_goods);
-  const output_zero   = rows.filter(r => r.vat_direction === 'OUTPUT' && r._vt.rate_pct === 0 && r._vt.vat201_field === '2');
-  const output_zeroex = rows.filter(r => r.vat_direction === 'OUTPUT' && r._vt.rate_pct === 0 && r._vt.vat201_field === '2A');
+  const output_zero   = rows.filter(r => r.vat_direction === 'OUTPUT' && rate(r) === 0 && field(r) === '2');
+  const output_zeroex = rows.filter(r => r.vat_direction === 'OUTPUT' && rate(r) === 0 && field(r) === '2A');
 
   // Input rows
   const input_cap     = rows.filter(r => r.vat_direction === 'INPUT' && r.is_capital_goods);
@@ -1193,13 +1197,24 @@ router.get('/vat-return/:period', requireFin, async (req, res) => {
       field1A, field4A,
       field2,  field2A,
       field13,
-      field14, field14_vat,
-      field15, field15_vat,
+      // field14 = INPUT capital VAT amount (what SARS calls field 14)
+      // field14_excl = exclusive base (informational only)
+      field14:      field14_vat,   // VAT amount — this is what goes on the return
+      field14_excl: field14,       // Exclusive base — informational
+      field15:      field15_vat,   // VAT amount — this is what goes on the return
+      field15_excl: field15,       // Exclusive base — informational
       field19,
       field20,
     },
+    totals: {
+      output_excl:  Math.round((sum(output_std, 'exclusive_amount') + sum(output_cap, 'exclusive_amount')) * 100) / 100,
+      output_vat:   field13,
+      input_excl:   Math.round((field14 + field15) * 100) / 100,
+      input_vat:    field19,
+    },
     payable:    field20 > 0,
     refundable: field20 < 0,
+    transaction_count: rows.length,
   });
 });
 
@@ -2274,28 +2289,38 @@ router.post('/ap/invoices', requireFin, async (req, res) => {
   // ── Write VAT transaction for AP invoice if VAT amount > 0 ─────────────────
   if (Number(vat_amount) > 0) {
     const vatPeriod = invoice_date.replace(/-/g, '').slice(0, 6);
-    // Look up supplier VAT number
+    // Look up supplier VAT number and default vat type
     const { data: supData } = await supabase
       .from('fin_suppliers')
-      .select('vat_number, supplier_name')
+      .select('vat_number, supplier_name, default_vat_type')
       .eq('supplier_code', supplier_code)
       .single();
 
-    await supabase.from('fin_vat_transactions').insert({
-      vat_code:           'IN_STD',
-      vat_direction:      'INPUT',
-      vat_period:         vatPeriod,
-      transaction_date:   invoice_date,
-      tax_invoice_no:     supplier_invoice_no || invoice_ref,
+    const apVatCode = supData?.default_vat_type || 'IN_STD';
+
+    // journal_id and line_id are NOT NULL in fin_vat_transactions schema.
+    // AP invoices are UNPOSTED until approved — no GL journal yet.
+    // Run migration_vat_nullable.sql to make these columns nullable.
+    // Until then, use 0 as a sentinel value.
+    const { error: apVatErr } = await supabase.from('fin_vat_transactions').insert({
+      vat_code:            apVatCode,
+      vat_direction:       'INPUT',
+      vat_period:          vatPeriod,
+      transaction_date:    invoice_date,
+      tax_invoice_no:      supplier_invoice_no || invoice_ref,
       counterparty_vat_no: supData?.vat_number || null,
-      counterparty_name:  supData?.supplier_name || supplier_code,
-      exclusive_amount:   Math.round(Number(subtotal_excl_vat || 0) * 100) / 100,
-      vat_amount:         Math.round(Number(vat_amount) * 100) / 100,
-      inclusive_amount:   Math.round(Number(total_incl_vat) * 100) / 100,
-      gl_account_code:    '9500',
-      source_module:      'AP',
-      is_capital_goods:   false,
+      counterparty_name:   supData?.supplier_name || supplier_code,
+      exclusive_amount:    Math.round(Number(subtotal_excl_vat || 0) * 100) / 100,
+      vat_amount:          Math.round(Number(vat_amount) * 100) / 100,
+      inclusive_amount:    Math.round(Number(total_incl_vat) * 100) / 100,
+      gl_account_code:     '9500',
+      source_module:       'AP',
+      is_capital_goods:    false,
+      journal_id:          invoice.journal_id || null,
+      line_id:             null,
     });
+    if (apVatErr) console.warn('[AP VAT] insert failed:', apVatErr.message,
+      '— run migration_vat_nullable.sql in Supabase to allow nullable journal_id/line_id');
   }
 
   // If linked to a PO — approve the PO and link the invoice
@@ -2570,4 +2595,5 @@ router.post('/depreciation/run', requireFin, async (req, res) => {
 
 
 module.exports = router;
+
 
