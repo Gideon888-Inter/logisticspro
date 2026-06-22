@@ -484,6 +484,29 @@ router.patch('/po/:id',
       .select().single();
 
     if (error) return res.status(500).json({ error: error.message });
+
+    // Replace lines if provided
+    if (Array.isArray(req.body.lines)) {
+      await supabase().from('lp_po_lines').delete().eq('po_id', req.params.id);
+      if (req.body.lines.length > 0) {
+        const lineRows = req.body.lines.map((l, idx) => ({
+          po_id:           req.params.id,
+          line_number:     idx + 1,
+          line_type:       l.line_type || 'COST',
+          description:     l.description || '',
+          quantity:        l.quantity || 1,
+          unit_of_measure: l.unit_of_measure || 'Each',
+          unit_price_excl: l.unit_price_excl || 0,
+          vat_type:        l.vat_type || null,
+          vat_amount:      l.vat_amount || 0,
+          line_total_excl: l.line_total_excl || 0,
+          line_total_incl: l.line_total_incl || 0,
+          qty_outstanding: l.quantity || 1,
+        }));
+        await supabase().from('lp_po_lines').insert(lineRows);
+      }
+    }
+
     res.json(data);
   }
 );
@@ -814,6 +837,57 @@ router.post('/po/:id/approve',
         });
       }
     }
+
+    res.json({ success: true, po: data });
+  }
+);
+
+
+// ── RECALL PO FROM APPROVAL ────────────────────────────────────────────────
+// POST /inventory/po/:id/recall — creator recalls a PENDING_L1 or PENDING_FINANCIAL PO back to PARKED
+// Only allowed if no approver has acted yet
+router.post('/po/:id/recall',
+  requireRole(ROLES.ADMIN, ROLES.FINANCE, ROLES.CONTROL_ROOM, ROLES.STOCK_CONTROLLER,
+             ROLES.WORKSHOP_ASSISTANT, ROLES.WORKSHOP_MANAGER),
+  async (req, res) => {
+    const { data: po } = await supabase()
+      .from('lp_purchase_orders')
+      .select('*')
+      .eq('po_id', req.params.id)
+      .single();
+
+    if (!po) return res.status(404).json({ error: 'PO not found' });
+
+    if (po.created_by !== req.user.username && req.user.role !== ROLES.ADMIN) {
+      return res.status(403).json({ error: 'Only the creator can recall this PO' });
+    }
+
+    // Only recall from PENDING_L1 or PENDING_FINANCIAL (first approval step for each creator type)
+    const recallableStatuses = ['PENDING_L1', 'PENDING_L2', 'PENDING_L3', 'PENDING_FINANCIAL'];
+    if (!recallableStatuses.includes(po.status)) {
+      return res.status(400).json({ error: `Cannot recall a PO at status ${po.status}` });
+    }
+
+    // Block if any approver has already acted
+    if (po.l1_approver || po.l2_approver || po.l3_approver || po.financial_approver) {
+      return res.status(400).json({ error: 'Cannot recall — an approver has already acted on this PO.' });
+    }
+
+    const now = new Date().toISOString();
+    const { data, error } = await supabase()
+      .from('lp_purchase_orders')
+      .update({ status: 'PARKED', submitted_by: null, submitted_at: null, updated_at: now })
+      .eq('po_id', po.po_id)
+      .select().single();
+
+    if (error) return res.status(500).json({ error: error.message });
+
+    await supabase().from('lp_po_approval_log').insert({
+      po_id: po.po_id, po_number: po.po_number,
+      action: 'RECALLED', actioned_by: req.user.username,
+      from_status: po.status, to_status: 'PARKED',
+      actioned_at: now,
+    });
 
     res.json({ success: true, po: data });
   }
