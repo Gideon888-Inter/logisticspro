@@ -143,7 +143,7 @@ function buildOneDrivePath(config, supplier_code, supplier_name, po_date) {
 
 // GET /stock/suppliers — returns suppliers allowed for Workshop, used by PO creation form
 router.get('/suppliers',
-  requireRole(ROLES.ADMIN, ROLES.MANAGER, ROLES.FINANCE, ROLES.CONTROL_ROOM, ROLES.WORKSHOP_MANAGER, ROLES.WORKSHOP_ASSISTANT, ROLES.STOCK_CONTROLLER),
+  requireRole(ROLES.ADMIN, ROLES.MANAGER, ROLES.FINANCE, ROLES.CONTROL_ROOM, ROLES.WORKSHOP_MANAGER, ROLES.WORKSHOP_ASSISTANT, ROLES.STOCK_CONTROLLER, ROLES.WORKSHOP),
   async (req, res) => {
     const { data, error } = await supabase
       .from('fin_suppliers')
@@ -972,6 +972,7 @@ router.get('/po/pending-approval',
 );
 
 module.exports = router;
+
 
 
 
