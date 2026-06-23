@@ -717,13 +717,52 @@ function ServiceCardModal({ card, onClose, onUpdated }) {
   );
 }
 
+// ── ServiceCardTable — reusable table for any status group ────────────────────
+function ServiceCardTable({ cards, vehicles, loading, onOpen, emptyMsg }) {
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Service No.</th><th>Date</th><th>Vehicle</th>
+            <th>Make / Model</th><th>Odometer</th><th>Trigger / Reason</th><th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {loading && <tr><td colSpan={7}><div className="loading">Loading…</div></td></tr>}
+          {!loading && cards.length===0 && (
+            <tr><td colSpan={7}><div className="empty-state">{emptyMsg || 'No records found'}</div></td></tr>
+          )}
+          {!loading && cards.map(c => {
+            const veh = vehicles.find(v => v.vh_code === c.sc_vehicle);
+            const cfg = STATUSES[c.sc_status] || {};
+            return (
+              <tr key={c.sc_no} onClick={() => onOpen(c)} style={{ cursor:'pointer' }}>
+                <td className="mono" style={{ fontWeight:700 }}>{cfg.icon} {c.sc_no}</td>
+                <td>{fmtDate(c.sc_date)}</td>
+                <td className="mono" style={{ fontWeight:600 }}>{c.sc_vehicle}</td>
+                <td>{veh ? `${veh.vh_make||''} ${veh.vh_model||''}`.trim()||'—' : '—'}</td>
+                <td className="mono">{c.sc_odometer ? Number(c.sc_odometer).toLocaleString()+' km':'—'}</td>
+                <td style={{ fontSize:12, color:'#666', maxWidth:200, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                  {c.sc_trigger||'—'}
+                </td>
+                <td><StatusBadge status={c.sc_status} /></td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function ServiceCards() {
-  const [cards, setCards]       = useState([]);
+  const [pageTab, setPageTab]   = useState('pending');  // pending | active | complete | rejected
+  const [allCards, setAllCards] = useState([]);
   const [vehicles, setVehicles] = useState([]);
   const [stats, setStats]       = useState({});
   const [loading, setLoading]   = useState(true);
-  const [statusFilter, setStatusFilter] = useState('');
   const [search, setSearch]     = useState('');
   const [showNew, setShowNew]   = useState(false);
   const [openCard, setOpenCard] = useState(null);
@@ -732,18 +771,17 @@ export default function ServiceCards() {
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
-      // Auto-create cards for due/overdue vehicles (idempotent)
       try {
         const r = await req('/service/auto-create', { method:'POST' });
         if (r.created > 0) setAutoResult(r);
       } catch {}
 
       const [cardsRes, vehRes, statsRes] = await Promise.all([
-        req('/service'),
+        req('/service?limit=2000'),
         req('/vehicles?active=all'),
         req('/service/stats'),
       ]);
-      setCards(cardsRes.data || []);
+      setAllCards(cardsRes.data || []);
       setVehicles(Array.isArray(vehRes) ? vehRes : []);
       setStats(statsRes || {});
     } catch(e) { console.error(e); }
@@ -752,22 +790,35 @@ export default function ServiceCards() {
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
-  const filtered = cards.filter(c => {
-    const s = search.toLowerCase();
-    return (!statusFilter || c.sc_status === statusFilter)
-      && (!s || c.sc_no?.toLowerCase().includes(s) || c.sc_vehicle?.toLowerCase().includes(s));
-  });
+  const s = search.toLowerCase();
+  const match = c => !s || c.sc_no?.toLowerCase().includes(s) || c.sc_vehicle?.toLowerCase().includes(s);
+
+  const pending  = allCards.filter(c => c.sc_status === 'PENDING_SERVICE'  && match(c));
+  const active   = allCards.filter(c => ['SERVICE_ACCEPTED','WAITING_FOR_PART'].includes(c.sc_status) && match(c));
+  const complete = allCards.filter(c => c.sc_status === 'COMPLETE'          && match(c));
+  const rejected = allCards.filter(c => c.sc_status === 'REJECTED'          && match(c));
+
+  const pageTabs = [
+    { key:'pending',  label:'Pending Service',  count: stats.pending,          color:'#6366f1', emptyMsg:'No pending service cards.' },
+    { key:'active',   label:'Active Services',  count: (stats.accepted||0) + (stats.waiting_for_part||0), color:'#d97706', emptyMsg:'No active services.' },
+    { key:'complete', label:'Complete',         count: stats.complete,          color:'#059669', emptyMsg:'No completed services yet.' },
+    { key:'rejected', label:'Rejected',         count: stats.rejected || 0,    color:'#6b7280', emptyMsg:'No rejected service cards.' },
+  ];
+
+  const tabCards = { pending, active, complete, rejected };
+  const currentCards = tabCards[pageTab] || [];
+  const currentTab = pageTabs.find(t => t.key === pageTab);
 
   return (
     <div>
       {/* Stats */}
       <div className="stats-grid">
         {[
-          { label:'Total',            val: stats.total,            color:'#1a202c' },
-          { label:'Pending',          val: stats.pending,          color:'#6366f1' },
-          { label:'Service Accepted', val: stats.accepted,         color:'#d97706' },
-          { label:'Waiting for Part', val: stats.waiting_for_part, color:'#dc2626' },
-          { label:'Complete',         val: stats.complete,         color:'#059669' },
+          { label:'Total',            val: stats.total,                                         color:'#1a202c' },
+          { label:'Pending',          val: stats.pending,                                       color:'#6366f1' },
+          { label:'Active',           val: (stats.accepted||0)+(stats.waiting_for_part||0),    color:'#d97706' },
+          { label:'Complete',         val: stats.complete,                                      color:'#059669' },
+          { label:'Rejected',         val: stats.rejected || 0,                                 color:'#6b7280' },
         ].map(s => (
           <div key={s.label} className="stat-card">
             <div className="stat-label">{s.label}</div>
@@ -788,54 +839,56 @@ export default function ServiceCards() {
         </div>
       )}
 
-      {/* Filter bar */}
-      <div className="filter-bar">
-        <input placeholder="Search by service no. or vehicle…" value={search}
-          onChange={e => setSearch(e.target.value)} />
-        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-          <option value="">All statuses</option>
-          {Object.entries(STATUSES).map(([k, s]) => (
-            <option key={k} value={k}>{s.icon} {s.label}</option>
-          ))}
-        </select>
-        <button className="btn btn-primary btn-sm" onClick={() => setShowNew(true)}>
-          + New Service Card
-        </button>
+      {/* ── Page-level tabs ── */}
+      <div style={{ display:'flex', borderBottom:'2px solid #e8edf2', marginBottom:0, background:'white',
+        borderRadius:'8px 8px 0 0', overflow:'hidden', border:'1px solid #e8edf2' }}>
+        {pageTabs.map(t => {
+          const active = pageTab === t.key;
+          return (
+            <button key={t.key} onClick={() => setPageTab(t.key)} style={{
+              flex:1, padding:'12px 8px', fontSize:12, fontWeight: active ? 700:400,
+              border:'none', background: active ? 'white':'#f8fafc',
+              borderBottom: active ? `3px solid ${t.color}`:'3px solid transparent',
+              color: active ? t.color:'#888', cursor:'pointer',
+              transition:'all 0.15s',
+            }}>
+              {t.label}
+              {t.count !== undefined && (
+                <span style={{
+                  marginLeft:6, display:'inline-block', minWidth:18, padding:'1px 5px',
+                  background: active ? t.color:'#e8edf2', color: active ? 'white':'#888',
+                  borderRadius:10, fontSize:10, fontWeight:700,
+                }}>
+                  {t.count ?? 0}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
-      {/* Table */}
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Service No.</th><th>Date</th><th>Vehicle</th>
-              <th>Make / Model</th><th>Odometer</th><th>Trigger / Reason</th><th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading && <tr><td colSpan={7}><div className="loading">Loading…</div></td></tr>}
-            {!loading && filtered.length===0 && <tr><td colSpan={7}><div className="empty-state">No service cards found</div></td></tr>}
-            {!loading && filtered.map(c => {
-              const veh = vehicles.find(v => v.vh_code === c.sc_vehicle);
-              const cfg = STATUSES[c.sc_status] || {};
-              return (
-                <tr key={c.sc_no} onClick={() => setOpenCard(c)}
-                  style={{ cursor:'pointer', background: ['SERVICE_ACCEPTED','WAITING_FOR_PART'].includes(c.sc_status) ? '#fffbeb':undefined }}>
-                  <td className="mono" style={{ fontWeight:700 }}>{cfg.icon} {c.sc_no}</td>
-                  <td>{fmtDate(c.sc_date)}</td>
-                  <td className="mono" style={{ fontWeight:600 }}>{c.sc_vehicle}</td>
-                  <td>{veh ? `${veh.vh_make||''} ${veh.vh_model||''}`.trim()||'—' : '—'}</td>
-                  <td className="mono">{c.sc_odometer ? Number(c.sc_odometer).toLocaleString()+' km':'—'}</td>
-                  <td style={{ fontSize:12, color:'#666', maxWidth:200, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                    {c.sc_trigger||'—'}
-                  </td>
-                  <td><StatusBadge status={c.sc_status} /></td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+      {/* Search + New button bar */}
+      <div style={{ display:'flex', gap:8, alignItems:'center', padding:'10px 0 8px',
+        background:'white', borderLeft:'1px solid #e8edf2', borderRight:'1px solid #e8edf2',
+        paddingLeft:12, paddingRight:12 }}>
+        <input placeholder={`Search ${currentTab?.label || ''}…`} value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={{ flex:1, padding:'7px 12px', fontSize:13, border:'1px solid #ddd', borderRadius:6, outline:'none' }} />
+        {pageTab === 'pending' && (
+          <button className="btn btn-primary btn-sm" onClick={() => setShowNew(true)}>
+            + New Service Card
+          </button>
+        )}
       </div>
+
+      {/* Table for current tab */}
+      <ServiceCardTable
+        cards={currentCards}
+        vehicles={vehicles}
+        loading={loading}
+        onOpen={setOpenCard}
+        emptyMsg={currentTab?.emptyMsg}
+      />
 
       {showNew && (
         <NewServiceModal vehicles={vehicles} onClose={() => setShowNew(false)}
@@ -847,11 +900,12 @@ export default function ServiceCards() {
           onClose={() => { setOpenCard(null); loadAll(); }}
           onUpdated={updated => {
             setOpenCard(updated);
-            setCards(prev => prev.map(c => c.sc_no===updated.sc_no ? updated : c));
+            setAllCards(prev => prev.map(c => c.sc_no===updated.sc_no ? updated : c));
           }} />
       )}
     </div>
   );
 }
+
 
 
