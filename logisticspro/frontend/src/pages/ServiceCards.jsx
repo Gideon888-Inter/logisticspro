@@ -46,34 +46,39 @@ function StatusBadge({ status }) {
 
 // ── Checklist ──────────────────────────────────────────────────────────────────
 function Checklist({ serviceNo, readOnly }) {
-  const [items, setItems]       = useState([]);
-  const [newLabel, setNewLabel] = useState('');
-  const [adding, setAdding]     = useState(false);
-  const [seeding, setSeeding]   = useState(false);
-  const [comments, setComments] = useState({}); // local draft comments keyed by id
-  const [savingComment, setSavingComment] = useState({}); // saving state per id
+  const [items, setItems]         = useState([]);
+  const [newLabel, setNewLabel]   = useState('');
+  const [adding, setAdding]       = useState(false);
+  const [loaded, setLoaded]       = useState(false);
+  const [comments, setComments]   = useState({});
+  const [savingComment, setSavingComment] = useState({});
 
   const load = useCallback(async () => {
     try {
       const data = await req(`/service/${serviceNo}/checklist`);
-      setItems(data);
-      // Pre-populate comment drafts with saved values
-      const drafts = {};
-      data.forEach(i => { drafts[i.id] = i.sl_comment || ''; });
-      setComments(drafts);
+      // Auto-seed template if checklist is empty (first open after accept)
+      if (data.length === 0 && !readOnly) {
+        try {
+          await req(`/service/${serviceNo}/checklist/seed`, { method: 'POST' });
+          const seeded = await req(`/service/${serviceNo}/checklist`);
+          const drafts = {};
+          seeded.forEach(i => { drafts[i.id] = i.sl_comment || ''; });
+          setItems(seeded);
+          setComments(drafts);
+        } catch {
+          setItems([]);
+        }
+      } else {
+        const drafts = {};
+        data.forEach(i => { drafts[i.id] = i.sl_comment || ''; });
+        setItems(data);
+        setComments(drafts);
+      }
     } catch {}
-  }, [serviceNo]);
+    setLoaded(true);
+  }, [serviceNo, readOnly]);
 
   useEffect(() => { load(); }, [load]);
-
-  const seed = async () => {
-    setSeeding(true);
-    try {
-      const r = await req(`/service/${serviceNo}/checklist/seed`, { method: 'POST' });
-      if (r.seeded === 0) alert('Template already applied or no template found for this vehicle type.');
-      load();
-    } catch(e) { alert(e.message); } finally { setSeeding(false); }
-  };
 
   const addItem = async () => {
     if (!newLabel.trim()) return;
@@ -97,6 +102,7 @@ function Checklist({ serviceNo, readOnly }) {
 
   const saveComment = async (item) => {
     const val = (comments[item.id] || '').trim();
+    if (val === (item.sl_comment || '')) return;
     setSavingComment(s => ({ ...s, [item.id]: true }));
     try {
       await req(`/service/${serviceNo}/checklist/${item.id}`, {
@@ -116,7 +122,7 @@ function Checklist({ serviceNo, readOnly }) {
 
   const checked = items.filter(i => i.sl_checked).length;
 
-  // Group items by section
+  // Group by section
   const sections = [];
   const sectionMap = {};
   items.forEach(item => {
@@ -125,10 +131,13 @@ function Checklist({ serviceNo, readOnly }) {
     sectionMap[sec].push(item);
   });
 
+  if (!loaded) return <div style={{ color:'#aaa', fontSize:13, padding:'16px 0' }}>Loading checklist…</div>;
+
   return (
     <div>
+      {/* Progress bar */}
       {items.length > 0 && (
-        <div style={{ marginBottom: 14 }}>
+        <div style={{ marginBottom:14 }}>
           <div style={{ display:'flex', justifyContent:'space-between', fontSize:11, color:'#888', marginBottom:4 }}>
             <span>Progress</span>
             <span style={{ fontWeight:700, color: checked===items.length ? '#059669':'#555' }}>
@@ -136,120 +145,116 @@ function Checklist({ serviceNo, readOnly }) {
             </span>
           </div>
           <div style={{ height:6, background:'#e8edf2', borderRadius:3 }}>
-            <div style={{ height:'100%', borderRadius:3, background: checked===items.length ? '#059669':'#00AEEF',
-              width: items.length ? `${(checked/items.length)*100}%`:'0%', transition:'width 0.3s' }} />
+            <div style={{ height:'100%', borderRadius:3, transition:'width 0.3s',
+              background: checked===items.length ? '#059669':'#00AEEF',
+              width: items.length ? `${(checked/items.length)*100}%`:'0%' }} />
           </div>
         </div>
       )}
 
-      {items.length === 0 && !readOnly && (
-        <div style={{ textAlign:'center', padding:'20px 0' }}>
-          <div style={{ fontSize:13, color:'#888', marginBottom:12, fontStyle:'italic' }}>
-            No checklist yet — apply the vehicle template or add items manually.
-          </div>
-          <button onClick={seed} disabled={seeding}
-            style={{ padding:'10px 24px', fontSize:13, fontWeight:700, background:'#005A8E',
-              color:'white', border:'none', borderRadius:8, cursor:'pointer', opacity: seeding?0.7:1, marginBottom:8 }}>
-            {seeding ? 'Applying…' : '📋 Apply Standard Checklist'}
-          </button>
-        </div>
-      )}
-
-      {items.length > 0 && !readOnly && (
-        <div style={{ display:'flex', justifyContent:'flex-end', marginBottom:10 }}>
-          <button onClick={seed} disabled={seeding}
-            style={{ padding:'5px 12px', fontSize:11, fontWeight:700, background:'#f0f8ff',
-              color:'#005A8E', border:'1px solid #bee3f8', borderRadius:6, cursor:'pointer', opacity: seeding?0.7:1 }}>
-            {seeding ? 'Applying…' : '📋 Re-apply Template'}
-          </button>
-        </div>
-      )}
-
-      {/* Render by section */}
+      {/* Sections */}
       {sections.map(sec => (
-        <div key={sec} style={{ marginBottom:16 }}>
+        <div key={sec} style={{ marginBottom:18 }}>
+          {/* Section header */}
           <div style={{
             fontSize:10, fontWeight:800, letterSpacing:'0.08em', textTransform:'uppercase',
-            color:'#005A8E', background:'#eef4fb', padding:'4px 10px', borderRadius:4,
-            marginBottom:6, display:'inline-block',
+            color:'#005A8E', borderBottom:'2px solid #dbeafe', paddingBottom:4, marginBottom:6,
           }}>{sec}</div>
-          <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+
+          {/* Items table-style: fixed columns */}
+          <div style={{ display:'table', width:'100%', borderCollapse:'collapse' }}>
             {sectionMap[sec].map(item => (
               <div key={item.id} style={{
-                borderRadius:7,
-                background: item.sl_checked ? '#f0fdf4':'#fafafa',
-                border: `1px solid ${item.sl_checked ? '#bbf7d0':'#e8edf2'}`,
-                overflow:'hidden',
+                display:'table-row',
+                background: item.sl_checked ? '#f0fdf4' : 'transparent',
               }}>
-                {/* Row: checkbox + label + remove */}
-                <div style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 12px' }}>
-                  <input type="checkbox" checked={!!item.sl_checked}
-                    onChange={() => !readOnly && toggle(item)} disabled={readOnly}
-                    style={{ width:16, height:16, cursor: readOnly?'default':'pointer', accentColor:'#059669', flexShrink:0 }} />
-                  <div style={{ flex:1 }}>
-                    <div style={{
-                      fontSize:13, color: item.sl_checked?'#888':'#1a202c',
-                      textDecoration: item.sl_checked?'line-through':'none', fontWeight: item.sl_checked?400:500,
-                    }}>
-                      {item.sl_label}
+                {/* Checkbox + Label cell */}
+                <div style={{
+                  display:'table-cell', verticalAlign:'middle',
+                  padding:'6px 10px 6px 0', width:'45%',
+                  borderBottom:'1px solid #f0f4f8',
+                }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                    <input type="checkbox" checked={!!item.sl_checked}
+                      onChange={() => !readOnly && toggle(item)} disabled={readOnly}
+                      style={{ width:15, height:15, cursor: readOnly?'default':'pointer',
+                        accentColor:'#059669', flexShrink:0 }} />
+                    <div>
+                      <div style={{
+                        fontSize:13, color: item.sl_checked ? '#999':'#1a202c',
+                        textDecoration: item.sl_checked ? 'line-through':'none',
+                      }}>
+                        {item.sl_label}
+                      </div>
+                      {item.sl_checked && item.sl_checked_by && (
+                        <div style={{ fontSize:10, color:'#bbb', marginTop:1 }}>
+                          ✓ {item.sl_checked_by} · {fmtDateTime(item.sl_checked_at)}
+                        </div>
+                      )}
                     </div>
-                    {item.sl_checked && item.sl_checked_by && (
-                      <div style={{ fontSize:10, color:'#aaa', marginTop:2 }}>
-                        ✓ {item.sl_checked_by} · {fmtDateTime(item.sl_checked_at)}
-                      </div>
-                    )}
                   </div>
-                  {!readOnly && (
-                    <button onClick={() => remove(item)}
-                      style={{ background:'none', border:'none', color:'#ddd', cursor:'pointer', fontSize:16, flexShrink:0 }}>×</button>
-                  )}
                 </div>
-                {/* Comment row */}
-                <div style={{ padding:'0 12px 9px 38px', display:'flex', gap:6, alignItems:'center' }}>
+
+                {/* Comment cell */}
+                <div style={{
+                  display:'table-cell', verticalAlign:'middle',
+                  padding:'6px 0 6px 8px', borderBottom:'1px solid #f0f4f8',
+                }}>
                   {readOnly ? (
-                    item.sl_comment ? (
-                      <div style={{ fontSize:11, color:'#666', fontStyle:'italic' }}>
-                        💬 {item.sl_comment}
-                      </div>
-                    ) : null
+                    <span style={{ fontSize:12, color:'#666', fontStyle: item.sl_comment ? 'italic':'normal' }}>
+                      {item.sl_comment || '—'}
+                    </span>
                   ) : (
-                    <>
+                    <div style={{ display:'flex', alignItems:'center', gap:4 }}>
                       <input
                         value={comments[item.id] || ''}
                         onChange={e => setComments(c => ({ ...c, [item.id]: e.target.value }))}
-                        onBlur={() => {
-                          if ((comments[item.id] || '') !== (item.sl_comment || '')) saveComment(item);
-                        }}
-                        placeholder="Add note / comment…"
+                        onBlur={() => saveComment(item)}
+                        placeholder="Add note / comment..."
                         style={{
-                          flex:1, padding:'4px 8px', fontSize:11, border:'1px solid #e2e8f0',
-                          borderRadius:4, outline:'none', color:'#444', background:'#fff',
+                          flex:1, padding:'5px 8px', fontSize:12,
+                          border:'1px solid #e2e8f0', borderRadius:4,
+                          outline:'none', color:'#444', background:'#fff',
+                          fontFamily:'inherit',
                         }}
                       />
                       {savingComment[item.id] && (
-                        <span style={{ fontSize:10, color:'#aaa' }}>saving…</span>
+                        <span style={{ fontSize:10, color:'#aaa', whiteSpace:'nowrap' }}>saving…</span>
                       )}
-                    </>
+                    </div>
                   )}
                 </div>
+
+                {/* Remove button cell */}
+                {!readOnly && (
+                  <div style={{
+                    display:'table-cell', verticalAlign:'middle', width:24,
+                    padding:'6px 0 6px 6px', borderBottom:'1px solid #f0f4f8', textAlign:'center',
+                  }}>
+                    <button onClick={() => remove(item)}
+                      style={{ background:'none', border:'none', color:'#ddd',
+                        cursor:'pointer', fontSize:15, lineHeight:1, padding:0 }}>×</button>
+                  </div>
+                )}
               </div>
             ))}
           </div>
         </div>
       ))}
 
-      {/* Manual add item */}
+      {/* Add extra item */}
       {!readOnly && (
-        <div style={{ marginTop:10 }}>
-          <div style={{ fontSize:10, color:'#aaa', fontWeight:700, letterSpacing:'0.05em',
+        <div style={{ marginTop:12, paddingTop:12, borderTop:'1px solid #f0f4f8' }}>
+          <div style={{ fontSize:10, color:'#bbb', fontWeight:700, letterSpacing:'0.05em',
             textTransform:'uppercase', marginBottom:6 }}>Add extra item</div>
           <div style={{ display:'flex', gap:8 }}>
             <input value={newLabel} onChange={e => setNewLabel(e.target.value)}
               onKeyDown={e => e.key==='Enter' && addItem()}
               placeholder="Extra checklist item… (Enter or click Add)"
-              style={{ flex:1, padding:'8px 12px', fontSize:13, border:'1px solid #ddd', borderRadius:6, outline:'none' }} />
+              style={{ flex:1, padding:'7px 12px', fontSize:13, border:'1px solid #ddd',
+                borderRadius:6, outline:'none', fontFamily:'inherit' }} />
             <button onClick={addItem} disabled={adding || !newLabel.trim()}
-              style={{ padding:'8px 16px', fontSize:12, fontWeight:700, background:'#005A8E',
+              style={{ padding:'7px 16px', fontSize:12, fontWeight:700, background:'#005A8E',
                 color:'white', border:'none', borderRadius:6, cursor:'pointer', opacity: adding?0.7:1 }}>
               {adding ? '…' : '+ Add'}
             </button>
@@ -848,4 +853,5 @@ export default function ServiceCards() {
     </div>
   );
 }
+
 
