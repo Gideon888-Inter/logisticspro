@@ -164,6 +164,7 @@ router.get('/stats', async (req, res) => {
     accepted:         data.filter(r => r.sc_status === 'SERVICE_ACCEPTED').length,
     waiting_for_part: data.filter(r => r.sc_status === 'WAITING_FOR_PART').length,
     complete:         data.filter(r => r.sc_status === 'COMPLETE').length,
+    rejected:         data.filter(r => r.sc_status === 'REJECTED').length,
   });
 });
 
@@ -608,4 +609,5 @@ router.post('/:no/complete', async (req, res) => {
 });
 
 module.exports = router;
+
 
