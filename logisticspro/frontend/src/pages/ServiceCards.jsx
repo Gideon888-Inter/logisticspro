@@ -49,12 +49,31 @@ function Checklist({ serviceNo, readOnly }) {
   const [items, setItems]       = useState([]);
   const [newLabel, setNewLabel] = useState('');
   const [adding, setAdding]     = useState(false);
+  const [seeding, setSeeding]   = useState(false);
+  const [comments, setComments] = useState({}); // local draft comments keyed by id
+  const [savingComment, setSavingComment] = useState({}); // saving state per id
 
   const load = useCallback(async () => {
-    try { setItems(await req(`/service/${serviceNo}/checklist`)); } catch {}
+    try {
+      const data = await req(`/service/${serviceNo}/checklist`);
+      setItems(data);
+      // Pre-populate comment drafts with saved values
+      const drafts = {};
+      data.forEach(i => { drafts[i.id] = i.sl_comment || ''; });
+      setComments(drafts);
+    } catch {}
   }, [serviceNo]);
 
   useEffect(() => { load(); }, [load]);
+
+  const seed = async () => {
+    setSeeding(true);
+    try {
+      const r = await req(`/service/${serviceNo}/checklist/seed`, { method: 'POST' });
+      if (r.seeded === 0) alert('Template already applied or no template found for this vehicle type.');
+      load();
+    } catch(e) { alert(e.message); } finally { setSeeding(false); }
+  };
 
   const addItem = async () => {
     if (!newLabel.trim()) return;
@@ -76,6 +95,19 @@ function Checklist({ serviceNo, readOnly }) {
     } catch(e) { alert(e.message); }
   };
 
+  const saveComment = async (item) => {
+    const val = (comments[item.id] || '').trim();
+    setSavingComment(s => ({ ...s, [item.id]: true }));
+    try {
+      await req(`/service/${serviceNo}/checklist/${item.id}`, {
+        method: 'PATCH', body: JSON.stringify({ sl_comment: val }),
+      });
+      load();
+    } catch(e) { alert(e.message); } finally {
+      setSavingComment(s => ({ ...s, [item.id]: false }));
+    }
+  };
+
   const remove = async (item) => {
     if (!window.confirm(`Remove "${item.sl_label}"?`)) return;
     try { await req(`/service/${serviceNo}/checklist/${item.id}`, { method: 'DELETE' }); load(); }
@@ -84,10 +116,19 @@ function Checklist({ serviceNo, readOnly }) {
 
   const checked = items.filter(i => i.sl_checked).length;
 
+  // Group items by section
+  const sections = [];
+  const sectionMap = {};
+  items.forEach(item => {
+    const sec = item.sl_section || 'Checklist';
+    if (!sectionMap[sec]) { sectionMap[sec] = []; sections.push(sec); }
+    sectionMap[sec].push(item);
+  });
+
   return (
     <div>
       {items.length > 0 && (
-        <div style={{ marginBottom: 12 }}>
+        <div style={{ marginBottom: 14 }}>
           <div style={{ display:'flex', justifyContent:'space-between', fontSize:11, color:'#888', marginBottom:4 }}>
             <span>Progress</span>
             <span style={{ fontWeight:700, color: checked===items.length ? '#059669':'#555' }}>
@@ -100,50 +141,119 @@ function Checklist({ serviceNo, readOnly }) {
           </div>
         </div>
       )}
-      <div style={{ display:'flex', flexDirection:'column', gap:4, marginBottom:10 }}>
-        {items.length === 0 && (
-          <div style={{ color:'#aaa', fontSize:13, fontStyle:'italic', padding:'8px 0' }}>
-            No checklist items yet — add items below.
+
+      {items.length === 0 && !readOnly && (
+        <div style={{ textAlign:'center', padding:'20px 0' }}>
+          <div style={{ fontSize:13, color:'#888', marginBottom:12, fontStyle:'italic' }}>
+            No checklist yet — apply the vehicle template or add items manually.
           </div>
-        )}
-        {items.map(item => (
-          <div key={item.id} style={{
-            display:'flex', alignItems:'center', gap:10, padding:'8px 12px', borderRadius:6,
-            background: item.sl_checked ? '#f0fdf4':'#fafafa',
-            border: `1px solid ${item.sl_checked ? '#bbf7d0':'#e8edf2'}`,
-          }}>
-            <input type="checkbox" checked={!!item.sl_checked}
-              onChange={() => !readOnly && toggle(item)} disabled={readOnly}
-              style={{ width:16, height:16, cursor: readOnly?'default':'pointer', accentColor:'#059669' }} />
-            <div style={{ flex:1 }}>
-              <div style={{ fontSize:13, color: item.sl_checked?'#888':'#1a202c',
-                textDecoration: item.sl_checked?'line-through':'none' }}>
-                {item.sl_label}
-              </div>
-              {item.sl_checked && item.sl_checked_by && (
-                <div style={{ fontSize:10, color:'#aaa', marginTop:2 }}>
-                  ✓ {item.sl_checked_by} · {fmtDateTime(item.sl_checked_at)}
-                </div>
-              )}
-            </div>
-            {!readOnly && (
-              <button onClick={() => remove(item)}
-                style={{ background:'none', border:'none', color:'#ccc', cursor:'pointer', fontSize:16 }}>×</button>
-            )}
-          </div>
-        ))}
-      </div>
-      {!readOnly && (
-        <div style={{ display:'flex', gap:8 }}>
-          <input value={newLabel} onChange={e => setNewLabel(e.target.value)}
-            onKeyDown={e => e.key==='Enter' && addItem()}
-            placeholder="Add checklist item… (Enter or click Add)"
-            style={{ flex:1, padding:'8px 12px', fontSize:13, border:'1px solid #ddd', borderRadius:6, outline:'none' }} />
-          <button onClick={addItem} disabled={adding || !newLabel.trim()}
-            style={{ padding:'8px 16px', fontSize:12, fontWeight:700, background:'#005A8E',
-              color:'white', border:'none', borderRadius:6, cursor:'pointer', opacity: adding?0.7:1 }}>
-            {adding ? '…' : '+ Add'}
+          <button onClick={seed} disabled={seeding}
+            style={{ padding:'10px 24px', fontSize:13, fontWeight:700, background:'#005A8E',
+              color:'white', border:'none', borderRadius:8, cursor:'pointer', opacity: seeding?0.7:1, marginBottom:8 }}>
+            {seeding ? 'Applying…' : '📋 Apply Standard Checklist'}
           </button>
+        </div>
+      )}
+
+      {items.length > 0 && !readOnly && (
+        <div style={{ display:'flex', justifyContent:'flex-end', marginBottom:10 }}>
+          <button onClick={seed} disabled={seeding}
+            style={{ padding:'5px 12px', fontSize:11, fontWeight:700, background:'#f0f8ff',
+              color:'#005A8E', border:'1px solid #bee3f8', borderRadius:6, cursor:'pointer', opacity: seeding?0.7:1 }}>
+            {seeding ? 'Applying…' : '📋 Re-apply Template'}
+          </button>
+        </div>
+      )}
+
+      {/* Render by section */}
+      {sections.map(sec => (
+        <div key={sec} style={{ marginBottom:16 }}>
+          <div style={{
+            fontSize:10, fontWeight:800, letterSpacing:'0.08em', textTransform:'uppercase',
+            color:'#005A8E', background:'#eef4fb', padding:'4px 10px', borderRadius:4,
+            marginBottom:6, display:'inline-block',
+          }}>{sec}</div>
+          <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+            {sectionMap[sec].map(item => (
+              <div key={item.id} style={{
+                borderRadius:7,
+                background: item.sl_checked ? '#f0fdf4':'#fafafa',
+                border: `1px solid ${item.sl_checked ? '#bbf7d0':'#e8edf2'}`,
+                overflow:'hidden',
+              }}>
+                {/* Row: checkbox + label + remove */}
+                <div style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 12px' }}>
+                  <input type="checkbox" checked={!!item.sl_checked}
+                    onChange={() => !readOnly && toggle(item)} disabled={readOnly}
+                    style={{ width:16, height:16, cursor: readOnly?'default':'pointer', accentColor:'#059669', flexShrink:0 }} />
+                  <div style={{ flex:1 }}>
+                    <div style={{
+                      fontSize:13, color: item.sl_checked?'#888':'#1a202c',
+                      textDecoration: item.sl_checked?'line-through':'none', fontWeight: item.sl_checked?400:500,
+                    }}>
+                      {item.sl_label}
+                    </div>
+                    {item.sl_checked && item.sl_checked_by && (
+                      <div style={{ fontSize:10, color:'#aaa', marginTop:2 }}>
+                        ✓ {item.sl_checked_by} · {fmtDateTime(item.sl_checked_at)}
+                      </div>
+                    )}
+                  </div>
+                  {!readOnly && (
+                    <button onClick={() => remove(item)}
+                      style={{ background:'none', border:'none', color:'#ddd', cursor:'pointer', fontSize:16, flexShrink:0 }}>×</button>
+                  )}
+                </div>
+                {/* Comment row */}
+                <div style={{ padding:'0 12px 9px 38px', display:'flex', gap:6, alignItems:'center' }}>
+                  {readOnly ? (
+                    item.sl_comment ? (
+                      <div style={{ fontSize:11, color:'#666', fontStyle:'italic' }}>
+                        💬 {item.sl_comment}
+                      </div>
+                    ) : null
+                  ) : (
+                    <>
+                      <input
+                        value={comments[item.id] || ''}
+                        onChange={e => setComments(c => ({ ...c, [item.id]: e.target.value }))}
+                        onBlur={() => {
+                          if ((comments[item.id] || '') !== (item.sl_comment || '')) saveComment(item);
+                        }}
+                        placeholder="Add note / comment…"
+                        style={{
+                          flex:1, padding:'4px 8px', fontSize:11, border:'1px solid #e2e8f0',
+                          borderRadius:4, outline:'none', color:'#444', background:'#fff',
+                        }}
+                      />
+                      {savingComment[item.id] && (
+                        <span style={{ fontSize:10, color:'#aaa' }}>saving…</span>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      {/* Manual add item */}
+      {!readOnly && (
+        <div style={{ marginTop:10 }}>
+          <div style={{ fontSize:10, color:'#aaa', fontWeight:700, letterSpacing:'0.05em',
+            textTransform:'uppercase', marginBottom:6 }}>Add extra item</div>
+          <div style={{ display:'flex', gap:8 }}>
+            <input value={newLabel} onChange={e => setNewLabel(e.target.value)}
+              onKeyDown={e => e.key==='Enter' && addItem()}
+              placeholder="Extra checklist item… (Enter or click Add)"
+              style={{ flex:1, padding:'8px 12px', fontSize:13, border:'1px solid #ddd', borderRadius:6, outline:'none' }} />
+            <button onClick={addItem} disabled={adding || !newLabel.trim()}
+              style={{ padding:'8px 16px', fontSize:12, fontWeight:700, background:'#005A8E',
+                color:'white', border:'none', borderRadius:6, cursor:'pointer', opacity: adding?0.7:1 }}>
+              {adding ? '…' : '+ Add'}
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -738,3 +848,4 @@ export default function ServiceCards() {
     </div>
   );
 }
+
