@@ -147,6 +147,75 @@ function exportCSV(data) {
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN COMPONENT
 // ─────────────────────────────────────────────────────────────────────────────
+// ── ServiceHistoryChecklist — read-only checklist inside Fleet modal ─────────
+function ServiceHistoryChecklist({ serviceNo }) {
+  const [items, setItems]   = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const tok = localStorage.getItem('lp_token');
+    fetch(
+      `${import.meta.env.VITE_API_URL || ''}/api/service/${serviceNo}/checklist`,
+      { headers: { Authorization: 'Bearer ' + tok } }
+    )
+      .then(r => r.json())
+      .then(d => setItems(Array.isArray(d) ? d : []))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [serviceNo]);
+
+  if (loading) return <div style={{ color: '#aaa', fontSize: 13 }}>Loading checklist…</div>;
+  if (items.length === 0) return (
+    <div style={{ color: '#aaa', fontSize: 13, fontStyle: 'italic' }}>No checklist recorded for this service.</div>
+  );
+
+  const sections = [];
+  const sectionMap = {};
+  items.forEach(item => {
+    const sec = item.sl_section || 'Checklist';
+    if (!sectionMap[sec]) { sectionMap[sec] = []; sections.push(sec); }
+    sectionMap[sec].push(item);
+  });
+  const checked = items.filter(i => i.sl_checked).length;
+
+  return (
+    <div style={{ borderTop: '1px solid #e8edf2', paddingTop: 16 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: '#005A8E', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+        Service Checklist
+        <span style={{ marginLeft: 8, fontWeight: 400, color: '#888', textTransform: 'none', letterSpacing: 0 }}>
+          — {checked} of {items.length} items completed
+        </span>
+      </div>
+      {sections.map(sec => (
+        <div key={sec} style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase',
+            color: '#005A8E', borderBottom: '1px solid #dbeafe', paddingBottom: 3, marginBottom: 6 }}>{sec}</div>
+          {sectionMap[sec].map(item => (
+            <div key={item.id} style={{
+              display: 'grid', gridTemplateColumns: '18px 1fr', gap: 8,
+              padding: '5px 0', borderBottom: '1px solid #f8f8f8', alignItems: 'start',
+            }}>
+              <span style={{ fontSize: 14, color: item.sl_checked ? '#059669' : '#ccc', lineHeight: 1.4 }}>
+                {item.sl_checked ? '☑' : '☐'}
+              </span>
+              <div>
+                <span style={{ fontSize: 12, color: item.sl_checked ? '#1a202c' : '#aaa' }}>
+                  {item.sl_label}
+                </span>
+                {item.sl_comment && (
+                  <div style={{ fontSize: 11, color: '#666', fontStyle: 'italic', marginTop: 2 }}>
+                    💬 {item.sl_comment}
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function Fleet({ focusServiceDue }) {
   const { user } = useAuth();
   const [data, setData]       = useState([]);
@@ -165,7 +234,10 @@ export default function Fleet({ focusServiceDue }) {
   const [saving, setSaving]         = useState(false);
   const [auditLog, setAuditLog]     = useState([]);
   const [showAudit, setShowAudit]   = useState(false);
-  const [activeTab, setActiveTab]   = useState('details'); // 'details' | 'audit'
+  const [activeTab, setActiveTab]   = useState('details'); // 'details' | 'audit' | 'service_history'
+  const [serviceHistory, setServiceHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [openServiceCard, setOpenServiceCard] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -208,6 +280,22 @@ export default function Fleet({ focusServiceDue }) {
       ).then(r => r.json());
       setAuditLog(Array.isArray(audit) ? audit : []);
     } catch {}
+
+    // Load service history (completed cards only)
+    setHistoryLoading(true);
+    setServiceHistory([]);
+    try {
+      const svc = await fetch(
+        `${import.meta.env.VITE_API_URL || ''}/api/service?vehicle=${v.vh_code}&limit=200`,
+        { headers: { Authorization: 'Bearer ' + localStorage.getItem('lp_token') } }
+      ).then(r => r.json());
+      setServiceHistory(
+        (svc.data || [])
+          .filter(c => c.sc_status === 'COMPLETE')
+          .sort((a, b) => new Date(b.sc_date) - new Date(a.sc_date))
+      );
+    } catch { setServiceHistory([]); }
+    finally { setHistoryLoading(false); }
   };
 
   const save = async () => {
@@ -440,15 +528,19 @@ export default function Fleet({ focusServiceDue }) {
 
             {/* Tabs */}
             <div style={{ display: 'flex', borderBottom: '1px solid #e8edf2', background: '#f8fafc' }}>
-              {['details', 'audit'].map(tab => (
-                <button key={tab} onClick={() => setActiveTab(tab)} style={{
-                  padding: '10px 20px', fontSize: 12, fontWeight: activeTab === tab ? 700 : 400,
+              {[
+                { key: 'details',         label: '📋 Vehicle Details' },
+                { key: 'service_history', label: `🔧 Service History (${serviceHistory.length})` },
+                { key: 'audit',           label: `📜 Audit Trail (${auditLog.length})` },
+              ].map(tab => (
+                <button key={tab.key} onClick={() => setActiveTab(tab.key)} style={{
+                  padding: '10px 20px', fontSize: 12, fontWeight: activeTab === tab.key ? 700 : 400,
                   border: 'none', background: 'none', cursor: 'pointer',
-                  borderBottom: activeTab === tab ? '2px solid #005A8E' : '2px solid transparent',
-                  color: activeTab === tab ? '#005A8E' : '#888',
-                  textTransform: 'capitalize',
+                  borderBottom: activeTab === tab.key ? '2px solid #005A8E' : '2px solid transparent',
+                  color: activeTab === tab.key ? '#005A8E' : '#888',
+                  whiteSpace: 'nowrap',
                 }}>
-                  {tab === 'details' ? '📋 Vehicle Details' : `📜 Audit Trail (${auditLog.length})`}
+                  {tab.label}
                 </button>
               ))}
             </div>
@@ -622,6 +714,51 @@ export default function Fleet({ focusServiceDue }) {
                 </>
               )}
 
+              {activeTab === 'service_history' && (
+                <div>
+                  {historyLoading && (
+                    <div style={{ color:'#888', fontSize:13, padding:'20px 0' }}>Loading service history…</div>
+                  )}
+                  {!historyLoading && serviceHistory.length === 0 && (
+                    <div className="empty-state" style={{ padding: 40 }}>No completed services for this vehicle yet.</div>
+                  )}
+                  {!historyLoading && serviceHistory.map(c => (
+                    <div key={c.sc_no} style={{
+                      display: 'flex', alignItems: 'center', gap: 16,
+                      padding: '12px 0', borderBottom: '1px solid #f0f4f8',
+                    }}>
+                      <div style={{ flex: '0 0 90px' }}>
+                        <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>Service No.</div>
+                        <div style={{ fontSize: 13, fontWeight: 700, fontFamily: 'monospace', color: '#1a202c' }}>{c.sc_no}</div>
+                      </div>
+                      <div style={{ flex: '0 0 90px' }}>
+                        <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>Date</div>
+                        <div style={{ fontSize: 13 }}>{fmtDate(c.sc_date)}</div>
+                      </div>
+                      <div style={{ flex: '0 0 110px' }}>
+                        <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>Completed KM</div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: '#059669', fontFamily: 'monospace' }}>
+                          {c.sc_completion_km ? Number(c.sc_completion_km).toLocaleString() + ' km' : '—'}
+                        </div>
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>Trigger</div>
+                        <div style={{ fontSize: 12, color: '#555', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {c.sc_trigger || '—'}
+                        </div>
+                      </div>
+                      <button onClick={() => setOpenServiceCard(c)} style={{
+                        padding: '5px 12px', fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                        background: '#eef4fb', color: '#005A8E', border: '1px solid #bee3f8',
+                        borderRadius: 6, whiteSpace: 'nowrap', flexShrink: 0,
+                      }}>
+                        View →
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {activeTab === 'audit' && (
                 <div>
                   {auditLog.length === 0 ? (
@@ -676,6 +813,53 @@ export default function Fleet({ focusServiceDue }) {
           </div>
         </div>
       )}
+
+      {/* ── Service card detail viewer (from service history) ── */}
+      {openServiceCard && (
+        <div className="modal-overlay" onClick={() => setOpenServiceCard(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()}
+            style={{ width: 580, maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
+            <div className="modal-header">
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 700 }}>
+                  {openServiceCard.sc_no} — {openServiceCard.sc_vehicle}
+                </div>
+                <div style={{ fontSize: 11, opacity: 0.75, marginTop: 2 }}>
+                  ✅ Completed · {fmtDate(openServiceCard.sc_date)}
+                </div>
+              </div>
+              <button onClick={() => setOpenServiceCard(null)}
+                style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', fontSize: 18 }}>✕</button>
+            </div>
+            <div className="modal-body" style={{ overflowY: 'auto', flex: 1 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 20 }}>
+                {[
+                  ['Service No.',  openServiceCard.sc_no],
+                  ['Vehicle',      openServiceCard.sc_vehicle],
+                  ['Date',         fmtDate(openServiceCard.sc_date)],
+                  ['Trigger',      openServiceCard.sc_trigger || '—'],
+                  ['Opening KM',   openServiceCard.sc_odometer ? Number(openServiceCard.sc_odometer).toLocaleString() + ' km' : '—'],
+                  ['Completed KM', openServiceCard.sc_completion_km ? Number(openServiceCard.sc_completion_km).toLocaleString() + ' km' : '—'],
+                  ['Operator',     openServiceCard.sc_operator || '—'],
+                  ['Notes',        openServiceCard.sc_notes || '—'],
+                ].map(([lbl, val]) => (
+                  <div key={lbl}>
+                    <div style={{ fontSize: 10, color: '#888', fontWeight: 700, textTransform: 'uppercase',
+                      letterSpacing: '0.06em', marginBottom: 3 }}>{lbl}</div>
+                    <div style={{ fontSize: 13, fontWeight: lbl === 'Completed KM' ? 700 : 400,
+                      color: lbl === 'Completed KM' ? '#059669' : '#1a202c' }}>{val}</div>
+                  </div>
+                ))}
+              </div>
+              <ServiceHistoryChecklist serviceNo={openServiceCard.sc_no} />
+            </div>
+            <div className="modal-footer">
+              <button className="btn" onClick={() => setOpenServiceCard(null)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
