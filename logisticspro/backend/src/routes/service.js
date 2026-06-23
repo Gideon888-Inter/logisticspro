@@ -10,6 +10,97 @@ const BLOCKING_STATUSES = ['SERVICE_ACCEPTED', 'WAITING_FOR_PART'];
 const SERVICE_INTERVAL  = 40000;
 const WARN_KM           = 5000;
 
+// ── Service checklist templates ───────────────────────────────────────────────
+const CHECKLIST_TEMPLATES = {
+  Horse: [
+    // M2 service
+    { section: 'M2 Service', label: 'Fire extinguisher checked' },
+    { section: 'M2 Service', label: 'Drain & refill engine oil' },
+    { section: 'M2 Service', label: 'Change oil filters' },
+    { section: 'M2 Service', label: 'Change diesel filters' },
+    { section: 'M2 Service', label: 'Check body panels for damage' },
+    { section: 'M2 Service', label: 'Grease all nipples and 5th wheel' },
+    { section: 'M2 Service', label: 'Windscreen wipers' },
+    { section: 'M2 Service', label: 'All lights working (inside and outside)' },
+    { section: 'M2 Service', label: 'Mirrors and windscreen' },
+    { section: 'M2 Service', label: 'Condition of propshaft (play and visual)' },
+    { section: 'M2 Service', label: 'Swapped and cleaned battery & terminals' },
+    // M5 service
+    { section: 'M5 Service', label: 'Fire extinguisher checked' },
+    { section: 'M5 Service', label: 'Changed fuel filters' },
+    { section: 'M5 Service', label: 'Changed oil filters' },
+    { section: 'M5 Service', label: 'Changed aircon filter' },
+    { section: 'M5 Service', label: 'Changed air filters' },
+    { section: 'M5 Service', label: 'Changed airdryer element' },
+    { section: 'M5 Service', label: 'Replaced both diesel tank breathers' },
+    { section: 'M5 Service', label: 'Greased all nipples and 5th wheel' },
+    { section: 'M5 Service', label: 'Condition of propshaft (play and visual)' },
+    { section: 'M5 Service', label: 'All lights working (inside and outside)' },
+    { section: 'M5 Service', label: 'Windscreen wipers' },
+    { section: 'M5 Service', label: 'Check body panels for damage' },
+    { section: 'M5 Service', label: 'Swapped and cleaned battery & terminals' },
+    // Tyres/Brakes/Clutch
+    { section: 'Tyres / Brakes / Clutch', label: 'Brakes — position 1' },
+    { section: 'Tyres / Brakes / Clutch', label: 'Brakes — position 3' },
+    { section: 'Tyres / Brakes / Clutch', label: 'Brakes — position 5' },
+    { section: 'Tyres / Brakes / Clutch', label: 'Brakes — position 4' },
+    { section: 'Tyres / Brakes / Clutch', label: 'Brakes — position 6' },
+    { section: 'Tyres / Brakes / Clutch', label: 'Clutch X1' },
+    { section: 'Tyres / Brakes / Clutch', label: 'Clutch X2' },
+    { section: 'Tyres / Brakes / Clutch', label: 'Tyres checked' },
+    { section: 'Tyres / Brakes / Clutch', label: 'Tread depth measured' },
+    { section: 'Tyres / Brakes / Clutch', label: 'Wheel alignment report done' },
+  ],
+  Trailer: [
+    { section: 'T1 Service', label: 'Greased nipples and landing legs' },
+    { section: 'T1 Service', label: 'Checked / adjusted / changed brakes' },
+    { section: 'T1 Service', label: 'Checked rubbers' },
+    { section: 'T1 Service', label: 'Checked suspension (rubbers / wear plates / torque rods)' },
+    { section: 'T1 Service', label: 'Checked tarp (patched any holes / fixed any damage)' },
+    { section: 'T1 Service', label: 'Replaced broken buckles / straps' },
+    { section: 'T1 Service', label: 'Greased 5th wheel' },
+    { section: 'T1 Service', label: 'Checked lights (brake, indicators, reverse lights etc.)' },
+    { section: 'T1 Service', label: 'Checked tyres' },
+    { section: 'T1 Service', label: 'Sprayed or touched up paint on roof, sides and back' },
+    { section: 'T1 Service', label: 'Bushes — Tightened / Replaced' },
+    { section: 'T1 Service', label: 'Checked wheel bearing play' },
+    { section: 'T1 Service', label: 'Checked king pin play' },
+    { section: 'T1 Service', label: 'Tightened U-bolts' },
+  ],
+};
+
+async function seedChecklist(serviceNo, vehicleCode, operator) {
+  // Look up vehicle type
+  const { data: veh } = await supabase
+    .from('lp_vehicles').select('vh_type').eq('vh_code', vehicleCode).single();
+  if (!veh) return 0;
+
+  const type = veh.vh_type; // 'Horse', 'Trailer', 'Rigid', etc.
+  const templateKey = type === 'Trailer' ? 'Trailer' : 'Horse';
+  const template = CHECKLIST_TEMPLATES[templateKey];
+  if (!template) return 0;
+
+  // Only seed if checklist is currently empty (idempotent)
+  const { data: existing } = await supabase
+    .from('lp_service_checklist').select('id').eq('sl_service_no', serviceNo).limit(1);
+  if (existing && existing.length > 0) return 0; // already seeded
+
+  const rows = template.map((item, idx) => ({
+    sl_service_no: serviceNo,
+    sl_label:      item.label,
+    sl_section:    item.section,
+    sl_order:      idx,
+    sl_checked:    false,
+    sl_comment:    null,
+    sl_operator:   operator,
+  }));
+
+  const { error } = await supabase.from('lp_service_checklist').insert(rows);
+  if (error) console.error('Checklist seed error:', error.message);
+  return error ? 0 : rows.length;
+}
+
+
 // ── Write audit entry ─────────────────────────────────────────────────────────
 async function writeAudit(serviceNo, action, detail, operator) {
   await supabase.from('lp_service_audit').insert([{
@@ -308,6 +399,10 @@ router.patch('/:no', async (req, res) => {
         .update({ vh_in_service: 'Y' })
         .eq('vh_code', data.sc_vehicle);
     }
+    // Auto-seed checklist on accept (idempotent — skips if items already exist)
+    if (newStatus === 'SERVICE_ACCEPTED') {
+      await seedChecklist(req.params.no, data.sc_vehicle, req.user.username);
+    }
     if (newStatus === 'COMPLETE') {
       await supabase.from('lp_vehicles')
         .update({ vh_in_service: 'N' })
@@ -338,6 +433,27 @@ router.post('/:no/comments', async (req, res) => {
   res.status(201).json(data);
 });
 
+
+// ============================================================
+// POST /api/service/:no/checklist/seed — seed template items
+// Idempotent: only inserts if checklist is currently empty
+// ============================================================
+router.post('/:no/checklist/seed', async (req, res) => {
+  try {
+    const { data: card } = await supabase
+      .from('lp_service_cards').select('sc_vehicle').eq('sc_no', req.params.no).single();
+    if (!card) return res.status(404).json({ error: 'Service card not found' });
+    const seeded = await seedChecklist(req.params.no, card.sc_vehicle, req.user.username);
+    if (seeded > 0) {
+      await writeAudit(req.params.no, 'CHECKLIST_ITEM_ADDED',
+        `Template checklist seeded: ${seeded} items`, req.user.username);
+    }
+    res.json({ seeded });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ============================================================
 // POST /api/service/:no/checklist — add item
 // ============================================================
@@ -363,21 +479,27 @@ router.post('/:no/checklist', async (req, res) => {
 // PATCH /api/service/:no/checklist/:id — toggle item
 // ============================================================
 router.patch('/:no/checklist/:id', async (req, res) => {
-  const { sl_checked } = req.body;
+  const { sl_checked, sl_comment } = req.body;
+  const updateFields = {};
+  if (sl_checked !== undefined) {
+    updateFields.sl_checked    = sl_checked;
+    updateFields.sl_checked_by = sl_checked ? req.user.username : null;
+    updateFields.sl_checked_at = sl_checked ? new Date().toISOString() : null;
+  }
+  if (sl_comment !== undefined) updateFields.sl_comment = sl_comment;
+
   const { data, error } = await supabase
     .from('lp_service_checklist')
-    .update({
-      sl_checked,
-      sl_checked_by: sl_checked ? req.user.username : null,
-      sl_checked_at: sl_checked ? new Date().toISOString() : null,
-    })
+    .update(updateFields)
     .eq('id', req.params.id)
     .eq('sl_service_no', req.params.no)
     .select().single();
   if (error) return res.status(400).json({ error: error.message });
 
-  await writeAudit(req.params.no, sl_checked ? 'CHECKLIST_CHECKED' : 'CHECKLIST_UNCHECKED',
-    `"${data.sl_label}" ${sl_checked ? 'checked' : 'unchecked'}`, req.user.username);
+  if (sl_checked !== undefined) {
+    await writeAudit(req.params.no, sl_checked ? 'CHECKLIST_CHECKED' : 'CHECKLIST_UNCHECKED',
+      `"${data.sl_label}" ${sl_checked ? 'checked' : 'unchecked'}`, req.user.username);
+  }
   res.json(data);
 });
 
@@ -486,3 +608,4 @@ router.post('/:no/complete', async (req, res) => {
 });
 
 module.exports = router;
+
