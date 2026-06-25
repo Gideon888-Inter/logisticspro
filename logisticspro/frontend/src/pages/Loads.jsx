@@ -669,7 +669,7 @@ function AddCostModal({ loadId, onClose, onSaved }) {
 }
 
 // ── Expanded Load Row ─────────────────────────────────────────
-function ExpandedRow({ load, onRefresh, onCostUpdate }) {
+function ExpandedRow({ load, onRefresh, onCostUpdate, asCard = false }) {
   const { user } = useAuth();
   const [comments, setComments] = useState([]);
   const [costs, setCosts] = useState([]);
@@ -690,6 +690,64 @@ function ExpandedRow({ load, onRefresh, onCostUpdate }) {
   const [statusSaving, setStatusSaving] = useState(false);
   const [podLink, setPodLink] = useState(load.m_pod_sharepoint_url || null);
   const [podChecking, setPodChecking] = useState(false);
+
+  // ── Assignment edit (driver / horse / trailer) ─────────────
+  const ASSIGNMENT_EDITABLE = ['PRELOAD','EN_ROUTE','OFFLOADED','WAIT_ORDER_NO','WAIT_POD_SCAN'];
+  const canEditAssignment =
+    ASSIGNMENT_EDITABLE.includes(load.m_status) &&
+    ['ADMIN','OPERATOR','OPS_ASSISTANT','MANAGER'].includes(user?.role);
+
+  const [showAssign, setShowAssign]         = useState(false);
+  const [assignVehicles, setAssignVehicles] = useState([]);
+  const [assignDrivers, setAssignDrivers]   = useState([]);
+  const [assignForm, setAssignForm]         = useState({
+    m_truck:    load.m_truck    || '',
+    m_driver_id:load.m_driver_id|| '',
+    m_trailer1: load.m_trailer1 || '',
+    m_trailer2: load.m_trailer2 || '',
+    m_trailer_size: load.m_trailer_size || 'None',
+  });
+  const [assignSaving, setAssignSaving]     = useState(false);
+
+  const openAssignPanel = async () => {
+    setShowAssign(true);
+    if (assignVehicles.length === 0) {
+      try {
+        const [v, d] = await Promise.all([
+          api.getVehicles({ active: 'Y' }),
+          api.getDrivers({ active: 'Y' }),
+        ]);
+        setAssignVehicles(Array.isArray(v) ? v : []);
+        setAssignDrivers(Array.isArray(d) ? d : []);
+      } catch (e) { console.error(e); }
+    }
+  };
+
+  const saveAssignment = async () => {
+    setAssignSaving(true);
+    try {
+      await api.updateLoad(load.m_load_no, {
+        m_truck:         assignForm.m_truck,
+        m_driver_id:     assignForm.m_driver_id,
+        m_trailer1:      assignForm.m_trailer1,
+        m_trailer2:      assignForm.m_trailer2,
+        m_trailer_size:  assignForm.m_trailer_size,
+      });
+      // Log what changed
+      const changes = [];
+      if (assignForm.m_truck     !== load.m_truck)     changes.push(`Horse: ${load.m_truck||'—'} → ${assignForm.m_truck||'—'}`);
+      if (assignForm.m_driver_id !== load.m_driver_id) changes.push(`Driver: ${load.m_driver_id||'—'} → ${assignForm.m_driver_id||'—'}`);
+      if (assignForm.m_trailer1  !== load.m_trailer1)  changes.push(`Trailer 1: ${load.m_trailer1||'—'} → ${assignForm.m_trailer1||'—'}`);
+      if (assignForm.m_trailer2  !== load.m_trailer2)  changes.push(`Trailer 2: ${load.m_trailer2||'—'} → ${assignForm.m_trailer2||'—'}`);
+      if (changes.length > 0) {
+        await api.addComment(load.m_load_no, `Assignment updated by ${user?.username}: ${changes.join(', ')}`);
+      }
+      setShowAssign(false);
+      onRefresh();
+      loadDetails();
+    } catch (e) { alert(e.message); }
+    finally { setAssignSaving(false); }
+  };
 
   const loadDetails = async () => {
     try {
@@ -825,9 +883,7 @@ function ExpandedRow({ load, onRefresh, onCostUpdate }) {
     </div>
   );
 
-  return (
-    <tr>
-      <td colSpan={12} style={{ padding: 0, background: '#f8fafc', borderBottom: '2px solid #00AEEF' }}>
+  const inner = (
         <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
 
           {/* Load detail fields */}
@@ -901,6 +957,149 @@ function ExpandedRow({ load, onRefresh, onCostUpdate }) {
             {load.m_loading_address && cell('Loading Address', load.m_loading_address)}
             {load.m_offloading_address && cell('Offloading Address', load.m_offloading_address)}
           </div>
+
+          {/* ── Edit Assignment Panel ────────────────────────────────── */}
+          {canEditAssignment && (
+            <div>
+              {!showAssign ? (
+                <button
+                  onClick={openAssignPanel}
+                  style={{
+                    background: 'none', border: '1px solid #00AEEF', borderRadius: 4,
+                    color: '#005A8E', fontSize: 12, cursor: 'pointer', padding: '4px 10px',
+                    fontFamily: 'inherit',
+                  }}>
+                  ✏️ Edit Driver / Horse / Trailer
+                </button>
+              ) : (
+                <div style={{
+                  background: '#f0f8ff', border: '1px solid #00AEEF',
+                  borderRadius: 6, padding: '14px 16px',
+                }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: '#005A8E', marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    ✏️ Edit Assignment
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(160px,1fr))', gap: 10, marginBottom: 12 }}>
+                    {/* Horse */}
+                    <div>
+                      <div style={{ fontSize: 10, color: '#555', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Horse</div>
+                      <select
+                        value={assignForm.m_truck}
+                        onChange={e => setAssignForm(f => ({ ...f, m_truck: e.target.value }))}
+                        style={{ width: '100%', padding: '7px 8px', fontSize: 13, border: '1px solid #ddd', borderRadius: 4, fontFamily: 'inherit' }}>
+                        <option value="">— None —</option>
+                        {assignVehicles.filter(v => v.vh_type === 'Horse').map(v => (
+                          <option key={v.vh_code} value={v.vh_code}>{v.vh_code}{v.vh_make ? ` — ${v.vh_make}` : ''}</option>
+                        ))}
+                      </select>
+                    </div>
+                    {/* Driver */}
+                    <div>
+                      <div style={{ fontSize: 10, color: '#555', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Driver</div>
+                      <select
+                        value={assignForm.m_driver_id}
+                        onChange={e => setAssignForm(f => ({ ...f, m_driver_id: e.target.value }))}
+                        style={{ width: '100%', padding: '7px 8px', fontSize: 13, border: '1px solid #ddd', borderRadius: 4, fontFamily: 'inherit' }}>
+                        <option value="">— None —</option>
+                        {assignDrivers.map(d => (
+                          <option key={d.d_id} value={d.d_nickname}>{d.d_nickname}{d.d_name ? ` — ${d.d_name}` : ''}</option>
+                        ))}
+                      </select>
+                    </div>
+                    {/* Trailer Size */}
+                    <div>
+                      <div style={{ fontSize: 10, color: '#555', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Trailer Size</div>
+                      <select
+                        value={assignForm.m_trailer_size}
+                        onChange={e => {
+                          const sz = e.target.value;
+                          setAssignForm(f => ({
+                            ...f,
+                            m_trailer_size: sz,
+                            m_trailer1: sz === 'None' ? '' : f.m_trailer1,
+                            m_trailer2: sz !== '18m'  ? '' : f.m_trailer2,
+                          }));
+                        }}
+                        style={{ width: '100%', padding: '7px 8px', fontSize: 13, border: '1px solid #ddd', borderRadius: 4, fontFamily: 'inherit' }}>
+                        <option value="None">None</option>
+                        <option value="15m">15m</option>
+                        <option value="18m">18m</option>
+                      </select>
+                    </div>
+                    {/* Trailer 1 */}
+                    {assignForm.m_trailer_size !== 'None' && (
+                      <div>
+                        <div style={{ fontSize: 10, color: '#555', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Trailer 1</div>
+                        <select
+                          value={assignForm.m_trailer1}
+                          onChange={e => {
+                            const code = e.target.value;
+                            const v = assignVehicles.find(x => x.vh_code === code);
+                            const linked = v?.vh_is_link === 'Y' && v?.vh_link_pair && assignForm.m_trailer_size === '18m';
+                            setAssignForm(f => ({
+                              ...f,
+                              m_trailer1: code,
+                              m_trailer2: linked ? v.vh_link_pair : f.m_trailer2,
+                            }));
+                          }}
+                          style={{ width: '100%', padding: '7px 8px', fontSize: 13, border: '1px solid #ddd', borderRadius: 4, fontFamily: 'inherit' }}>
+                          <option value="">— None —</option>
+                          {assignVehicles.filter(v => v.vh_type === 'Trailer').map(v => (
+                            <option key={v.vh_code} value={v.vh_code}>{v.vh_code}{v.vh_is_link === 'Y' && v.vh_link_pair ? ' 🔗' : ''}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                    {/* Trailer 2 — only for 18m */}
+                    {assignForm.m_trailer_size === '18m' && (
+                      <div>
+                        <div style={{ fontSize: 10, color: '#555', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Trailer 2</div>
+                        {(() => {
+                          const t1 = assignVehicles.find(v => v.vh_code === assignForm.m_trailer1);
+                          const isLinked = t1?.vh_is_link === 'Y' && t1?.vh_link_pair;
+                          return (
+                            <select
+                              value={assignForm.m_trailer2}
+                              onChange={e => setAssignForm(f => ({ ...f, m_trailer2: e.target.value }))}
+                              disabled={!!isLinked}
+                              style={{
+                                width: '100%', padding: '7px 8px', fontSize: 13, borderRadius: 4, fontFamily: 'inherit',
+                                border: isLinked ? '1px solid #7c3aed66' : '1px solid #ddd',
+                                background: isLinked ? '#f5f3ff' : 'white',
+                              }}>
+                              <option value="">— None —</option>
+                              {assignVehicles.filter(v => v.vh_type === 'Trailer' && v.vh_code !== assignForm.m_trailer1).map(v => (
+                                <option key={v.vh_code} value={v.vh_code}>{v.vh_code}</option>
+                              ))}
+                            </select>
+                          );
+                        })()}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      onClick={saveAssignment}
+                      disabled={assignSaving}
+                      style={{
+                        background: '#059669', color: 'white', border: 'none', borderRadius: 4,
+                        padding: '7px 16px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600,
+                      }}>
+                      {assignSaving ? 'Saving…' : '✓ Save Assignment'}
+                    </button>
+                    <button
+                      onClick={() => setShowAssign(false)}
+                      style={{
+                        background: 'none', border: '1px solid #ddd', borderRadius: 4,
+                        padding: '7px 12px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
+                      }}>
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Costs section */}
           <div>
@@ -1196,7 +1395,24 @@ function ExpandedRow({ load, onRefresh, onCostUpdate }) {
             </div>
           </div>
         </div>
+  );
 
+  if (asCard) {
+    return (
+      <div style={{ background: '#f8fafc', borderLeft: '4px solid #00AEEF', borderRadius: '0 0 6px 6px', marginTop: -6 }}>
+        {inner}
+        {showCostModal && (
+          <AddCostModal loadId={load.m_load_no} onClose={() => setShowCostModal(false)}
+            onSaved={() => { setShowCostModal(false); loadDetails(); onRefresh(); }} />
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <tr>
+      <td colSpan={12} style={{ padding: 0, background: '#f8fafc', borderBottom: '2px solid #00AEEF' }}>
+        {inner}
         {showCostModal && (
           <AddCostModal loadId={load.m_load_no} onClose={() => setShowCostModal(false)}
             onSaved={() => { setShowCostModal(false); loadDetails(); onRefresh(); }} />
@@ -1318,6 +1534,53 @@ export default function Loads() {
 
       {total > LIMIT && <PaginationBar page={page} total={total} limit={LIMIT} setPage={setPage} />}
 
+      {/* ── Mobile card list (shown ≤768px, CSS-controlled) ─────── */}
+      <div className="mobile-card-list">
+        {loading && <div className="loading">Loading…</div>}
+        {!loading && loads.length === 0 && <div className="empty-state">No loads found</div>}
+        {!loading && loads.map(l => {
+          const extra = Number(loadCosts[l.m_load_no] || 0);
+          const tot   = Number(l.m_rate || 0) + extra;
+          const isOpen = expandedRow === l.m_load_no;
+          return (
+            <React.Fragment key={l.m_load_no}>
+              <div className={`load-card${isOpen ? ' open' : ''}`} onClick={() => toggleRow(l.m_load_no)}>
+                <div className="load-card-header">
+                  <div>
+                    <div className="load-card-no">#{l.m_load_no}</div>
+                    <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>{fmtDate(l.m_date)}</div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                    <span className={`badge ${STATUS_BADGE[l.m_status] || 'badge-gray'}`}>
+                      {l.m_status?.replace(/_/g, ' ')}
+                    </span>
+                    {l.m_order_no_pending && <span style={{ fontSize: 10, color: '#d97706' }}>⏳ PO pending</span>}
+                  </div>
+                </div>
+                <div className="load-card-meta">
+                  <div>🚛 <strong>{l.m_truck || '—'}</strong></div>
+                  <div>👤 <strong>{l.m_driver_id || '—'}</strong></div>
+                  <div>📦 <strong>{l.m_customer || '—'}</strong></div>
+                  <div>🗺 <strong>{l.m_from} → {l.m_to}</strong></div>
+                  {l.m_order_no && <div>PO: <strong>{l.m_order_no}</strong></div>}
+                  {l.m_trailer1 && <div>🚛 <strong>{l.m_trailer1}</strong></div>}
+                </div>
+                <div className="load-card-footer">
+                  <div className="load-card-total">{fmtR(tot)}</div>
+                  <span className="load-card-chevron">▼</span>
+                </div>
+              </div>
+              {isOpen && (
+                <ExpandedRow key={'exp-' + l.m_load_no} load={l} onRefresh={fetchLoads} asCard={true}
+                  onCostUpdate={(id, total) => setLoadCosts(prev => ({ ...prev, [id]: total }))} />
+              )}
+            </React.Fragment>
+          );
+        })}
+      </div>
+
+      {/* ── Desktop table (hidden ≤768px, CSS-controlled) ─────── */}
+      <div className="desktop-table">
       <div className="table-wrap">
         <table>
           <thead>
@@ -1367,6 +1630,7 @@ export default function Loads() {
           </tbody>
         </table>
       </div>
+      </div>{/* end desktop-table */}
 
       {total > LIMIT && <PaginationBar page={page} total={total} limit={LIMIT} setPage={setPage} />}
       {showModal && <NewLoadModal onClose={() => setShowModal(false)} onCreated={() => { setShowModal(false); fetchLoads(); fetchStats(); }} />}

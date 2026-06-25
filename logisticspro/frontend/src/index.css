@@ -287,30 +287,171 @@ tbody tr:hover td { background: #f0f8ff; }
 ::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
 
 
-/* ── MOBILE RESPONSIVE ────────────────────────────────────────── */
-@media (max-width: 640px) {
-  /* Modals fill screen on small phones */
-  .modal { width: 100% !important; max-width: 100vw; border-radius: 0; max-height: 100vh; }
+/* ══════════════════════════════════════════════════════════════
+   MOBILE RESPONSIVE — LP2.0
+   Strategy:
+     ≤ 768px  → card views replace wide tables; reduced padding
+     ≤ 640px  → stacked filters, full-screen modals, 2-col stats
+     ≤ 480px  → single-col stats, smaller stat values
+   Touch targets: minimum 44px height on all interactive elements
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── Dynamic viewport height (fixes mobile browser chrome) ── */
+html, body, #root { height: 100%; min-height: 100dvh; }
+.login-page { min-height: 100dvh; }
+
+/* ── Touch targets — all buttons/nav at least 44px tall ─────── */
+.btn      { min-height: 36px; }
+.btn-sm   { min-height: 32px; }
+.nav-item { min-height: 44px; }
+.nav-sub-item { min-height: 40px; }
+.nav-logout   { min-height: 44px; }
+.filter-bar input,
+.filter-bar select { min-height: 38px; }
+
+/* ── Card list — hidden on desktop, shown on mobile ─────────── */
+.mobile-card-list  { display: none; }
+.desktop-table     { display: block; }
+
+/* ════════════════════════════════════
+   TABLET  ≤ 768px
+   Tables → card stacks
+   ════════════════════════════════════ */
+@media (max-width: 768px) {
+  .main-content { padding: 14px; }
+
+  /* Show card views, hide tables */
+  .mobile-card-list { display: flex; flex-direction: column; gap: 10px; }
+  .desktop-table    { display: none; }
+
+  /* Stat grid — 2 columns */
+  .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .stat-value { font-size: 22px; }
+
+  /* Page header shrinks */
+  .page-header h1 { font-size: 17px; }
+
+  /* Filter bar wraps naturally */
+  .filter-bar { flex-wrap: wrap; gap: 6px; }
+  .filter-bar input { min-width: 0; flex: 1 1 140px; }
+  .filter-bar select { flex: 1 1 120px; }
+
+  /* Modals slide up from bottom on tablet */
   .modal-overlay { align-items: flex-end; }
+  .modal {
+    width: 100% !important;
+    max-width: 100vw;
+    border-radius: 12px 12px 0 0;
+    max-height: 92dvh;
+  }
+
+  /* Form grid goes single column */
+  .form-row { grid-template-columns: 1fr; }
+
+  /* Table-wrap keeps horizontal scroll when tables are still shown */
+  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* Topbar — hide notification dot, condense user display */
+  .topbar-notification { display: none; }
+}
+
+/* ════════════════════════════════════
+   PHONE  ≤ 640px
+   ════════════════════════════════════ */
+@media (max-width: 640px) {
+  .main-content { padding: 10px; }
+
+  /* Full-screen modals on phones */
+  .modal {
+    border-radius: 0;
+    max-height: 100dvh;
+    height: 100dvh;
+  }
 
   /* Filter bar stacks vertically */
   .filter-bar { flex-direction: column; }
-  .filter-bar input { min-width: unset; width: 100%; }
+  .filter-bar input,
+  .filter-bar select { width: 100%; flex: unset; }
 
-  /* Form rows go single column on mobile */
-  .form-row { grid-template-columns: 1fr; }
+  /* Stat grid — 2 equal columns */
+  .stats-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .stat-card  { padding: 10px 12px; }
+  .stat-value { font-size: 20px; }
+  .stat-label { font-size: 9px; }
 
-  /* Table: enable horizontal scroll on mobile */
-  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  /* Topbar — hide username text, keep avatar */
+  .topbar-user { display: none; }
 
-  /* Stat grid: two columns on small screens */
-  .stats-grid { grid-template-columns: repeat(2, 1fr); }
+  /* Buttons in filter bar go full width */
+  .filter-bar .btn { flex: 1 1 auto; text-align: center; }
 
-  /* Page content padding reduced */
-  .main-content { padding: 12px; }
+  /* Badge text smaller on phone */
+  .badge { font-size: 10px; padding: 2px 6px; }
 }
 
+/* ════════════════════════════════════
+   SMALL PHONE  ≤ 480px
+   ════════════════════════════════════ */
 @media (max-width: 480px) {
   .stats-grid { grid-template-columns: 1fr 1fr; }
-  .stat-value { font-size: 20px; }
+  .stat-value { font-size: 18px; }
+  .stat-card  { padding: 8px 10px; }
+  .main-content { padding: 8px; }
 }
+
+/* ── Load card (mobile card view for the Loads table) ────────── */
+.load-card {
+  background: white;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 14px 16px;
+  cursor: pointer;
+  border-left: 4px solid var(--blue);
+  transition: box-shadow 0.15s;
+  position: relative;
+}
+.load-card:hover  { box-shadow: 0 4px 16px rgba(0,0,0,0.14); }
+.load-card.open   { border-left-color: #059669; background: #f0fdf4; }
+
+.load-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.load-card-no {
+  font-family: monospace;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--blue-deep);
+}
+.load-card-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 12px;
+  font-size: 12px;
+  color: var(--text2);
+  margin-bottom: 8px;
+}
+.load-card-meta strong { color: var(--text); font-weight: 500; }
+.load-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 8px;
+  border-top: 1px solid #f0f0f0;
+  font-size: 12px;
+}
+.load-card-total {
+  font-family: monospace;
+  font-weight: 700;
+  color: var(--blue-deep);
+  font-size: 14px;
+}
+.load-card-chevron {
+  color: var(--blue);
+  font-size: 16px;
+  transition: transform 0.2s;
+}
+.load-card.open .load-card-chevron { transform: rotate(180deg); }
