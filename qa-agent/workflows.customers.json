@@ -1,0 +1,21 @@
+[
+  {
+    "name": "Customers page renders after login",
+    "requiresAuth": true,
+    "steps": [
+      { "action": "login" },
+      { "action": "goto", "path": "/clients" },
+      { "action": "expectVisible", "selector": "body" }
+    ]
+  },
+  {
+    "name": "Customers page visible buttons do not crash",
+    "requiresAuth": true,
+    "steps": [
+      { "action": "login" },
+      { "action": "goto", "path": "/clients" },
+      { "action": "expectVisible", "selector": "body" },
+      { "action": "clickEveryVisible", "selector": "button", "maxClicks": 30 }
+    ]
+  }
+]
