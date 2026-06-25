@@ -98,6 +98,40 @@ function AssetList({ classes, onViewTransactions }) {
         <button className="btn btn-primary btn-sm" onClick={() => { setForm(EMPTY); setShowAdd(true); }}>+ New Asset</button>
       </div>
       <ExportBar onCSV={doExport} />
+      <div className="mobile-card-list">
+        {loading && <div className="loading">Loading fixed assets…</div>}
+        {!loading && filtered.length === 0 && <div className="empty-state">No assets found</div>}
+        {!loading && filtered.map(a => (
+          <div key={a.asset_code} className="data-card" onClick={() => setSelected(a)}
+            style={{opacity: a.is_active?1:0.65, borderLeftColor: a.fully_depreciated?'#aaa':a.is_active?'var(--blue)':'#e53e3e'}}>
+            <div className="data-card-header">
+              <div>
+                <div className="data-card-title" style={{fontFamily:'monospace'}}>{a.asset_code}</div>
+                <div className="data-card-sub">{a.description}</div>
+              </div>
+              <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:4}}>
+                <span className="badge badge-purple" style={{fontSize:10}}>{a.class_code}</span>
+                {a.fully_depreciated
+                  ? <span className="badge badge-gray" style={{fontSize:10}}>Fully Depr.</span>
+                  : a.is_active
+                    ? <span className="badge badge-green" style={{fontSize:10}}>Active</span>
+                    : <span className="badge badge-red" style={{fontSize:10}}>Disposed</span>}
+              </div>
+            </div>
+            <div className="data-card-meta">
+              <div>Cost: <strong>{fmt(a.purchase_price)}</strong></div>
+              <div>Book NBV: <strong style={{color:'#005A8E'}}>{fmt(a.book_nbv)}</strong></div>
+              <div>Tax: <strong>{fmt(a.tax_value)}</strong></div>
+              <div>From: <strong>{a.depre_start_date||'—'}</strong></div>
+            </div>
+            <button className="btn btn-sm" style={{fontSize:10,padding:'2px 7px',marginTop:8}}
+              onClick={e => {e.stopPropagation(); onViewTransactions(a.asset_code,a.description);}}>
+              Ledger
+            </button>
+          </div>
+        ))}
+      </div>
+      <div className="desktop-table">
       <div className="table-wrap">
         <table>
           <thead>
@@ -141,6 +175,7 @@ function AssetList({ classes, onViewTransactions }) {
           </tbody>
         </table>
       </div>
+      </div>{/* end desktop-table */}
 
       {/* Asset Detail Modal */}
       {selected && (

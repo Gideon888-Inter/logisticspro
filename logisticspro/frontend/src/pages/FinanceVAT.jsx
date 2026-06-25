@@ -296,6 +296,33 @@ function VATTransactions() {
                 {g.is_capital_goods && <span className="badge badge-amber" style={{ fontSize: 10 }}>Capital</span>}
                 {g.vat201_field && <span className="mono" style={{ fontSize: 11, color: '#059669', marginLeft: 'auto' }}>Field {g.vat201_field}</span>}
               </div>
+              <div className="mobile-card-list" style={{marginBottom:8}}>
+                {g.rows.map(r => (
+                  <div key={r.vat_id} className="data-card" style={{padding:'8px 12px',borderLeftColor:'#059669'}}>
+                    <div className="data-card-header">
+                      <div>
+                        <div className="data-card-title" style={{fontSize:12}}>{r.counterparty_name||'—'}</div>
+                        <div className="data-card-sub" style={{fontFamily:'monospace'}}>{r.tax_invoice_no||'—'} · {r.transaction_date}</div>
+                      </div>
+                      <div style={{textAlign:'right'}}>
+                        <div style={{fontFamily:'monospace',fontWeight:700,color:'#059669',fontSize:13}}>{fmt(r.vat_amount)}</div>
+                        <div style={{fontSize:11,color:'#888'}}>VAT</div>
+                      </div>
+                    </div>
+                    <div className="data-card-meta">
+                      <div>Excl: <strong>{fmt(r.exclusive_amount)}</strong></div>
+                      <div>Incl: <strong>{fmt(r.inclusive_amount)}</strong></div>
+                    </div>
+                  </div>
+                ))}
+                <div style={{display:'flex',justifyContent:'flex-end',gap:16,padding:'6px 8px',background:'#dcfce7',borderRadius:4,fontSize:12,fontWeight:700}}>
+                  <span>Subtotal — {g.vat_code}</span>
+                  <span>Excl: {fmt(g.excl)}</span>
+                  <span style={{color:'#059669'}}>VAT: {fmt(g.vat)}</span>
+                  <span>Incl: {fmt(g.incl)}</span>
+                </div>
+              </div>
+              <div className="desktop-table">
               <div className="table-wrap">
                 <table>
                   <thead><tr><th>Date</th><th>Tax Invoice #</th><th>Counterparty</th><th>Counterparty VAT</th><th>Module</th><th style={{ textAlign: 'right' }}>Excl Amt</th><th style={{ textAlign: 'right' }}>VAT</th><th style={{ textAlign: 'right' }}>Incl Amt</th></tr></thead>
@@ -320,6 +347,7 @@ function VATTransactions() {
                     </tr>
                   </tbody>
                 </table>
+              </div>
               </div>
             </div>
           ))}

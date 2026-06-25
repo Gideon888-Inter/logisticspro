@@ -152,6 +152,31 @@ export default function InventoryPage() {
       </div>
 
       {/* ── Table ── */}
+      <div className="mobile-card-list">
+        {loading && <div className="loading">Loading inventory…</div>}
+        {!loading && filtered.length === 0 && <div className="empty-state">No inventory items found</div>}
+        {!loading && filtered.map(item => {
+          const low = item.qty_on_hand <= item.reorder_level && item.reorder_level > 0;
+          return (
+            <div key={item.item_id} className="data-card" onClick={() => setSelected(item)}
+              style={{ borderLeftColor: low ? '#e53e3e' : 'var(--blue)' }}>
+              <div className="data-card-header">
+                <div>
+                  <div className="data-card-title">{item.item_name}</div>
+                  <div className="data-card-sub" style={{fontFamily:'monospace'}}>{item.item_code} · {item.item_category}</div>
+                </div>
+                <span className={`badge ${STATUS_BADGE[item.status]||'badge-gray'}`}>{STATUS_LABEL[item.status]||item.status}</span>
+              </div>
+              <div className="data-card-meta">
+                <div>On Hand: <strong style={{color:low?'#e53e3e':'inherit'}}>{Number(item.qty_on_hand||0).toFixed(2)} {item.unit_of_measure}</strong></div>
+                <div>On Order: <strong>{Number(item.qty_on_order||0).toFixed(2)}</strong></div>
+                <div>Last Cost: <strong>R {Number(item.last_cost||0).toFixed(2)}</strong></div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="desktop-table">
       <div className="table-wrap">
         <table>
           <thead>
@@ -194,6 +219,7 @@ export default function InventoryPage() {
           </tbody>
         </table>
       </div>
+      </div>{/* end desktop-table */}
 
       {/* ── New Item Modal ── */}
       {showModal && (

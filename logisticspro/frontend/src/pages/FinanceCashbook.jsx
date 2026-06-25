@@ -301,6 +301,32 @@ function Cashbook() {
             </div>
           )}
 
+          <div className="mobile-card-list">
+            {loading && <div className="loading">Loading…</div>}
+            {!loading && searched && entries.length === 0 && <div className="empty-state">No entries found</div>}
+            {!loading && entries.map((e, i) => (
+              <div key={e.line_id||i} className="data-card"
+                style={{borderLeftColor: e.direction==='RECEIPT'?'#059669':e.direction==='PAYMENT'?'#e53e3e':'var(--blue)'}}>
+                <div className="data-card-header">
+                  <div>
+                    <div className="data-card-title">{e.description}</div>
+                    <div className="data-card-sub" style={{fontFamily:'monospace'}}>{e.journal_ref} · {e.bank_account}</div>
+                  </div>
+                  <div style={{textAlign:'right'}}>
+                    {e.direction && <span className={`badge ${e.direction==='RECEIPT'?'badge-green':'badge-red'}`} style={{fontSize:10,display:'block',marginBottom:4}}>{e.direction}</span>}
+                    <span style={{fontFamily:'monospace',fontWeight:700,fontSize:13,color:e.direction==='RECEIPT'?'#059669':'#e53e3e'}}>
+                      {fmt(e.amount)}
+                    </span>
+                  </div>
+                </div>
+                <div className="data-card-meta">
+                  <div>Date: <strong>{fmtDate(e.journal_date)}</strong></div>
+                  {e.source_module && <div>Source: <strong>{e.source_module}</strong></div>}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="desktop-table">
           <div className="table-wrap">
             <table>
               <thead>
@@ -336,6 +362,7 @@ function Cashbook() {
               </tbody>
             </table>
           </div>
+          </div>{/* end desktop-table */}
         </>
       )}
 

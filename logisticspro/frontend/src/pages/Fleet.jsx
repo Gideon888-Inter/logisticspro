@@ -452,7 +452,43 @@ export default function Fleet({ focusServiceDue }) {
         <button className="btn btn-sm" onClick={() => exportCSV(filtered)}>⬇ Export CSV</button>
       </div>
 
-      {/* Table */}
+      {/* Mobile card list */}
+      <div className="mobile-card-list">
+        {loading && <div className="loading">Loading fleet…</div>}
+        {!loading && filtered.length === 0 && <div className="empty-state">No vehicles found</div>}
+        {!loading && filtered.map(v => {
+          const svcRemaining = (Number(v.vh_next_service)||0) - (Number(v.vh_odometer)||0);
+          const whlRemaining = (Number(v.vh_next_wheel)||0) - (Number(v.vh_odometer)||0);
+          const alert = svcRemaining < 0 || whlRemaining < 0 ? '#e53e3e'
+            : (svcRemaining <= SERVICE_WARN_KM || whlRemaining <= SERVICE_WARN_KM) ? '#d97706' : 'var(--blue)';
+          return (
+            <div key={v.vh_code} className="data-card" onClick={() => openEdit(v)} style={{borderLeftColor: alert}}>
+              <div className="data-card-header">
+                <div>
+                  <div className="data-card-title" style={{fontFamily:'monospace'}}>{v.vh_code}</div>
+                  <div className="data-card-sub">{v.vh_type} · {[v.vh_make,v.vh_model].filter(Boolean).join(' ')||'—'} {v.vh_year?`(${v.vh_year})`:''}</div>
+                </div>
+                <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:4}}>
+                  <StatusBadge status={v.vh_status} />
+                  <span style={{fontSize:10,fontWeight:700,padding:'2px 6px',borderRadius:10,background:v.vh_active==='Y'?'#059669':'#e53e3e',color:'white'}}>
+                    {v.vh_active==='Y'?'Active':'Inactive'}
+                  </span>
+                </div>
+              </div>
+              <div className="data-card-meta">
+                <div>Reg: <strong style={{fontFamily:'monospace'}}>{v.vh_registration||'—'}</strong></div>
+                <div>ODO: <strong>{v.vh_odometer?Number(v.vh_odometer).toLocaleString()+' km':'—'}</strong></div>
+                <div>Svc due: <strong style={{color: svcRemaining<0?'#e53e3e':svcRemaining<=SERVICE_WARN_KM?'#d97706':'inherit'}}>
+                  {v.vh_next_service?Number(v.vh_next_service).toLocaleString()+' km':'—'}
+                </strong></div>
+                <div>COF: <strong>{v.vh_cof_date||'—'}</strong></div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {/* Desktop table */}
+      <div className="desktop-table">
       <div className="table-wrap" style={{ overflowX: 'auto' }}>
         <table style={{ minWidth: 1100 }}>
           <thead>
@@ -507,6 +543,7 @@ export default function Fleet({ focusServiceDue }) {
           </tbody>
         </table>
       </div>
+      </div>{/* end desktop-table */}
 
       {/* ── Edit Modal ─────────────────────────────────────────────────────── */}
       {showModal && editVehicle && (

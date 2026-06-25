@@ -720,6 +720,34 @@ function ServiceCardModal({ card, onClose, onUpdated }) {
 // ── ServiceCardTable — reusable table for any status group ────────────────────
 function ServiceCardTable({ cards, vehicles, loading, onOpen, emptyMsg }) {
   return (
+    <>
+    <div className="mobile-card-list">
+      {loading && <div className="loading">Loading…</div>}
+      {!loading && cards.length===0 && <div className="empty-state">{emptyMsg || 'No records found'}</div>}
+      {!loading && cards.map(c => {
+        const veh = vehicles.find(v => v.vh_code === c.sc_vehicle);
+        const cfg = STATUSES[c.sc_status] || {};
+        const statusColors = { Pending:'#d97706', Accepted:'#1e40af', 'Waiting for Part':'#7c3aed', Complete:'#059669', Rejected:'#e53e3e' };
+        return (
+          <div key={c.sc_no} className="data-card" onClick={() => onOpen(c)}
+            style={{borderLeftColor: statusColors[c.sc_status]||'var(--blue)'}}>
+            <div className="data-card-header">
+              <div>
+                <div className="data-card-title" style={{fontFamily:'monospace'}}>{cfg.icon} {c.sc_no}</div>
+                <div className="data-card-sub">{c.sc_vehicle} · {veh?`${veh.vh_make||''} ${veh.vh_model||''}`.trim():'—'}</div>
+              </div>
+              <StatusBadge status={c.sc_status} />
+            </div>
+            <div className="data-card-meta">
+              <div>Date: <strong>{fmtDate(c.sc_date)}</strong></div>
+              <div>ODO: <strong>{c.sc_odometer?Number(c.sc_odometer).toLocaleString()+' km':'—'}</strong></div>
+              {c.sc_trigger && <div style={{gridColumn:'1/-1',fontSize:11,color:'#666'}}>{c.sc_trigger}</div>}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+    <div className="desktop-table">
     <div className="table-wrap">
       <table>
         <thead>
@@ -753,6 +781,8 @@ function ServiceCardTable({ cards, vehicles, loading, onOpen, emptyMsg }) {
         </tbody>
       </table>
     </div>
+    </div>
+    </>
   );
 }
 

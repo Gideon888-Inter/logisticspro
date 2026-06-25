@@ -170,6 +170,35 @@ export default function Approvals({ onNavigateToLoad }) {
 
       {/* ── KM Anomalies Tab ── */}
       {tab==='km' && (
+        <>
+        <div className="mobile-card-list">
+          {loading && <div className="loading">Loading…</div>}
+          {!loading && anomalies.length===0 && <div className="empty-state">No anomalies found</div>}
+          {!loading && anomalies.map(a => (
+            <div key={a.id} className="data-card" style={{borderLeftColor: a.a_status==='PENDING'?'#d97706':a.a_status==='APPROVED'?'#059669':'#e53e3e'}}>
+              <div className="data-card-header">
+                <div>
+                  <div className="data-card-title">Load {a.a_load_no} · {a.a_truck}</div>
+                  <div className="data-card-sub">{a.a_description}</div>
+                </div>
+                <span className={`badge ${STATUS_COLORS[a.a_status]||'badge-gray'}`}>{a.a_status}</span>
+              </div>
+              <div className="data-card-meta">
+                <div>Dead KM: <strong style={{color:'#e53e3e'}}>{Number(a.a_dead_km||0).toLocaleString()} km</strong></div>
+                <div>Operator: <strong>{a.a_operator}</strong></div>
+                <div>Last Closing: <strong>{Number(a.a_last_closing||0).toLocaleString()} km</strong></div>
+                <div>New Opening: <strong>{Number(a.a_new_opening||0).toLocaleString()} km</strong></div>
+              </div>
+              {a.a_status==='PENDING' && (
+                <button className="btn btn-sm" style={{marginTop:8}} onClick={()=>{setSelected(selected===a.id?null:a.id);setRejectionReason('');}}>
+                  {selected===a.id?'Cancel':'Review'}
+                </button>
+              )}
+              {selected===a.id && reviewPanel(()=>approveKm(a.id),()=>rejectKm(a.id))}
+            </div>
+          ))}
+        </div>
+        <div className="desktop-table">
         <div className="table-wrap">
           <table>
             <thead><tr>
@@ -218,10 +247,39 @@ export default function Approvals({ onNavigateToLoad }) {
             </tbody>
           </table>
         </div>
+        </div>{/* end desktop-table */}
+        </>
       )}
 
       {/* ── Cost Deletions Tab ── */}
       {tab==='costs' && (
+        <>
+        <div className="mobile-card-list">
+          {loading && <div className="loading">Loading…</div>}
+          {!loading && costDeletions.length===0 && <div className="empty-state">No pending cost deletions</div>}
+          {!loading && costDeletions.map(c => (
+            <div key={c.c_cost_no} className="data-card" style={{borderLeftColor:'#e53e3e'}}>
+              <div className="data-card-header">
+                <div>
+                  <div className="data-card-title">Load {c.c_load} · {c.c_code}</div>
+                  <div className="data-card-sub">{c.c_description}</div>
+                </div>
+                <span style={{fontFamily:'monospace',fontWeight:700,color:'#e53e3e'}}>
+                  R {Number(c.c_amount||0).toLocaleString('en-ZA',{minimumFractionDigits:2})}
+                </span>
+              </div>
+              <div className="data-card-meta">
+                <div>Requested by: <strong>{c.c_delete_requested_by}</strong></div>
+                <div>Reason: <strong>{c.c_delete_reason}</strong></div>
+              </div>
+              <button className="btn btn-sm" style={{marginTop:8}} onClick={()=>{setSelected(selected===c.c_cost_no?null:c.c_cost_no);setRejectionReason('');}}>
+                {selected===c.c_cost_no?'Cancel':'Review'}
+              </button>
+              {selected===c.c_cost_no && reviewPanel(()=>approveCostDeletion(c.c_cost_no),()=>rejectCostDeletion(c.c_cost_no))}
+            </div>
+          ))}
+        </div>
+        <div className="desktop-table">
         <div className="table-wrap">
           <table>
             <thead><tr>
@@ -260,10 +318,37 @@ export default function Approvals({ onNavigateToLoad }) {
             </tbody>
           </table>
         </div>
+        </div>{/* end desktop-table */}
+        </>
       )}
 
       {/* ── Order Number Changes Tab ── */}
       {tab==='ordernos' && (
+        <>
+        <div className="mobile-card-list">
+          {loading && <div className="loading">Loading…</div>}
+          {!loading && orderNos.length===0 && <div className="empty-state">No pending order number changes</div>}
+          {!loading && orderNos.map(o => (
+            <div key={o.m_load_no} className="data-card" style={{borderLeftColor:'#7c3aed'}}>
+              <div className="data-card-header">
+                <div>
+                  <div className="data-card-title">Load {o.m_load_no} · {o.m_customer}</div>
+                  <div className="data-card-sub">{o.m_truck} · {o.m_date}</div>
+                </div>
+              </div>
+              <div className="data-card-meta">
+                <div>Current PO: <strong>{o.m_order_no||'—'}</strong></div>
+                <div>Requested: <strong style={{color:'#7c3aed'}}>{o.m_order_no_pending}</strong></div>
+                <div>By: <strong>{o.m_order_no_requested_by}</strong></div>
+              </div>
+              <button className="btn btn-sm" style={{marginTop:8}} onClick={()=>{setSelected(selected===o.m_load_no?null:o.m_load_no);setRejectionReason('');}}>
+                {selected===o.m_load_no?'Cancel':'Review'}
+              </button>
+              {selected===o.m_load_no && reviewPanel(()=>approveOrderNo(o.m_load_no),()=>rejectOrderNo(o.m_load_no))}
+            </div>
+          ))}
+        </div>
+        <div className="desktop-table">
         <div className="table-wrap">
           <table>
             <thead><tr>
@@ -301,6 +386,8 @@ export default function Approvals({ onNavigateToLoad }) {
             </tbody>
           </table>
         </div>
+        </div>{/* end desktop-table */}
+        </>
       )}
     </div>
   );

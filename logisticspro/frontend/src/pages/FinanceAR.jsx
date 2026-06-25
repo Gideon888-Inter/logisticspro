@@ -350,6 +350,33 @@ export default function FinanceAR() {
             <input placeholder="Search customer code or name…" value={search} onChange={e => setSearch(e.target.value)} />
           </div>
           <ExportBar onCSV={customersCSV} />
+          <div className="mobile-card-list">
+            {loading && <div className="loading">Loading customers…</div>}
+            {!loading && filteredCustomers.length === 0 && <div className="empty-state">No customers found</div>}
+            {!loading && filteredCustomers.map(c => (
+              <div key={c.customer_id} className="data-card" onClick={() => setSelected(c)}
+                style={{borderLeftColor: c.on_hold?'#e53e3e':'var(--blue)'}}>
+                <div className="data-card-header">
+                  <div>
+                    <div className="data-card-title">{c.customer_name}</div>
+                    <div className="data-card-sub" style={{fontFamily:'monospace'}}>{c.customer_code}</div>
+                  </div>
+                  <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:4}}>
+                    {c.on_hold
+                      ? <span className="badge badge-red" style={{fontSize:10}}>On Hold</span>
+                      : <span className="badge badge-green" style={{fontSize:10}}>Active</span>}
+                    {c.loads_allowed && <span className="badge badge-blue" style={{fontSize:10}}>Loads</span>}
+                  </div>
+                </div>
+                <div className="data-card-meta">
+                  {c.telephone && <div>📱 <strong>{c.telephone}</strong></div>}
+                  <div>Terms: <strong>{c.payment_terms_days} days</strong></div>
+                  {c.lp_client_code && <div>LP: <strong style={{color:'#00AEEF'}}>{c.lp_client_code}</strong></div>}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="desktop-table">
           <div className="table-wrap">
             <table>
               <thead><tr><th>Code</th><th>Customer Name</th><th>VAT Number</th><th>Telephone</th><th>Email</th><th>Terms</th><th>LP Code</th><th style={{ textAlign: 'center' }}>Loads</th><th>Status</th></tr></thead>
@@ -385,6 +412,7 @@ export default function FinanceAR() {
               </tbody>
             </table>
           </div>
+          </div>{/* end desktop-table */}
         </>
       )}
 

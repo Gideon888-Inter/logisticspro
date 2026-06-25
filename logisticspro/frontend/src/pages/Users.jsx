@@ -487,6 +487,29 @@ export default function Users() {
             )}
             <button className="btn btn-sm" onClick={() => exportCSV(data)}>⬇ Export CSV</button>
           </div>
+          <div className="mobile-card-list">
+            {loading && <div className="loading">Loading users…</div>}
+            {!loading && filtered.length === 0 && <div className="empty-state">No users found</div>}
+            {!loading && filtered.map(u => (
+              <div key={u.u_id} className="data-card" onClick={() => canManageUsers(currentUser) && openEdit(u)}>
+                <div className="data-card-header">
+                  <div>
+                    <div className="data-card-title">{u.u_name || u.u_username}</div>
+                    <div className="data-card-sub" style={{fontFamily:'monospace'}}>{u.u_username}</div>
+                  </div>
+                  <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:4}}>
+                    <span className={`badge ${ROLE_BADGE_COLORS[u.u_role]||'badge-gray'}`}>{ROLE_LABELS[u.u_role]||u.u_role}</span>
+                    <span className={`badge ${u.u_active==='Y'?'badge-green':'badge-red'}`}>{u.u_active==='Y'?'Active':'Inactive'}</span>
+                  </div>
+                </div>
+                <div className="data-card-meta">
+                  {u.u_email && <div>✉ <strong>{u.u_email}</strong></div>}
+                  {u.u_region && <div>Region: <strong>{u.u_region}</strong></div>}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="desktop-table">
           <div className="table-wrap">
             <table>
               <thead>
@@ -507,6 +530,7 @@ export default function Users() {
                 ))}
               </tbody>
             </table>
+          </div>
           </div>
         </>
       )}

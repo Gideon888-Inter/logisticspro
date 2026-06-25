@@ -69,6 +69,26 @@ export default function Clients() {
         <button className="btn btn-sm" onClick={()=>exportCSV(filtered)}>⬇ Export CSV</button>
       </div>
 
+      <div className="mobile-card-list">
+        {loading && <div className="loading">Loading clients…</div>}
+        {!loading && filtered.length === 0 && <div className="empty-state">No clients found</div>}
+        {!loading && filtered.map(c => (
+          <div key={c.c_code} className="data-card" onClick={() => openEdit(c)}>
+            <div className="data-card-header">
+              <div>
+                <div className="data-card-title">{c.c_name}</div>
+                <div className="data-card-sub" style={{fontFamily:'monospace'}}>{c.c_code}</div>
+              </div>
+              <span className={`badge ${c.c_active==='Y'?'badge-green':'badge-red'}`}>{c.c_active==='Y'?'Active':'Inactive'}</span>
+            </div>
+            <div className="data-card-meta">
+              <div>POD: <strong>{c.c_send_pod==='Y'?'Yes':'No'}</strong></div>
+              <div>Invoice: <strong>{c.c_send_invoice==='Y'?'Yes':'No'}</strong></div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="desktop-table">
       <div className="table-wrap">
         <table>
           <thead><tr><th>Code</th><th>Client Name</th><th>Send POD</th><th>Send Invoice</th><th>Active</th></tr></thead>
@@ -86,6 +106,7 @@ export default function Clients() {
             ))}
           </tbody>
         </table>
+      </div>
       </div>
 
       {showModal&&(

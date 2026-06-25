@@ -154,6 +154,52 @@ export default function FinancePeriods({ user }) {
       </div>
 
       {/* ── Periods Table ── */}
+      <div className="mobile-card-list">
+        {loading && <div className="loading">Loading periods…</div>}
+        {!loading && periods.length === 0 && (
+          <div className="empty-state">{selectedFY ? 'No periods found for this financial year.' : 'Select a financial year above to view periods.'}</div>
+        )}
+        {!loading && periods.map(p => (
+          <div key={p.period_id} className="data-card"
+            style={{borderLeftColor: p.is_closed ? '#e53e3e' : '#059669'}}>
+            <div className="data-card-header">
+              <div>
+                <div className="data-card-title">{p.period_name}</div>
+                <div className="data-card-sub">{p.period_start} → {p.period_end}</div>
+              </div>
+              <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:4}}>
+                {p.is_closed
+                  ? <span className="badge badge-red" style={{fontSize:10}}>🔒 Locked</span>
+                  : <span className="badge badge-green" style={{fontSize:10}}>Open</span>}
+                {p.vat_period_code && <span style={{fontFamily:'monospace',fontSize:10,color:'#555'}}>{p.vat_period_code}</span>}
+              </div>
+            </div>
+            <div className="data-card-meta">
+              <div>Journals: <strong>{p.total_journals||0}</strong></div>
+              <div>Posted: <strong>{p.posted_journals||0}</strong></div>
+              {p.locked_by && <div>Locked by: <strong>{p.locked_by}</strong></div>}
+            </div>
+            {isFinance && (
+              <div style={{marginTop:8}}>
+                {!p.is_closed && (
+                  <button className="btn btn-sm" style={{color:'#e53e3e',fontSize:11}}
+                    onClick={() => lock(p)} disabled={locking===p.period_id}>
+                    {locking===p.period_id?'…':'Lock'}
+                  </button>
+                )}
+                {p.is_closed && isAdmin && (
+                  <button className="btn btn-sm" style={{fontSize:11}}
+                    onClick={() => setShowUnlock(p)} disabled={unlocking===p.period_id}>
+                    {unlocking===p.period_id?'…':'Unlock'}
+                  </button>
+                )}
+                {p.is_closed && !isAdmin && <span style={{fontSize:11,color:'#aaa'}}>Admin only</span>}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      <div className="desktop-table">
       <div className="table-wrap">
         <table>
           <thead>
@@ -226,6 +272,7 @@ export default function FinancePeriods({ user }) {
           </tbody>
         </table>
       </div>
+      </div>{/* end desktop-table */}
 
       {/* ── Unlock Modal ── */}
       {showUnlock && (

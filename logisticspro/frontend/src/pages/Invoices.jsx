@@ -138,6 +138,36 @@ export default function Invoices() {
 
       {/* ── READY TO INVOICE ── */}
       {tab === 'ready' && (
+        <>
+        <div className="mobile-card-list">
+          {loading && <div className="loading">Loading…</div>}
+          {!loading && draftsReady.length === 0 && <div className="empty-state">No loads awaiting invoice</div>}
+          {!loading && draftsReady.map(load => (
+            <div key={load.m_load_no} className="data-card">
+              <div className="data-card-header">
+                <div>
+                  <div className="data-card-title">#{load.m_load_no} · {load.lp_customers?.c_name||load.m_customer}</div>
+                  <div className="data-card-sub">{load.m_from} → {load.m_to} · {fmtDate(load.m_date)}</div>
+                </div>
+                <div style={{fontFamily:'monospace',fontWeight:700,color:'var(--blue-deep)',fontSize:14}}>
+                  {fmtR(load.m_load_total||load.m_rate)}
+                </div>
+              </div>
+              <div className="data-card-meta">
+                <div>PO No: <strong>{load.m_order_no||'—'}</strong></div>
+                <div>{load.existing_invoice
+                  ? <span className={`badge ${STATUS_BADGE[load.existing_invoice.inv_status]}`}>{load.existing_invoice.inv_number}</span>
+                  : <span className="badge badge-gray">No invoice yet</span>}</div>
+              </div>
+              {!load.existing_invoice && (
+                <button className="btn btn-primary btn-sm" style={{marginTop:8}} onClick={() => createDraft(load)} disabled={saving}>
+                  Create Draft
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+        <div className="desktop-table">
         <div className="table-wrap">
           <table>
             <thead>
@@ -179,6 +209,8 @@ export default function Invoices() {
             </tbody>
           </table>
         </div>
+        </div>{/* end desktop-table */}
+        </>
       )}
 
       {/* ── ALL INVOICES ── */}
@@ -192,6 +224,32 @@ export default function Invoices() {
               <option value="CREDITED">Credited</option>
             </select>
           </div>
+          <div className="mobile-card-list">
+            {loading && <div className="loading">Loading…</div>}
+            {!loading && invoices.length === 0 && <div className="empty-state">No invoices found</div>}
+            {!loading && invoices.map(inv => (
+              <div key={inv.id} className="data-card" onClick={() => setSelectedInv(inv)}>
+                <div className="data-card-header">
+                  <div>
+                    <div className="data-card-title">{inv.inv_number}</div>
+                    <div className="data-card-sub">{inv.lp_customers?.c_name||inv.inv_customer} · {fmtDate(inv.inv_date)}</div>
+                  </div>
+                  <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:4}}>
+                    <span className={`badge ${STATUS_BADGE[inv.inv_status]||'badge-gray'}`}>{inv.inv_status}</span>
+                    <span style={{fontFamily:'monospace',fontWeight:700,color:'var(--blue-deep)',fontSize:13}}>{fmtR(inv.inv_amount_incl)}</span>
+                  </div>
+                </div>
+                <div className="data-card-meta">
+                  <div>Load: <strong>{inv.inv_load_no}</strong></div>
+                  <div>VAT: <strong>{fmtR(inv.inv_vat)}</strong></div>
+                </div>
+                {inv.inv_status==='DRAFT' && (
+                  <button className="btn btn-primary btn-sm" style={{marginTop:8}} onClick={e=>{e.stopPropagation();approveInvoice(inv);}} disabled={saving}>Finalise</button>
+                )}
+              </div>
+            ))}
+          </div>
+          <div className="desktop-table">
           <div className="table-wrap">
             <table>
               <thead>
@@ -222,6 +280,7 @@ export default function Invoices() {
               </tbody>
             </table>
           </div>
+          </div>{/* end desktop-table */}
         </>
       )}
 

@@ -113,6 +113,26 @@ function ChartOfAccounts() {
           <button className="btn btn-primary btn-sm" onClick={() => { setEditAcct(null); setForm(EMPTY_ACCOUNT); setShowAdd(true); }}>+ New Account</button>
         </div>
       </div>
+      <div className="mobile-card-list">
+        {loading && <div className="loading">Loading accounts…</div>}
+        {!loading && filtered.length === 0 && <div className="empty-state">No accounts found</div>}
+        {!loading && filtered.map(a => (
+          <div key={a.account_id} className="data-card" onClick={() => openEdit(a)}
+            style={{opacity: a.active?1:0.5, paddingLeft: a.is_sub_account ? 20 : 16, borderLeftColor: a.is_sub_account?'#00AEEF':'var(--blue-deep)'}}>
+            <div className="data-card-header">
+              <div>
+                <div className="data-card-title" style={{fontFamily:'monospace'}}>{a.account_code}</div>
+                <div className="data-card-sub" style={{fontWeight: a.is_sub_account?400:600}}>{a.account_name}</div>
+              </div>
+              <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:4}}>
+                <span className={`badge ${VAT_BADGE[a.vat_treatment]||'badge-gray'}`} style={{fontSize:10}}>{a.vat_treatment}</span>
+                <span style={{fontSize:10,color:'#888'}}>{a.category}</span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="desktop-table">
       <div className="table-wrap">
         <table>
           <thead><tr><th>Code</th><th>Account Name</th><th>Category</th><th>IFRS Class</th><th>Type</th><th>VAT</th><th style={{ width: 40 }}></th></tr></thead>
@@ -134,6 +154,7 @@ function ChartOfAccounts() {
             ))}
           </tbody>
         </table>
+      </div>
       </div>
 
       {showAdd && (
@@ -1143,6 +1164,27 @@ function AuditLog() {
           </div>
         </div>
       </div>
+      <div className="mobile-card-list">
+        {loading && <div className="loading">Loading…</div>}
+        {!loading && rows.length === 0 && <div className="empty-state">No audit records found. Try adjusting filters.</div>}
+        {!loading && rows.map(r => (
+          <div key={r.log_id} className="data-card"
+            style={{borderLeftColor: r.action==='DELETE'?'#e53e3e':r.action==='INSERT'?'#059669':'#1e40af'}}>
+            <div className="data-card-header">
+              <div>
+                <div className="data-card-title" style={{fontFamily:'monospace'}}>{r.table_name} / {r.record_id}</div>
+                <div className="data-card-sub">{fmtDate(r.event_time)}</div>
+              </div>
+              <span className={`badge ${r.action==='DELETE'?'badge-red':r.action==='INSERT'?'badge-green':'badge-blue'}`} style={{fontSize:10}}>{r.action}</span>
+            </div>
+            <div className="data-card-meta">
+              <div>By: <strong>{r.changed_by||'—'}</strong></div>
+            </div>
+            {r.new_values && <div style={{fontSize:11,color:'#555',marginTop:6,fontFamily:'monospace',wordBreak:'break-all'}}>{JSON.stringify(r.new_values).slice(0,120)}</div>}
+          </div>
+        ))}
+      </div>
+      <div className="desktop-table">
       <div className="table-wrap">
         <table>
           <thead><tr><th>Time</th><th>Table</th><th>Record</th><th>Action</th><th>Changed By</th><th>Old Values</th><th>New Values</th></tr></thead>
@@ -1166,6 +1208,7 @@ function AuditLog() {
             ))}
           </tbody>
         </table>
+      </div>
       </div>
     </div>
   );

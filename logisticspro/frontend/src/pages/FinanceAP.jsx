@@ -338,6 +338,38 @@ function SupplierInvoicesTab({ suppliers, periods }) {
             <button className="btn btn-sm" onClick={doExport}>⬇ CSV</button>
           </div>
 
+          <div className="mobile-card-list">
+            {loading && <div className="loading">Loading…</div>}
+            {!loading && filteredInvoices.length === 0 && <div className="empty-state">No supplier invoices found</div>}
+            {!loading && filteredInvoices.map(inv => {
+              const isOpen = openId === inv.invoice_id;
+              return (
+                <div key={inv.invoice_id} className={`load-card${isOpen?' open':''}`}
+                  onClick={() => setOpenId(isOpen ? null : inv.invoice_id)}>
+                  <div className="load-card-header">
+                    <div>
+                      <div className="load-card-no" style={{fontFamily:'monospace'}}>{inv.invoice_ref}</div>
+                      <div style={{fontSize:12,color:'#555',marginTop:2}}>{inv.fin_suppliers?.supplier_name||inv.supplier_code}</div>
+                    </div>
+                    <span className={`badge ${STATUS_COLOR[inv.status]||'badge-gray'}`} style={{fontSize:10}}>
+                      {STATUS_LABELS[inv.status]||inv.status}
+                    </span>
+                  </div>
+                  <div className="load-card-meta">
+                    <div>Inv No: <strong>{inv.supplier_invoice_no||'—'}</strong></div>
+                    <div>Date: <strong>{fmtDate(inv.invoice_date)}</strong></div>
+                    <div style={{color: isOverdue(inv)?'#e53e3e':'inherit'}}>Due: <strong>{fmtDate(inv.due_date)}{isOverdue(inv)?' ⚠':''}</strong></div>
+                    <div>Balance: <strong style={{color:(inv.balance_due||0)>0?'#e53e3e':'#059669'}}>{fmt(inv.balance_due)}</strong></div>
+                  </div>
+                  <div className="load-card-footer">
+                    <div className="load-card-total">{fmt(inv.total_incl_vat)}</div>
+                    <span className="load-card-chevron">▼</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="desktop-table">
           <div className="table-wrap">
             <table>
               <thead>
@@ -471,6 +503,7 @@ function SupplierInvoicesTab({ suppliers, periods }) {
               </tbody>
             </table>
           </div>
+          </div>{/* end desktop-table */}
         </>
       )}
 

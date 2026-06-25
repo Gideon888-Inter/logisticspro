@@ -723,7 +723,58 @@ export default function PurchaseOrders() {
         )}
       </div>
 
+      {/* PO Mobile card list */}
+      <div className="mobile-card-list">
+        {loading && <div className="loading">Loading…</div>}
+        {!loading && filtered.length === 0 && <div className="empty-state">No purchase orders found</div>}
+        {!loading && filtered.map(po => {
+          const isOpen = openPoId === po.po_id;
+          return (
+            <div key={po.po_id} className={`load-card${isOpen?' open':''}`} onClick={() => toggleRow(po)}>
+              <div className="load-card-header">
+                <div>
+                  <div className="load-card-no">{po.po_number}</div>
+                  <div style={{fontSize:12,color:'#555',marginTop:2}}>{po.supplier_name||po.supplier_code}</div>
+                </div>
+                <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:4}}>
+                  <span className={`badge ${PO_STATUS_COLORS[po.status]||'badge-gray'}`} style={{fontSize:10}}>
+                    {PO_STATUS_LABELS[po.status]||po.status}
+                  </span>
+                  {po.supplier_invoice_no && <span style={{fontSize:10,color:'#555',fontFamily:'monospace'}}>{po.supplier_invoice_no}</span>}
+                </div>
+              </div>
+              <div className="load-card-meta">
+                {po.po_description && <div style={{gridColumn:'1/-1',fontSize:11,color:'#666'}}>{po.po_description}</div>}
+                <div>By: <strong>{po.created_by}</strong></div>
+                <div>{fmtDate(po.created_at)}</div>
+              </div>
+              <div className="load-card-footer">
+                <div className="load-card-total">{fmtR(po.total_incl_vat)}</div>
+                <div style={{display:'flex',alignItems:'center',gap:8}}>
+                  {canApproveStatus(po.status) && (
+                    <button className="btn btn-primary btn-sm" style={{fontSize:10,padding:'2px 7px'}}
+                      onClick={async e => {
+                        e.stopPropagation();
+                        setOpenPoId(po.po_id); setEditing(false); setActionErr(''); setDL(true);
+                        const data = await req(`/stock/po/${po.po_id}`); setDetail(data); setDL(false);
+                        setApproving(true);
+                        const r = await req(`/stock/po/${po.po_id}/approve`,{method:'POST',body:JSON.stringify({action:'APPROVE',notes:''})});
+                        setApproving(false);
+                        if(r.error){setActionErr(r.error);return;}
+                        await refreshDetail(po.po_id);
+                      }}>✓ Approve</button>
+                  )}
+                  <span className="load-card-chevron">▼</span>
+                </div>
+              </div>
+              {isOpen && renderExpanded(po)}
+            </div>
+          );
+        })}
+      </div>
+
       {/* PO Table with expandable rows */}
+      <div className="desktop-table">
       <div className="table-wrap" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
         <table>
           <thead>
@@ -792,6 +843,7 @@ export default function PurchaseOrders() {
           </tbody>
         </table>
       </div>
+      </div>{/* end desktop-table */}
 
       {/* New PO Modal */}
       {showNewModal && <NewPOModal />}

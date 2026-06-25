@@ -155,7 +155,34 @@ export default function Drivers() {
         <button className="btn btn-sm" onClick={()=>exportCSV(filtered)}>⬇ Export CSV</button>
       </div>
 
-      {/* Table */}
+      {/* Mobile card list */}
+      <div className="mobile-card-list">
+        {loading && <div className="loading">Loading drivers…</div>}
+        {!loading && filtered.length === 0 && <div className="empty-state">No drivers found</div>}
+        {!loading && filtered.map(d => {
+          const pdpStatus = getPdpStatus(d.d_pdp_expiry);
+          const borderColor = pdpStatus==='expired' ? '#e53e3e' : pdpStatus==='soon'||pdpStatus==='warning' ? '#d97706' : 'var(--blue)';
+          return (
+            <div key={d.d_id} className="data-card" onClick={() => openEdit(d)} style={{ borderLeftColor: borderColor }}>
+              <div className="data-card-header">
+                <div>
+                  <div className="data-card-title">{d.d_nickname}</div>
+                  <div className="data-card-sub">{d.d_name || d.d_nickname}</div>
+                </div>
+                <span className={`badge ${d.d_active==='Y'?'badge-green':'badge-red'}`}>{d.d_active==='Y'?'Active':'Inactive'}</span>
+              </div>
+              <div className="data-card-meta">
+                <div>📱 <strong>{d.d_cell||'—'}</strong></div>
+                <div>Type: <strong>{d.d_type||'Interland'}</strong></div>
+                <div>PDP: <strong style={{color: borderColor}}>{d.d_pdp_expiry || '—'}</strong></div>
+                <div>Receipt: <strong>{d.d_receipt==='Y'?'Yes':'No'}</strong></div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {/* Desktop table */}
+      <div className="desktop-table">
       <div className="table-wrap">
         <table>
           <thead><tr><th>Nickname</th><th>Full Name</th><th>Cell</th><th>Type</th><th>PDP Expiry</th><th>Has Receipt</th><th>Start Date</th><th>Training Date</th><th>Active</th></tr></thead>
@@ -185,6 +212,7 @@ export default function Drivers() {
           </tbody>
         </table>
       </div>
+      </div>{/* end desktop-table */}
 
       {/* Add / Edit Modal */}
       {showModal && (
