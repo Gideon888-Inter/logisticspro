@@ -14,7 +14,7 @@ const fmtR    = (n) => n == null ? '—' : 'R ' + Number(n).toLocaleString('en-Z
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 
 const EMPTY_LINE  = () => ({ typeCategory: 'HORSE', type: '', description: '', excl: '', vat: '', incl: '' });
-const DEFAULT_LINES = () => [EMPTY_LINE(), EMPTY_LINE(), EMPTY_LINE()];
+const DEFAULT_LINES = () => [EMPTY_LINE()];
 
 // ── Inline PO editor (used inside the expanded row) ──────────────────────
 function InlinePOEditor({ po, lines: existingLines, suppliers, vehicles, onSave, onCancel, saving }) {
