@@ -10,7 +10,8 @@ type WorkflowStep =
   | { action: 'expectVisibleAny'; selectors: string[] }
   | { action: 'expectText'; selector: string; contains: string }
   | { action: 'expectTitleOrUrl'; contains: string }
-  | { action: 'login' };
+  | { action: 'login' }
+  | { action: 'clickEveryVisible'; selector?: string; maxClicks?: number };
 
 type Workflow = {
   name: string;
@@ -93,6 +94,55 @@ async function clickFirstVisible(page: Page, selectors: string[]) {
   throw new Error(`No visible clickable element found. Tried: ${selectors.join(', ')}`);
 }
 
+async function assertNoAppCrash(page: Page) {
+  await expect(page.locator('body')).toBeVisible();
+  const bodyText = await page.locator('body').innerText().catch(() => '');
+  const crashPatterns = [/application error/i, /runtime error/i, /uncaught/i, /cannot read/i, /undefined is not/i];
+  for (const pattern of crashPatterns) {
+    expect(bodyText).not.toMatch(pattern);
+  }
+}
+
+async function clickEveryVisible(page: Page, selector = 'button, a[href], [role="button"]', maxClicks = 25) {
+  await assertNoAppCrash(page);
+  const startingUrl = page.url();
+  const visibleIndexes: number[] = [];
+  const count = await page.locator(selector).count();
+
+  for (let index = 0; index < count && visibleIndexes.length < maxClicks; index += 1) {
+    const candidate = page.locator(selector).nth(index);
+    const isVisible = await candidate.isVisible().catch(() => false);
+    const isDisabled = await candidate.isDisabled().catch(() => false);
+    if (isVisible && !isDisabled) {
+      visibleIndexes.push(index);
+    }
+  }
+
+  expect(visibleIndexes.length, `Expected at least one visible interactive element for selector: ${selector}`).toBeGreaterThan(0);
+
+  for (const index of visibleIndexes) {
+    await page.goto(startingUrl);
+    await page.waitForLoadState('domcontentloaded');
+    const candidate = page.locator(selector).nth(index);
+    const label = (await candidate.innerText().catch(() => '')).trim() || (await candidate.getAttribute('aria-label').catch(() => '')) || selector;
+
+    await test.step(`click interactive element: ${label.slice(0, 80)}`, async () => {
+      const beforeUrl = page.url();
+      await candidate.click({ timeout: 5_000 }).catch(async error => {
+        throw new Error(`Failed to click interactive element "${label}": ${error}`);
+      });
+      await page.waitForLoadState('domcontentloaded').catch(() => undefined);
+      await page.waitForTimeout(500);
+      await assertNoAppCrash(page);
+
+      if (page.url() !== beforeUrl) {
+        await page.goBack().catch(() => undefined);
+        await page.waitForLoadState('domcontentloaded').catch(() => undefined);
+      }
+    });
+  }
+}
+
 async function runStep(page: Page, step: WorkflowStep) {
   switch (step.action) {
     case 'goto':
@@ -139,6 +189,10 @@ async function runStep(page: Page, step: WorkflowStep) {
 
     case 'login':
       await login(page);
+      return;
+
+    case 'clickEveryVisible':
+      await clickEveryVisible(page, step.selector, step.maxClicks);
       return;
   }
 }
