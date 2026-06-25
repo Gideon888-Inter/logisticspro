@@ -41,7 +41,7 @@ async function login(page: Page) {
     throw new Error('TEST_USERNAME and TEST_PASSWORD are required for authenticated workflows.');
   }
 
-  await page.goto('/login');
+  await page.goto('/');
 
   const usernameSelectors = [
     "input[name='username']",
@@ -60,10 +60,11 @@ async function login(page: Page) {
 
   const submitCandidates = [
     "button[type='submit']",
-    "button:has-text('Sign in')",
+    "button:has-text('LOGIN')",
     "button:has-text('Login')",
     "button:has-text('Log in')",
-    "button:has-text('Submit')"
+    "button:has-text('Sign in')",
+    "input[type='submit']"
   ];
 
   await clickFirstVisible(page, submitCandidates);
