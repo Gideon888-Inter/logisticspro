@@ -1,8 +1,10 @@
 const express = require('express');
 const supabase = require('../supabase');
-const { authMiddleware } = require('../middleware/auth');
+const { authMiddleware, requireRole, ROLES, CAN_ADD_COSTS } = require('../middleware/auth');
 const router = express.Router();
 router.use(authMiddleware);
+
+const CAN_REVIEW_COST_DELETIONS = [ROLES.ADMIN, ROLES.MANAGER, ROLES.OPERATOR];
 
 // Statuses after which no new costs can be added
 const COST_LOCKED_STATUSES = [
@@ -10,7 +12,7 @@ const COST_LOCKED_STATUSES = [
 ];
 
 // GET pending cost deletions
-router.get('/pending-deletions', async (req, res) => {
+router.get('/pending-deletions', requireRole(...CAN_REVIEW_COST_DELETIONS), async (req, res) => {
   const { data, error } = await supabase
     .from('lp_costs')
     .select('*')
@@ -51,7 +53,7 @@ router.get('/', async (req, res) => {
 });
 
 // POST add a cost — blocked after WAIT_APPROVAL
-router.post('/', async (req, res) => {
+router.post('/', requireRole(...CAN_ADD_COSTS), async (req, res) => {
   const { c_load } = req.body;
 
   // ── Status guard: no costs after WAIT_APPROVAL ──
@@ -94,14 +96,14 @@ router.post('/', async (req, res) => {
 });
 
 // DELETE a cost
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireRole(...CAN_REVIEW_COST_DELETIONS), async (req, res) => {
   const { error } = await supabase.from('lp_costs').delete().eq('c_cost_no', req.params.id);
   if (error) return res.status(400).json({ error: error.message });
   res.json({ message: 'Deleted' });
 });
 
 // PATCH request deletion of a cost (operator requests, needs approval)
-router.patch('/:id/request-delete', async (req, res) => {
+router.patch('/:id/request-delete', requireRole(...CAN_ADD_COSTS), async (req, res) => {
   const { reason } = req.body;
   if (!reason?.trim()) return res.status(400).json({ error: 'Please provide a reason for deletion' });
 
@@ -136,8 +138,10 @@ router.patch('/:id/request-delete', async (req, res) => {
 });
 
 // PATCH approve or reject cost deletion (operations/manager only)
-router.patch('/:id/approve-delete', async (req, res) => {
+router.patch('/:id/approve-delete', requireRole(...CAN_REVIEW_COST_DELETIONS), async (req, res) => {
   const { action, rejection_reason } = req.body;
+  if (!['approve', 'reject'].includes(action)) return res.status(400).json({ error: 'Action must be approve or reject' });
+
   const { data: cost } = await supabase.from('lp_costs').select('*').eq('c_cost_no', req.params.id).single();
   if (!cost) return res.status(404).json({ error: 'Cost not found' });
 
