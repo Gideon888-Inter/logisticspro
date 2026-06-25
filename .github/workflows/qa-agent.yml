@@ -18,10 +18,10 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 24
 
@@ -37,14 +37,14 @@ jobs:
         working-directory: qa-agent
         env:
           APP_BASE_URL: ${{ inputs.app_base_url }}
-          TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
-          TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
-          SKIP_AUTH_WORKFLOWS: ${{ secrets.TEST_USER_EMAIL == '' && '1' || '0' }}
+          TEST_USERNAME: ${{ secrets.TEST_USERNAME }}
+          TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}
+          SKIP_AUTH_WORKFLOWS: ${{ secrets.TEST_USERNAME == '' && '1' || '0' }}
         run: npm test
 
       - name: Upload Playwright report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: playwright-report
           path: qa-agent/playwright-report/
@@ -52,7 +52,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: qa-agent-results
           path: qa-agent/test-results/
