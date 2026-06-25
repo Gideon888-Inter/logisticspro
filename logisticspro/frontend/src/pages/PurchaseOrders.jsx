@@ -810,59 +810,82 @@ export default function PurchaseOrders() {
               </div>
 
               <div style={{ padding: '12px 14px', overflowX: 'hidden', maxWidth: '100%', boxSizing: 'border-box' }}>
-                {/* Lines — Type shows Horse/Trailer/Inventory + Item code */}
-                {detail.lines?.length > 0 && (
-                  <div className="table-wrap" style={{ marginBottom: 10, overflowX: 'auto', maxWidth: '100%' }}>
-                    <table>
-                      <thead>
-                        <tr style={{ background: '#4a90b8', color: 'white' }}>
-                          <th style={{ width: 28 }}>#</th>
-                          <th style={{ width: 100 }}>Category</th>
-                          <th style={{ width: 130 }}>Item</th>
-                          <th>Description</th>
-                          <th style={{ textAlign: 'right' }}>Excl VAT</th>
-                          <th style={{ textAlign: 'right' }}>VAT</th>
-                          <th style={{ textAlign: 'right' }}>Incl VAT</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {detail.lines.map(l => {
-                          // Derive display category and item from stored fields
-                          // Decode category from item_name ("HORSE:MH202" or "TRAILER:BT001")
-                          let cat = 'Horse', catColor = '#005A8E';
-                          if (l.line_type === 'INVENTORY') {
-                            cat = 'Inventory'; catColor = '#059669';
-                          } else if (l.item_name && l.item_name.startsWith('TRAILER')) {
-                            cat = 'Trailer'; catColor = '#7c3aed';
-                          }
-                          let itemCode = l.item_code || '';
-                          if (!itemCode && l.item_name && l.item_name.includes(':')) {
-                            itemCode = l.item_name.split(':')[1] || '';
-                          }
-                          if (!itemCode && l.line_type !== 'INVENTORY') {
-                            const m = (l.description || '').toUpperCase().match(/(MH|RH|BT|ST)\d+/);
-                            if (m) itemCode = m[0];
-                          }
-                          return (
-                            <tr key={l.po_line_id}>
-                              <td style={{ fontSize: 11, color: '#888' }}>{l.line_number}</td>
-                              <td>
-                                <span style={{ fontSize: 11, fontWeight: 600, color: catColor }}>{cat}</span>
-                              </td>
-                              <td className="mono" style={{ fontSize: 11, color: '#333' }}>
-                                {itemCode || <span style={{ color: '#bbb' }}>—</span>}
-                              </td>
-                              <td style={{ fontSize: 12 }}>{l.description}</td>
-                              <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 12 }}>{fmtR(l.line_total_excl)}</td>
-                              <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 12, color: '#c05621' }}>{l.vat_amount > 0 ? fmtR(l.vat_amount) : '—'}</td>
-                              <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 13, fontWeight: 600, color: '#005A8E' }}>{fmtR(l.line_total_incl)}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                {/* Lines — mobile cards + desktop table */}
+                {detail.lines?.length > 0 && (() => {
+                  const getLineDisplay = (l) => {
+                    let cat = 'Horse', catColor = '#005A8E';
+                    if (l.line_type === 'INVENTORY') { cat = 'Inventory'; catColor = '#059669'; }
+                    else if (l.item_name && l.item_name.startsWith('TRAILER')) { cat = 'Trailer'; catColor = '#7c3aed'; }
+                    let itemCode = l.item_code || '';
+                    if (!itemCode && l.item_name && l.item_name.includes(':')) itemCode = l.item_name.split(':')[1] || '';
+                    if (!itemCode && l.line_type !== 'INVENTORY') {
+                      const m = (l.description || '').toUpperCase().match(/(MH|RH|BT|ST)\d+/);
+                      if (m) itemCode = m[0];
+                    }
+                    return { cat, catColor, itemCode };
+                  };
+                  return (
+                    <>
+                    {/* Mobile: one card per line */}
+                    <div className="mobile-card-list" style={{ gap: 6, marginBottom: 10 }}>
+                      {detail.lines.map(l => {
+                        const { cat, catColor, itemCode } = getLineDisplay(l);
+                        return (
+                          <div key={l.po_line_id} style={{ background: 'white', border: '1px solid #e2e8f0', borderRadius: 6, padding: '10px 12px', borderLeft: `3px solid ${catColor}` }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+                              <div>
+                                <span style={{ fontSize: 11, fontWeight: 700, color: catColor }}>{cat}</span>
+                                {itemCode && <span style={{ fontFamily: 'monospace', fontSize: 11, color: '#555', marginLeft: 8 }}>{itemCode}</span>}
+                              </div>
+                              <span style={{ fontSize: 10, color: '#aaa' }}>#{l.line_number}</span>
+                            </div>
+                            <div style={{ fontSize: 13, color: '#222', marginBottom: 6 }}>{l.description}</div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, borderTop: '1px solid #f0f0f0', paddingTop: 6 }}>
+                              <span style={{ color: '#666' }}>Excl: <span style={{ fontFamily: 'monospace' }}>{fmtR(l.line_total_excl)}</span></span>
+                              {l.vat_amount > 0 && <span style={{ color: '#c05621' }}>VAT: <span style={{ fontFamily: 'monospace' }}>{fmtR(l.vat_amount)}</span></span>}
+                              <span style={{ fontWeight: 700, color: '#005A8E', fontFamily: 'monospace' }}>{fmtR(l.line_total_incl)}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {/* Desktop: table */}
+                    <div className="desktop-table">
+                    <div className="table-wrap" style={{ marginBottom: 10 }}>
+                      <table>
+                        <thead>
+                          <tr style={{ background: '#4a90b8', color: 'white' }}>
+                            <th style={{ width: 28 }}>#</th>
+                            <th style={{ width: 100 }}>Category</th>
+                            <th style={{ width: 130 }}>Item</th>
+                            <th>Description</th>
+                            <th style={{ textAlign: 'right' }}>Excl VAT</th>
+                            <th style={{ textAlign: 'right' }}>VAT</th>
+                            <th style={{ textAlign: 'right' }}>Incl VAT</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {detail.lines.map(l => {
+                            const { cat, catColor, itemCode } = getLineDisplay(l);
+                            return (
+                              <tr key={l.po_line_id}>
+                                <td style={{ fontSize: 11, color: '#888' }}>{l.line_number}</td>
+                                <td><span style={{ fontSize: 11, fontWeight: 600, color: catColor }}>{cat}</span></td>
+                                <td className="mono" style={{ fontSize: 11, color: '#333' }}>{itemCode || <span style={{ color: '#bbb' }}>—</span>}</td>
+                                <td style={{ fontSize: 12 }}>{l.description}</td>
+                                <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 12 }}>{fmtR(l.line_total_excl)}</td>
+                                <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 12, color: '#c05621' }}>{l.vat_amount > 0 ? fmtR(l.vat_amount) : '—'}</td>
+                                <td style={{ textAlign: 'right', fontFamily: 'monospace', fontSize: 13, fontWeight: 600, color: '#005A8E' }}>{fmtR(l.line_total_incl)}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    </div>
+                    </>
+                  );
+                })()}
 
                 {/* Approval history — collapsed by default */}
                 <HistoryToggle log={detail.log} />

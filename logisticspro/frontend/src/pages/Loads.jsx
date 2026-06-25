@@ -1528,16 +1528,30 @@ export default function Loads() {
           <option value="">All statuses</option>
           {ALL_STATUSES.map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
         </select>
-        <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(1); }}
-          style={{ padding: '7px 10px', fontSize: 13, border: '1px solid #ddd', borderRadius: 4 }} />
-        <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(1); }}
-          style={{ padding: '7px 10px', fontSize: 13, border: '1px solid #ddd', borderRadius: 4 }} />
-        <button className="btn btn-sm" onClick={() => { setDateFrom(''); setDateTo(''); setPage(1); }}>All dates</button>
-        <button className="btn btn-sm" onClick={() => {
-          if (window.confirm('Export all matching loads? This may take a moment for large datasets.'))
-            exportAllLoadsCSV(dateFrom, dateTo, filters.status, filters.search);
-        }}>⬇ Export CSV</button>
-        <button className="btn btn-primary btn-sm" onClick={() => setShowModal(true)}>+ New Load</button>
+        {/* Date range — labelled so they don't look like blank boxes on mobile */}
+        <div style={{ display: 'flex', gap: 6, flex: '1 1 auto', minWidth: 0 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 10, color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>From</div>
+            <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(1); }}
+              style={{ width: '100%', padding: '7px 8px', fontSize: 13, border: '1px solid #ddd', borderRadius: 4 }} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 10, color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>To</div>
+            <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(1); }}
+              style={{ width: '100%', padding: '7px 8px', fontSize: 13, border: '1px solid #ddd', borderRadius: 4 }} />
+          </div>
+        </div>
+        {/* Action buttons — row on mobile, don't stretch full width */}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {(dateFrom || dateTo) && (
+            <button className="btn btn-sm" onClick={() => { setDateFrom(''); setDateTo(''); setPage(1); }}>✕ Clear dates</button>
+          )}
+          <button className="btn btn-sm" onClick={() => {
+            if (window.confirm('Export all matching loads? This may take a moment for large datasets.'))
+              exportAllLoadsCSV(dateFrom, dateTo, filters.status, filters.search);
+          }}>⬇ CSV</button>
+          <button className="btn btn-primary btn-sm" onClick={() => setShowModal(true)}>+ New Load</button>
+        </div>
       </div>
 
       {total > LIMIT && <PaginationBar page={page} total={total} limit={LIMIT} setPage={setPage} />}
