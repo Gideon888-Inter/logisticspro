@@ -1,8 +1,8 @@
 const express = require('express');
 const supabase = require('../supabase');
 const {
-  authMiddleware, requireRole, ROLES,
-  CAN_VIEW_LOADS, CAN_MANAGE_INVOICES, CAN_CREATE_CREDIT_NOTE,
+  authMiddleware, requireRole,
+  CAN_MANAGE_INVOICES, CAN_CREATE_CREDIT_NOTE,
 } = require('../middleware/auth');
 
 const router = express.Router();

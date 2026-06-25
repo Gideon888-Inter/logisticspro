@@ -1961,6 +1961,41 @@ router.get('/audit-log', requireFin, async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// POST /fin/cashbook/staging/post-bulk — post all MATCHED entries in a batch
+router.post('/cashbook/staging/post-bulk', requireFin, async (req, res) => {
+  const { staging_ids } = req.body; // array of IDs, or omit for all MATCHED
+  let query = supabase
+    .from('fin_cb_staging')
+    .select('staging_id')
+    .eq('status', 'MATCHED');
+  if (staging_ids?.length) query = query.in('staging_id', staging_ids);
+  const { data: toPost } = await query;
+
+  const results = { posted: 0, failed: 0, errors: [] };
+  for (const entry of (toPost || [])) {
+    try {
+      const r = await fetch(
+        `${process.env.BACKEND_URL || 'http://localhost:3000'}/api/fin/cashbook/staging/${entry.staging_id}/post`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${req.headers.authorization?.split(' ')[1]}`,
+          },
+        }
+      );
+      const json = await r.json();
+      if (json.error) { results.failed++; results.errors.push(`${entry.staging_id}: ${json.error}`); }
+      else results.posted++;
+    } catch (e) {
+      results.failed++;
+      results.errors.push(`${entry.staging_id}: ${e.message}`);
+    }
+  }
+  res.json(results);
+});
+
+
 // POST /fin/cashbook/staging/:id/post — post a staged cashbook entry to GL
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/cashbook/staging/:id/post', requireFin, async (req, res) => {
@@ -2076,40 +2111,6 @@ router.post('/cashbook/staging/:id/post', requireFin, async (req, res) => {
     .eq('staging_id', id);
 
   res.json({ success: true, journal_ref, journal_id: journal.journal_id });
-});
-
-// POST /fin/cashbook/staging/post-bulk — post all MATCHED entries in a batch
-router.post('/cashbook/staging/post-bulk', requireFin, async (req, res) => {
-  const { staging_ids } = req.body; // array of IDs, or omit for all MATCHED
-  let query = supabase
-    .from('fin_cb_staging')
-    .select('staging_id')
-    .eq('status', 'MATCHED');
-  if (staging_ids?.length) query = query.in('staging_id', staging_ids);
-  const { data: toPost } = await query;
-
-  const results = { posted: 0, failed: 0, errors: [] };
-  for (const entry of (toPost || [])) {
-    try {
-      const r = await fetch(
-        `${process.env.BACKEND_URL || 'http://localhost:3000'}/api/fin/cashbook/staging/${entry.staging_id}/post`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${req.headers.authorization?.split(' ')[1]}`,
-          },
-        }
-      );
-      const json = await r.json();
-      if (json.error) { results.failed++; results.errors.push(`${entry.staging_id}: ${json.error}`); }
-      else results.posted++;
-    } catch (e) {
-      results.failed++;
-      results.errors.push(`${entry.staging_id}: ${e.message}`);
-    }
-  }
-  res.json(results);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

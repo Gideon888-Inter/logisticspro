@@ -429,6 +429,31 @@ router.post('/po',
   }
 );
 
+// GET /inventory/po/pending-approval — POs awaiting my action
+router.get('/po/pending-approval',
+  requireRole(ROLES.ADMIN, ROLES.FINANCE, ROLES.STOCK_CONTROLLER,
+             ROLES.WORKSHOP_ASSISTANT, ROLES.WORKSHOP_MANAGER),
+  async (req, res) => {
+    const roleStatusMap = {
+      [ROLES.STOCK_CONTROLLER]:   ['PENDING_L1'],
+      [ROLES.WORKSHOP_ASSISTANT]: ['PENDING_L2'],
+      [ROLES.WORKSHOP_MANAGER]:   ['PENDING_L3'],
+      [ROLES.ADMIN]:         ['PENDING_FINANCIAL'],
+    };
+    const myStatuses = roleStatusMap[req.user.role] || [];
+    if (!myStatuses.length) return res.json([]);
+
+    const { data, error } = await supabase()
+      .from('lp_purchase_orders')
+      .select('po_id, po_number, supplier_name, po_description, total_incl_vat, status, created_by, submitted_at, attachment_filename')
+      .in('status', myStatuses)
+      .order('submitted_at');
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data || []);
+  }
+);
+
 // GET /inventory/po/:id — PO detail with lines and approval log
 router.get('/po/:id',
   requireRole(ROLES.ADMIN, ROLES.MANAGER, ROLES.FINANCE, ROLES.OPERATOR, ROLES.OPS_ASSISTANT,
@@ -1094,30 +1119,6 @@ router.post('/po/:id/close',
   }
 );
 
-// GET /inventory/po/pending-approval — POs awaiting my action
-router.get('/po/pending-approval',
-  requireRole(ROLES.ADMIN, ROLES.FINANCE, ROLES.STOCK_CONTROLLER,
-             ROLES.WORKSHOP_ASSISTANT, ROLES.WORKSHOP_MANAGER),
-  async (req, res) => {
-    const roleStatusMap = {
-      [ROLES.STOCK_CONTROLLER]:   ['PENDING_L1'],
-      [ROLES.WORKSHOP_ASSISTANT]: ['PENDING_L2'],
-      [ROLES.WORKSHOP_MANAGER]:   ['PENDING_L3'],
-      [ROLES.ADMIN]:         ['PENDING_FINANCIAL'],
-    };
-    const myStatuses = roleStatusMap[req.user.role] || [];
-    if (!myStatuses.length) return res.json([]);
-
-    const { data, error } = await supabase()
-      .from('lp_purchase_orders')
-      .select('po_id, po_number, supplier_name, po_description, total_incl_vat, status, created_by, submitted_at, attachment_filename')
-      .in('status', myStatuses)
-      .order('submitted_at');
-
-    if (error) return res.status(500).json({ error: error.message });
-    res.json(data || []);
-  }
-);
 
 module.exports = router;
 

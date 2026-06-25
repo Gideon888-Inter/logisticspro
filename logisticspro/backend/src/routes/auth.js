@@ -365,7 +365,6 @@ router.post('/forgot-password', async (req, res) => {
     })
     .eq('u_username', username);
 
- console.log(`[PASSWORD RESET] User: ${username}, Temp password: ${tempPassword}`);
 
   res.json({
     success: true,
