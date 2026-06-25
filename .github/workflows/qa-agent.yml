@@ -4,8 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       app_base_url:
-        description: 'App URL to test, for example https://staging.example.com'
+        description: 'App URL to test'
         required: true
+        default: 'https://logisticspro.pages.dev/'
         type: string
   # Enable this after your app has a stable staging/preview URL.
   # pull_request:
