@@ -1,13 +1,14 @@
 const express = require('express');
 const supabase = require('../supabase');
-const { authMiddleware } = require('../middleware/auth');
+const { authMiddleware, requireRole, ROLES, CAN_VIEW_LOADS, CAN_APPROVE_KM } = require('../middleware/auth');
 const router = express.Router();
 router.use(authMiddleware);
 
 const DEAD_KM_THRESHOLD = 500;
+const CAN_MANAGE_KM = [...new Set([...CAN_APPROVE_KM, ROLES.MANAGER])];
 
 // GET last closing KM for a truck
-router.get('/last-closing/:truck', async (req, res) => {
+router.get('/last-closing/:truck', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
   const { truck } = req.params;
   const { data, error } = await supabase
     .from('lp_movement')
@@ -39,7 +40,7 @@ router.get('/last-closing/:truck', async (req, res) => {
 });
 
 // POST save closing KM when load is offloaded
-router.post('/closing/:loadNo', async (req, res) => {
+router.post('/closing/:loadNo', requireRole(...CAN_APPROVE_KM), async (req, res) => {
   const { loadNo } = req.params;
   const { closing_km } = req.body;
 
@@ -112,7 +113,7 @@ router.post('/closing/:loadNo', async (req, res) => {
 });
 
 // POST validate opening KM on new load
-router.post('/validate-opening', async (req, res) => {
+router.post('/validate-opening', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
   const { truck, opening_km } = req.body;
 
   const { data: last } = await supabase
@@ -151,7 +152,7 @@ router.post('/validate-opening', async (req, res) => {
 });
 
 // GET anomalies
-router.get('/anomalies', async (req, res) => {
+router.get('/anomalies', requireRole(...CAN_MANAGE_KM), async (req, res) => {
   const { status } = req.query;
   let q = supabase.from('lp_anomalies').select('*').order('created_at', { ascending: false });
   if (status) q = q.eq('a_status', status);
@@ -161,9 +162,11 @@ router.get('/anomalies', async (req, res) => {
 });
 
 // PATCH approve/reject anomaly
-router.patch('/anomalies/:id', async (req, res) => {
+router.patch('/anomalies/:id', requireRole(...CAN_MANAGE_KM), async (req, res) => {
   const { action, rejection_reason } = req.body;
   const { id } = req.params;
+
+  if (!['approve', 'reject'].includes(action)) return res.status(400).json({ error: 'Action must be approve or reject' });
 
   const { data: anomaly } = await supabase
     .from('lp_anomalies').select('*').eq('id', id).single();
@@ -221,7 +224,7 @@ router.patch('/anomalies/:id', async (req, res) => {
 });
 
 // POST create notification
-router.post('/notifications', async (req, res) => {
+router.post('/notifications', requireRole(...CAN_MANAGE_KM), async (req, res) => {
   const { data, error } = await supabase
     .from('lp_notifications')
     .insert([{ ...req.body }])
@@ -231,7 +234,7 @@ router.post('/notifications', async (req, res) => {
 });
 
 // POST create anomaly
-router.post('/anomalies', async (req, res) => {
+router.post('/anomalies', requireRole(...CAN_MANAGE_KM), async (req, res) => {
   const { data, error } = await supabase
     .from('lp_anomalies')
     .insert([{ ...req.body }])
