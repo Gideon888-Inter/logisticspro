@@ -21,31 +21,49 @@ type Workflow = {
 const workflowPath = process.env.WORKFLOWS_FILE || path.join(__dirname, '..', 'workflows.example.json');
 const workflows = JSON.parse(fs.readFileSync(workflowPath, 'utf-8')) as Workflow[];
 
+function testUsername() {
+  return process.env.TEST_USERNAME || process.env.TEST_USER_EMAIL;
+}
+
+function testPassword() {
+  return process.env.TEST_PASSWORD || process.env.TEST_USER_PASSWORD;
+}
+
 function hasAuthCredentials() {
-  return Boolean(process.env.TEST_USER_EMAIL && process.env.TEST_USER_PASSWORD);
+  return Boolean(testUsername() && testPassword());
 }
 
 async function login(page: Page) {
-  const email = process.env.TEST_USER_EMAIL;
-  const password = process.env.TEST_USER_PASSWORD;
+  const username = testUsername();
+  const password = testPassword();
 
-  if (!email || !password) {
-    throw new Error('TEST_USER_EMAIL and TEST_USER_PASSWORD are required for authenticated workflows.');
+  if (!username || !password) {
+    throw new Error('TEST_USERNAME and TEST_PASSWORD are required for authenticated workflows.');
   }
 
   await page.goto('/login');
 
-  const emailSelectors = ["input[type='email']", "input[name='email']", "input[placeholder*='email' i]"];
+  const usernameSelectors = [
+    "input[name='username']",
+    "input[type='text']",
+    "input[placeholder*='username' i]",
+    "input[placeholder*='user' i]",
+    "input[autocomplete='username']",
+    "input[type='email']",
+    "input[name='email']",
+    "input[placeholder*='email' i]"
+  ];
   const passwordSelectors = ["input[type='password']", "input[name='password']", "input[placeholder*='password' i]"];
 
-  await fillFirstVisible(page, emailSelectors, email);
+  await fillFirstVisible(page, usernameSelectors, username);
   await fillFirstVisible(page, passwordSelectors, password);
 
   const submitCandidates = [
     "button[type='submit']",
     "button:has-text('Sign in')",
     "button:has-text('Login')",
-    "button:has-text('Log in')"
+    "button:has-text('Log in')",
+    "button:has-text('Submit')"
   ];
 
   await clickFirstVisible(page, submitCandidates);
@@ -128,7 +146,7 @@ for (const workflow of workflows) {
   test(workflow.name, async ({ page }) => {
     test.skip(
       Boolean(workflow.requiresAuth && (process.env.SKIP_AUTH_WORKFLOWS === '1' || !hasAuthCredentials())),
-      'Authenticated workflow skipped because TEST_USER_EMAIL and TEST_USER_PASSWORD are not configured.'
+      'Authenticated workflow skipped because TEST_USERNAME and TEST_PASSWORD are not configured.'
     );
 
     for (const step of workflow.steps) {
