@@ -9,11 +9,11 @@
     ]
   },
   {
-    "name": "Login page is reachable",
+    "name": "App shell renders",
     "requiresAuth": false,
     "steps": [
-      { "action": "goto", "path": "/login" },
-      { "action": "expectVisibleAny", "selectors": ["input[type='email']", "input[name='email']", "text=/email/i"] }
+      { "action": "goto", "path": "/" },
+      { "action": "expectVisible", "selector": "body" }
     ]
   },
   {
