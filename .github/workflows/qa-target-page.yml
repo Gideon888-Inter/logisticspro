@@ -37,6 +37,18 @@ jobs:
         working-directory: qa-agent
         run: npx playwright install --with-deps chromium
 
+      - name: Check login secret availability
+        env:
+          TEST_USERNAME: ${{ secrets.TEST_USERNAME }}
+          TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}
+          TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
+          TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
+        run: |
+          if [ -n "$TEST_USERNAME" ]; then echo "TEST_USERNAME is present"; else echo "TEST_USERNAME is missing"; fi
+          if [ -n "$TEST_PASSWORD" ]; then echo "TEST_PASSWORD is present"; else echo "TEST_PASSWORD is missing"; fi
+          if [ -n "$TEST_USER_EMAIL" ]; then echo "TEST_USER_EMAIL is present"; else echo "TEST_USER_EMAIL is missing"; fi
+          if [ -n "$TEST_USER_PASSWORD" ]; then echo "TEST_USER_PASSWORD is present"; else echo "TEST_USER_PASSWORD is missing"; fi
+
       - name: Run target page tests
         working-directory: qa-agent
         env:
