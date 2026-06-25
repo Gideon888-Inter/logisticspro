@@ -16,10 +16,61 @@ const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-ZA', { day: '2-dig
 const EMPTY_LINE  = () => ({ typeCategory: 'HORSE', type: '', description: '', excl: '', vat: '', incl: '' });
 const DEFAULT_LINES = () => [EMPTY_LINE()];
 
+const INV_CATEGORIES = ['Tyres', 'Lubricants', 'Filters', 'Parts', 'Tools', 'Consumables', 'Other'];
+const INV_UOM        = ['Each', 'Litre', 'KG', 'Box', 'Set', 'Metre', 'Pair'];
+const EMPTY_INV_FORM = () => ({ item_name: '', item_category: 'Parts', unit_of_measure: 'Each', notes: '' });
+
 // ── Inline PO editor (used inside the expanded row) ──────────────────────
 function InlinePOEditor({ po, lines: existingLines, suppliers, vehicles, onSave, onCancel, saving }) {
   const vehicleOptions = (vehicles || []).filter(v => /^(MH|RH)/i.test(v.vh_code));
   const trailerOptions = (vehicles || []).filter(v => /^(BT|ST)/i.test(v.vh_code));
+
+  // ── Inventory items ────────────────────────────────────────────────────
+  const [invItems, setInvItems]         = useState([]);
+  const [invLoading, setInvLoading]     = useState(false);
+  const [showQuickAdd, setShowQuickAdd] = useState(false);
+  const [quickForm, setQuickForm]       = useState(EMPTY_INV_FORM());
+  const [quickSaving, setQuickSaving]   = useState(false);
+  const [quickErr, setQuickErr]         = useState('');
+  const [pendingLineIdx, setPendingIdx] = useState(null); // which line triggered quick-add
+
+  useEffect(() => {
+    setInvLoading(true);
+    req('/stock/items').then(data => {
+      setInvItems(Array.isArray(data) ? data.filter(i => i.status === 'ACTIVE') : []);
+    }).catch(() => {}).finally(() => setInvLoading(false));
+  }, []);
+
+  const refreshInvItems = async () => {
+    const data = await req('/stock/items').catch(() => []);
+    setInvItems(Array.isArray(data) ? data.filter(i => i.status === 'ACTIVE') : []);
+  };
+
+  const saveQuickAdd = async () => {
+    setQuickErr('');
+    if (!quickForm.item_name.trim()) { setQuickErr('Item name is required'); return; }
+    setQuickSaving(true);
+    try {
+      const result = await req('/stock/items', {
+        method: 'POST',
+        body: JSON.stringify(quickForm),
+      });
+      if (result.error) { setQuickErr(result.error); return; }
+      await refreshInvItems();
+      // Auto-select the new item on the line that triggered the add
+      if (pendingLineIdx !== null) {
+        setLine(pendingLineIdx, 'type', result.item_code);
+        setLine(pendingLineIdx, 'description', result.item_name);
+      }
+      setShowQuickAdd(false);
+      setQuickForm(EMPTY_INV_FORM());
+      setPendingIdx(null);
+      if (result.status === 'PENDING_APPROVAL') {
+        alert(`"${result.item_name}" (${result.item_code}) has been created and is pending approval — it will appear in the list once approved.`);
+      }
+    } catch (e) { setQuickErr(e.message); }
+    finally { setQuickSaving(false); }
+  };
 
   const buildForm = useCallback(() => {
     const sup = suppliers.find(s => s.supplier_code === po.supplier_code);
@@ -109,12 +160,14 @@ function InlinePOEditor({ po, lines: existingLines, suppliers, vehicles, onSave,
     if (!form.supplier_code) { alert('Supplier is required'); return false; }
     const activeLines = (form.lines || []).filter(l => l.description.trim() || l.excl);
     if (!activeLines.length) { alert('At least one line with a description is required'); return false; }
-    const badLine = activeLines.find(l =>
-      l.typeCategory !== 'INVENTORY' && (!l.type || !l.description.trim())
-    );
+    const badLine = activeLines.find(l => {
+      if (l.typeCategory === 'INVENTORY') return !l.type;
+      return !l.type || !l.description.trim();
+    });
     if (badLine) {
       const idx = activeLines.indexOf(badLine) + 1;
-      if (!badLine.type) alert(`Line ${idx}: please select a ${badLine.typeCategory === 'HORSE' ? 'horse' : 'trailer'}.`);
+      if (badLine.typeCategory === 'INVENTORY') alert(`Line ${idx}: please select an inventory item.`);
+      else if (!badLine.type) alert(`Line ${idx}: please select a ${badLine.typeCategory === 'HORSE' ? 'horse' : 'trailer'}.`);
       else alert(`Line ${idx}: description is required.`);
       return false;
     }
@@ -210,7 +263,28 @@ function InlinePOEditor({ po, lines: existingLines, suppliers, vehicles, onSave,
                     </select>
                   )}
                   {l.typeCategory === 'INVENTORY' && (
-                    <div style={{ ...inp, background: '#f0fdf4', color: '#059669', fontWeight: 500 }}>Stock / Parts</div>
+                    <div>
+                      <select
+                        value={l.type}
+                        onChange={e => {
+                          const item = invItems.find(i => i.item_code === e.target.value);
+                          setLine(i, 'type', e.target.value);
+                          if (item && !l.description) setLine(i, 'description', item.item_name);
+                        }}
+                        style={{ ...inp, borderColor: !l.type ? '#e53e3e' : '#ddd' }}>
+                        <option value="">{invLoading ? 'Loading items…' : '— Select item —'}</option>
+                        {invItems.map(item => (
+                          <option key={item.item_code} value={item.item_code}>
+                            {item.item_code} — {item.item_name}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={() => { setPendingIdx(i); setShowQuickAdd(true); }}
+                        style={{ marginTop: 4, background: 'none', border: '1px dashed #00AEEF', borderRadius: 4, color: '#005A8E', fontSize: 11, padding: '3px 8px', cursor: 'pointer', width: '100%' }}>
+                        + Add new inventory item
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -287,7 +361,29 @@ function InlinePOEditor({ po, lines: existingLines, suppliers, vehicles, onSave,
                         </select>
                       )}
                       {l.typeCategory === 'INVENTORY' && (
-                        <span style={{ fontSize: 10, color: '#059669', padding: '2px 3px', display: 'block' }}>Stock / Parts</span>
+                        <div>
+                          <select
+                            value={l.type}
+                            onChange={e => {
+                              const item = invItems.find(i => i.item_code === e.target.value);
+                              setLine(i, 'type', e.target.value);
+                              if (item && !l.description) setLine(i, 'description', item.item_name);
+                            }}
+                            style={{ width: '100%', fontSize: 10, borderRadius: 3, padding: '2px 3px',
+                                     border: !l.type ? '1px solid #e53e3e' : '1px solid #cbd5e0' }}>
+                            <option value="">{invLoading ? 'Loading…' : '— Select item —'}</option>
+                            {invItems.map(item => (
+                              <option key={item.item_code} value={item.item_code}>
+                                {item.item_code} — {item.item_name}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            onClick={() => { setPendingIdx(i); setShowQuickAdd(true); }}
+                            style={{ marginTop: 2, background: 'none', border: '1px dashed #00AEEF', borderRadius: 3, color: '#005A8E', fontSize: 9, padding: '1px 4px', cursor: 'pointer', width: '100%' }}>
+                            + New item
+                          </button>
+                        </div>
                       )}
                     </td>
                     <td style={{ padding: '3px 5px' }}>
@@ -355,6 +451,66 @@ function InlinePOEditor({ po, lines: existingLines, suppliers, vehicles, onSave,
           {saving ? 'Saving…' : '💾 Save PO'}
         </button>
       </div>
+
+      {/* ── Quick-Add Inventory Item Modal ──────────────────────── */}
+      {showQuickAdd && (
+        <div className="modal-overlay" onClick={() => setShowQuickAdd(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 480 }}>
+            <div className="modal-header">
+              <h3>📦 New Inventory Item</h3>
+              <button onClick={() => setShowQuickAdd(false)} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', fontSize: 18 }}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div className="form-group">
+                <label style={{ fontSize: 11, color: '#555', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 500, display: 'block', marginBottom: 4 }}>Item Name *</label>
+                <input
+                  value={quickForm.item_name}
+                  onChange={e => setQuickForm(f => ({ ...f, item_name: e.target.value }))}
+                  placeholder="e.g. Oil Filter — Mann W712/75"
+                  style={{ width: '100%', padding: '8px 10px', fontSize: 13, border: '1px solid #ddd', borderRadius: 4, fontFamily: 'inherit' }}
+                  autoFocus
+                />
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label style={{ fontSize: 11, color: '#555', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 500, display: 'block', marginBottom: 4 }}>Category</label>
+                  <select value={quickForm.item_category} onChange={e => setQuickForm(f => ({ ...f, item_category: e.target.value }))}
+                    style={{ width: '100%', padding: '8px 10px', fontSize: 13, border: '1px solid #ddd', borderRadius: 4, fontFamily: 'inherit' }}>
+                    {INV_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label style={{ fontSize: 11, color: '#555', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 500, display: 'block', marginBottom: 4 }}>Unit of Measure</label>
+                  <select value={quickForm.unit_of_measure} onChange={e => setQuickForm(f => ({ ...f, unit_of_measure: e.target.value }))}
+                    style={{ width: '100%', padding: '8px 10px', fontSize: 13, border: '1px solid #ddd', borderRadius: 4, fontFamily: 'inherit' }}>
+                    {INV_UOM.map(u => <option key={u} value={u}>{u}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="form-group">
+                <label style={{ fontSize: 11, color: '#555', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 500, display: 'block', marginBottom: 4 }}>Notes / Part Number</label>
+                <textarea value={quickForm.notes} onChange={e => setQuickForm(f => ({ ...f, notes: e.target.value }))}
+                  rows={2} placeholder="Optional — part number, description, reference…"
+                  style={{ width: '100%', padding: '8px 10px', fontSize: 13, border: '1px solid #ddd', borderRadius: 4, fontFamily: 'inherit', resize: 'vertical' }} />
+              </div>
+              {quickErr && (
+                <div style={{ background: '#fff5f5', border: '1px solid #fca5a5', borderRadius: 4, padding: '6px 10px', color: '#e53e3e', fontSize: 12 }}>
+                  ⚠ {quickErr}
+                </div>
+              )}
+              <p style={{ fontSize: 12, color: '#888', marginTop: 8 }}>
+                ℹ️ New items require Workshop Manager approval before appearing in the inventory list. The item will be auto-selected on this line once approved.
+              </p>
+            </div>
+            <div className="modal-footer">
+              <button className="btn" onClick={() => { setShowQuickAdd(false); setQuickErr(''); }}>Cancel</button>
+              <button className="btn btn-primary" onClick={saveQuickAdd} disabled={quickSaving}>
+                {quickSaving ? 'Creating…' : '+ Create Item'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -432,8 +588,8 @@ export default function PurchaseOrders() {
         return {
           line_number:     i + 1,
           line_type:       isInv ? 'INVENTORY' : 'COST',
-          item_name:       !isInv ? `${l.typeCategory}:${l.type || ''}` : null,
-          item_code:       vehCode,
+          item_name:       !isInv ? `${l.typeCategory}:${l.type || ''}` : (l.type ? `INVENTORY:${l.type}` : null),
+          item_code:       isInv ? (l.type || null) : vehCode,
           description:     l.description,
           quantity:        1,
           unit_price_excl: parseFloat(l.excl) || 0,
@@ -473,8 +629,8 @@ export default function PurchaseOrders() {
         return {
           line_number:     i + 1,
           line_type:       isInv ? 'INVENTORY' : 'COST',
-          item_name:       !isInv ? `${l.typeCategory}:${l.type || ''}` : null,
-          item_code:       vehCode,
+          item_name:       !isInv ? `${l.typeCategory}:${l.type || ''}` : (l.type ? `INVENTORY:${l.type}` : null),
+          item_code:       isInv ? (l.type || null) : vehCode,
           description:     l.description,
           quantity:        1,
           unit_price_excl: parseFloat(l.excl) || 0,
