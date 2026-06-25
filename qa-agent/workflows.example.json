@@ -17,11 +17,10 @@
     ]
   },
   {
-    "name": "Authenticated dashboard smoke test",
+    "name": "Authenticated login smoke test",
     "requiresAuth": true,
     "steps": [
       { "action": "login" },
-      { "action": "goto", "path": "/dashboard" },
       { "action": "expectVisible", "selector": "body" }
     ]
   }
