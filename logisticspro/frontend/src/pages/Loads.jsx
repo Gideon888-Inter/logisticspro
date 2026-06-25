@@ -1531,17 +1531,18 @@ export default function Loads() {
           <option value="">All statuses</option>
           {ALL_STATUSES.map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
         </select>
-        {/* Date range — compact inline row with 'to' separator */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '1 1 auto', minWidth: 0 }}>
+        {/* Date range + clear — all on one compact row */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flex: '1 1 auto', minWidth: 0 }}>
           <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(1); }}
-            style={{ flex: 1, minWidth: 0, padding: '7px 8px', fontSize: 13, border: '1px solid #ddd', borderRadius: 4 }} />
-          <span style={{ fontSize: 12, color: '#aaa', flexShrink: 0 }}>to</span>
+            style={{ flex: '1 1 0', minWidth: 0, padding: '7px 6px', fontSize: 12, border: '1px solid #ddd', borderRadius: 4 }} />
+          <span style={{ fontSize: 11, color: '#aaa', flexShrink: 0 }}>to</span>
           <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(1); }}
-            style={{ flex: 1, minWidth: 0, padding: '7px 8px', fontSize: 13, border: '1px solid #ddd', borderRadius: 4 }} />
+            style={{ flex: '1 1 0', minWidth: 0, padding: '7px 6px', fontSize: 12, border: '1px solid #ddd', borderRadius: 4 }} />
           {(dateFrom || dateTo) && (
-            <button onClick={() => { setDateFrom(''); setDateTo(''); setPage(1); }}
-              style={{ flexShrink: 0, background: 'none', border: 'none', color: '#aaa', fontSize: 16, cursor: 'pointer', padding: '0 2px', lineHeight: 1 }}
-              title="Clear dates">✕</button>
+            <button className="btn btn-sm" style={{ flexShrink: 0, whiteSpace: 'nowrap' }}
+              onClick={() => { setDateFrom(''); setDateTo(''); setPage(1); }}>
+              Clear dates
+            </button>
           )}
         </div>
         {/* Action buttons */}
