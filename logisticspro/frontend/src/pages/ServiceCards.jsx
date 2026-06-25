@@ -673,13 +673,13 @@ function ServiceCardModal({ card, onClose, onUpdated }) {
                   title={isPending ? 'Accept the service first to access the checklist' : ''}
                 >{t.label}</button>
               ))}
-              {isPending && (
-                <div style={{ flex:1, display:'flex', alignItems:'center', paddingLeft:12,
-                  fontSize:11, color:'#aaa', fontStyle:'italic' }}>
-                  Accept service to unlock checklist & comments
-                </div>
-              )}
             </div>
+
+            {isPending && (
+              <div style={{ padding:'20px 14px', textAlign:'center', color:'#aaa', fontSize:13, fontStyle:'italic' }}>
+                Accept the service first to unlock the checklist &amp; comments
+              </div>
+            )}
 
             {!isPending && (
               <div style={{ flex:1, overflowY:'auto', padding:'12px 14px' }}>
