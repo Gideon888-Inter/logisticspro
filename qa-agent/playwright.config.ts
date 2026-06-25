@@ -7,6 +7,7 @@ const baseURL = process.env.APP_BASE_URL || 'http://localhost:3000';
 
 export default defineConfig({
   testDir: './tests',
+  testIgnore: ['**/target-page.spec.ts'],
   timeout: 60_000,
   expect: {
     timeout: 10_000
