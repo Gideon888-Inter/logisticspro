@@ -1480,7 +1480,10 @@ export default function Loads() {
   const [total, setTotal] = useState(0);
   const LIMIT = 100;
 
-  const [dateFrom, setDateFrom] = useState('');
+  const [dateFrom, setDateFrom] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+  });
   const [dateTo, setDateTo] = useState('');
   const [expandedRow, setExpandedRow] = useState(null);
   const [showModal, setShowModal] = useState(false);
