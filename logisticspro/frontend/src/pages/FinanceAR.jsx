@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../lib/AuthContext';
 import InvoicesTab from './Invoices';
 
-const API   = `${import.meta.env.VITE_API_URL}/api`;
+const API   = `${import.meta.env.VITE_API_URL || ''}/api`;
 const token = () => localStorage.getItem('lp_token');
 const req   = (path, opts = {}) => fetch(API + path, {
   ...opts,

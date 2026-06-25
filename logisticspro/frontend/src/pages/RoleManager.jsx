@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../lib/AuthContext';
 import { ROLES } from '../lib/roles';
 
-const API = import.meta.env.VITE_API_URL;
+const API = import.meta.env.VITE_API_URL || '';
 const token = () => localStorage.getItem('lp_token');
 
 function apiFetch(path, opts = {}) {

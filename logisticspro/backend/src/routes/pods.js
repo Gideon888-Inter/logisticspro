@@ -1,12 +1,11 @@
 const express = require('express');
 const supabase = require('../supabase');
-const { authMiddleware, requireRole, CAN_VIEW_LOADS, CAN_ADD_COSTS } = require('../middleware/auth');
+const { authMiddleware, requireRole, CAN_VIEW_LOADS, CAN_MARK_POD } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(authMiddleware);
 
 // Roles that can mark a POD as received
-const CAN_MARK_POD = CAN_ADD_COSTS; // ADMIN, OPERATOR, OPS_ASSISTANT, CONTROL_ROOM
 
 // ── Helper: build SharePoint folder link for a load ──────────
 function sharepointLink(loadNo) {

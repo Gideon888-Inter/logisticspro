@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 
-const API   = `${import.meta.env.VITE_API_URL}/api`;
+const API   = `${import.meta.env.VITE_API_URL || ''}/api`;
 const token = () => localStorage.getItem('lp_token');
 const req   = (path) => fetch(API + path, { headers: { Authorization: 'Bearer ' + token() } }).then(r => r.json());
 const fmt   = (n) => n == null ? '—' : `R ${Number(n).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
