@@ -1,11 +1,12 @@
 const express = require('express');
 const supabase = require('../supabase');
-const { authMiddleware } = require('../middleware/auth');
+const { authMiddleware, requireRole, ROLES, CAN_VIEW_RATES } = require('../middleware/auth');
 const router = express.Router();
 router.use(authMiddleware);
 
-// GET all client rates
-router.get('/', async (req, res) => {
+const CAN_MANAGE_RATES = [ROLES.ADMIN, ROLES.MANAGER];
+
+router.get('/', requireRole(...CAN_VIEW_RATES), async (req, res) => {
   const { client_code } = req.query;
   let q = supabase.from('lp_client_rates').select('*').order('rc_client_code').order('rc_from');
   if (client_code) q = q.eq('rc_client_code', client_code);
@@ -14,8 +15,7 @@ router.get('/', async (req, res) => {
   res.json(data);
 });
 
-// POST create rate card (multiple routes at once)
-router.post('/', async (req, res) => {
+router.post('/', requireRole(...CAN_MANAGE_RATES), async (req, res) => {
   const { client_code, routes } = req.body;
   if (!client_code || !routes?.length) return res.status(400).json({ error: 'client_code and routes required' });
   const rows = routes.map(r => ({
@@ -31,8 +31,7 @@ router.post('/', async (req, res) => {
   res.status(201).json(data);
 });
 
-// PATCH update single rate
-router.patch('/:id', async (req, res) => {
+router.patch('/:id', requireRole(...CAN_MANAGE_RATES), async (req, res) => {
   const { data, error } = await supabase.from('lp_client_rates').update({
     rc_from: req.body.rc_from, rc_to: req.body.rc_to,
     rc_kms: req.body.rc_kms, rc_rate_15m: req.body.rc_rate_15m, rc_rate_18m: req.body.rc_rate_18m,
@@ -41,8 +40,7 @@ router.patch('/:id', async (req, res) => {
   res.json(data);
 });
 
-// DELETE single rate
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireRole(...CAN_MANAGE_RATES), async (req, res) => {
   const { error } = await supabase.from('lp_client_rates').delete().eq('id', req.params.id);
   if (error) return res.status(400).json({ error: error.message });
   res.json({ message: 'Deleted' });
