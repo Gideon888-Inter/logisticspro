@@ -21,6 +21,10 @@ type Workflow = {
 const workflowPath = process.env.WORKFLOWS_FILE || path.join(__dirname, '..', 'workflows.example.json');
 const workflows = JSON.parse(fs.readFileSync(workflowPath, 'utf-8')) as Workflow[];
 
+function hasAuthCredentials() {
+  return Boolean(process.env.TEST_USER_EMAIL && process.env.TEST_USER_PASSWORD);
+}
+
 async function login(page: Page) {
   const email = process.env.TEST_USER_EMAIL;
   const password = process.env.TEST_USER_PASSWORD;
@@ -123,8 +127,8 @@ async function runStep(page: Page, step: WorkflowStep) {
 for (const workflow of workflows) {
   test(workflow.name, async ({ page }) => {
     test.skip(
-      Boolean(workflow.requiresAuth && process.env.SKIP_AUTH_WORKFLOWS === '1'),
-      'Authenticated workflows skipped by SKIP_AUTH_WORKFLOWS=1'
+      Boolean(workflow.requiresAuth && (process.env.SKIP_AUTH_WORKFLOWS === '1' || !hasAuthCredentials())),
+      'Authenticated workflow skipped because TEST_USER_EMAIL and TEST_USER_PASSWORD are not configured.'
     );
 
     for (const step of workflow.steps) {
