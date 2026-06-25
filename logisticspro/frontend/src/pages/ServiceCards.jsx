@@ -161,81 +161,66 @@ function Checklist({ serviceNo, readOnly }) {
             color:'#005A8E', borderBottom:'2px solid #dbeafe', paddingBottom:4, marginBottom:6,
           }}>{sec}</div>
 
-          {/* Items table-style: fixed columns */}
-          <div style={{ display:'table', width:'100%', borderCollapse:'collapse' }}>
+          {/* Items — flex column, mobile-friendly */}
+          <div>
             {sectionMap[sec].map(item => (
               <div key={item.id} style={{
-                display:'table-row',
+                borderBottom:'1px solid #f0f4f8',
+                padding:'8px 0',
                 background: item.sl_checked ? '#f0fdf4' : 'transparent',
               }}>
-                {/* Checkbox + Label cell */}
-                <div style={{
-                  display:'table-cell', verticalAlign:'middle',
-                  padding:'6px 10px 6px 0', width:'45%',
-                  borderBottom:'1px solid #f0f4f8',
-                }}>
-                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                    <input type="checkbox" checked={!!item.sl_checked}
-                      onChange={() => !readOnly && toggle(item)} disabled={readOnly}
-                      style={{ width:15, height:15, cursor: readOnly?'default':'pointer',
-                        accentColor:'#059669', flexShrink:0 }} />
-                    <div>
-                      <div style={{
-                        fontSize:13, color: item.sl_checked ? '#999':'#1a202c',
-                        textDecoration: item.sl_checked ? 'line-through':'none',
-                      }}>
-                        {item.sl_label}
-                      </div>
-                      {item.sl_checked && item.sl_checked_by && (
-                        <div style={{ fontSize:10, color:'#bbb', marginTop:1 }}>
-                          ✓ {item.sl_checked_by} · {fmtDateTime(item.sl_checked_at)}
-                        </div>
-                      )}
+                {/* Row 1: checkbox + label + remove */}
+                <div style={{ display:'flex', alignItems:'flex-start', gap:8 }}>
+                  <input type="checkbox" checked={!!item.sl_checked}
+                    onChange={() => !readOnly && toggle(item)} disabled={readOnly}
+                    style={{ width:16, height:16, marginTop:2, cursor: readOnly?'default':'pointer',
+                      accentColor:'#059669', flexShrink:0 }} />
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{
+                      fontSize:13, color: item.sl_checked ? '#999':'#1a202c',
+                      textDecoration: item.sl_checked ? 'line-through':'none',
+                      wordBreak:'break-word',
+                    }}>
+                      {item.sl_label}
                     </div>
+                    {item.sl_checked && item.sl_checked_by && (
+                      <div style={{ fontSize:10, color:'#bbb', marginTop:1 }}>
+                        ✓ {item.sl_checked_by} · {fmtDateTime(item.sl_checked_at)}
+                      </div>
+                    )}
                   </div>
+                  {!readOnly && (
+                    <button onClick={() => remove(item)}
+                      style={{ background:'none', border:'none', color:'#ddd',
+                        cursor:'pointer', fontSize:16, lineHeight:1, padding:0, flexShrink:0 }}>×</button>
+                  )}
                 </div>
-
-                {/* Comment cell */}
-                <div style={{
-                  display:'table-cell', verticalAlign:'middle',
-                  padding:'6px 0 6px 8px', borderBottom:'1px solid #f0f4f8',
-                }}>
+                {/* Row 2: comment field (indented to align with label) */}
+                <div style={{ paddingLeft:24, marginTop:6 }}>
                   {readOnly ? (
-                    <span style={{ fontSize:12, color:'#666', fontStyle: item.sl_comment ? 'italic':'normal' }}>
-                      {item.sl_comment || '—'}
-                    </span>
+                    item.sl_comment ? (
+                      <span style={{ fontSize:12, color:'#666', fontStyle:'italic' }}>{item.sl_comment}</span>
+                    ) : null
                   ) : (
                     <div style={{ display:'flex', alignItems:'center', gap:4 }}>
                       <input
                         value={comments[item.id] || ''}
                         onChange={e => setComments(c => ({ ...c, [item.id]: e.target.value }))}
                         onBlur={() => saveComment(item)}
-                        placeholder="Add note / comment..."
+                        placeholder="Note…"
                         style={{
                           flex:1, padding:'5px 8px', fontSize:12,
                           border:'1px solid #e2e8f0', borderRadius:4,
                           outline:'none', color:'#444', background:'#fff',
-                          fontFamily:'inherit',
+                          fontFamily:'inherit', width:'100%', boxSizing:'border-box',
                         }}
                       />
                       {savingComment[item.id] && (
-                        <span style={{ fontSize:10, color:'#aaa', whiteSpace:'nowrap' }}>saving…</span>
+                        <span style={{ fontSize:10, color:'#aaa', flexShrink:0 }}>saving…</span>
                       )}
                     </div>
                   )}
                 </div>
-
-                {/* Remove button cell */}
-                {!readOnly && (
-                  <div style={{
-                    display:'table-cell', verticalAlign:'middle', width:24,
-                    padding:'6px 0 6px 6px', borderBottom:'1px solid #f0f4f8', textAlign:'center',
-                  }}>
-                    <button onClick={() => remove(item)}
-                      style={{ background:'none', border:'none', color:'#ddd',
-                        cursor:'pointer', fontSize:15, lineHeight:1, padding:0 }}>×</button>
-                  </div>
-                )}
               </div>
             ))}
           </div>
@@ -504,7 +489,7 @@ function ServiceCardModal({ card, onClose, onUpdated }) {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()} style={{
-        width:700, maxHeight:'92vh', display:'flex', flexDirection:'column',
+        width:'min(700px,100%)', maxHeight:'92dvh', display:'flex', flexDirection:'column',
       }}>
 
         {/* ── Header ── */}
@@ -523,7 +508,7 @@ function ServiceCardModal({ card, onClose, onUpdated }) {
         </div>
 
         {/* ── Reason / Trigger panel ── */}
-        <div style={{ padding:'14px 20px 0', background:'#f8fafc', flexShrink:0 }}>
+        <div style={{ padding:'12px 14px 0', background:'#f8fafc', flexShrink:0 }}>
           <div style={{
             background: sCfg.bg || '#f0f0f0',
             border: `1px solid ${sCfg.color || '#ccc'}44`,
@@ -556,11 +541,11 @@ function ServiceCardModal({ card, onClose, onUpdated }) {
               </div>
 
               {/* ── Action buttons by status ── */}
-              <div style={{ display:'flex', flexDirection:'column', gap:8, alignItems:'flex-end' }}>
+              <div style={{ display:'flex', flexDirection:'column', gap:8, alignItems:'flex-start', minWidth:0 }}>
 
                 {/* PENDING → Accept or Reject */}
                 {isPending && (
-                  <div style={{ display:'flex', gap:8 }}>
+                  <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
                     <button onClick={() => setShowReject(true)} disabled={busy}
                       style={{ padding:'8px 18px', borderRadius:6, fontSize:12, fontWeight:700,
                         border:'2px solid #e53e3e', background:'white', color:'#e53e3e',
@@ -578,7 +563,7 @@ function ServiceCardModal({ card, onClose, onUpdated }) {
 
                 {/* ACCEPTED / WAITING → Waiting for Part toggle + Complete */}
                 {isActive && (
-                  <div style={{ display:'flex', gap:8, flexWrap:'wrap', justifyContent:'flex-end' }}>
+                  <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
                     <button onClick={toggleWaiting} disabled={busy}
                       style={{ padding:'7px 16px', borderRadius:6, fontSize:12, fontWeight:700,
                         border: `2px solid ${isWaiting ? '#6366f1':'#dc2626'}`,
@@ -598,7 +583,7 @@ function ServiceCardModal({ card, onClose, onUpdated }) {
 
                 {/* Vehicle blocked notice */}
                 {isActive && (
-                  <div style={{ fontSize:11, color:'#c05621', textAlign:'right' }}>
+                  <div style={{ fontSize:11, color:'#c05621' }}>
                     🚫 {currentCard.sc_vehicle} blocked from new load cards
                   </div>
                 )}
@@ -697,7 +682,7 @@ function ServiceCardModal({ card, onClose, onUpdated }) {
             </div>
 
             {!isPending && (
-              <div style={{ flex:1, overflowY:'auto', padding:'16px 20px' }}>
+              <div style={{ flex:1, overflowY:'auto', padding:'12px 14px' }}>
                 {activeTab==='checklist' && <Checklist serviceNo={currentCard.sc_no} readOnly={isComplete} />}
                 {activeTab==='comments'  && <Comments serviceNo={currentCard.sc_no} />}
                 {activeTab==='audit'     && <AuditTrail serviceNo={currentCard.sc_no} />}

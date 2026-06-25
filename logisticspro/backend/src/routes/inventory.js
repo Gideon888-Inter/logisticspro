@@ -188,10 +188,25 @@ router.post('/items',
 
     if (!item_name) return res.status(400).json({ error: 'item_name is required' });
 
-    // Generate item code
-    const { data: codeData, error: codeErr } = await supabase
+    // Generate item code — try DB RPC first, fall back to JS generation
+    let codeData;
+    const { data: rpcCode, error: codeErr } = await supabase()
       .rpc('next_inventory_item_code');
-    if (codeErr) return res.status(500).json({ error: codeErr.message });
+    if (codeErr || !rpcCode) {
+      // Fallback: query max existing code and increment
+      const { data: maxRow } = await supabase()
+        .from('lp_inventory_items')
+        .select('item_code')
+        .order('item_code', { ascending: false })
+        .limit(1)
+        .single();
+      const lastNum = maxRow?.item_code
+        ? parseInt((maxRow.item_code.match(/\d+$/) || ['0'])[0], 10)
+        : 0;
+      codeData = `INV-${String(lastNum + 1).padStart(4, '0')}`;
+    } else {
+      codeData = rpcCode;
+    }
 
     const config = await getConfig('workshop_assistant_username');
 
