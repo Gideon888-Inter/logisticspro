@@ -1,0 +1,21 @@
+[
+  {
+    "name": "Fleet page renders after login",
+    "requiresAuth": true,
+    "steps": [
+      { "action": "login" },
+      { "action": "goto", "path": "/fleet" },
+      { "action": "expectVisible", "selector": "body" }
+    ]
+  },
+  {
+    "name": "Fleet page visible buttons do not crash",
+    "requiresAuth": true,
+    "steps": [
+      { "action": "login" },
+      { "action": "goto", "path": "/fleet" },
+      { "action": "expectVisible", "selector": "body" },
+      { "action": "clickEveryVisible", "selector": "button", "maxClicks": 30 }
+    ]
+  }
+]
