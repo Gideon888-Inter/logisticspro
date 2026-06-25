@@ -1,0 +1,60 @@
+name: QA Fleet Page
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_base_url:
+        description: 'App URL to test'
+        required: true
+        default: 'https://logisticspro.pages.dev/'
+        type: string
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  fleet-page-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - name: Install QA agent dependencies
+        working-directory: qa-agent
+        run: npm install
+
+      - name: Install Playwright browser
+        working-directory: qa-agent
+        run: npx playwright install --with-deps chromium
+
+      - name: Run fleet page tests
+        working-directory: qa-agent
+        env:
+          APP_BASE_URL: ${{ inputs.app_base_url }}
+          WORKFLOWS_FILE: ./workflows.fleet.json
+          TEST_USERNAME: ${{ secrets.TEST_USERNAME }}
+          TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}
+          SKIP_AUTH_WORKFLOWS: ${{ secrets.TEST_USERNAME == '' && '1' || '0' }}
+        run: npm test
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: fleet-playwright-report
+          path: qa-agent/playwright-report/
+          retention-days: 7
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: fleet-test-results
+          path: qa-agent/test-results/
+          retention-days: 7
