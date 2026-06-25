@@ -690,6 +690,7 @@ function ExpandedRow({ load, onRefresh, onCostUpdate, asCard = false }) {
   const [statusSaving, setStatusSaving] = useState(false);
   const [podLink, setPodLink] = useState(load.m_pod_sharepoint_url || null);
   const [podChecking, setPodChecking] = useState(false);
+  const [showComments, setShowComments] = useState(false);  // mobile: collapsed by default
 
   // ── Assignment edit (driver / horse / trailer) ─────────────
   const ASSIGNMENT_EDITABLE = ['PRELOAD','EN_ROUTE','OFFLOADED','WAIT_ORDER_NO','WAIT_POD_SCAN'];
@@ -1340,9 +1341,15 @@ function ExpandedRow({ load, onRefresh, onCostUpdate, asCard = false }) {
 
             {/* ── AUDIT TRAIL & COMMENTS ── */}
             <div style={{ flex: 1, minWidth: 300 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: '#005A8E', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
-                Audit Trail & Comments
+              <div
+                onClick={() => asCard && setShowComments(s => !s)}
+                style={{ fontSize: 12, fontWeight: 600, color: '#005A8E', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: asCard ? 'pointer' : 'default' }}>
+                <span>Audit Trail & Comments {comments.length > 0 ? `(${comments.length})` : ''}</span>
+                {asCard && (
+                  <span style={{ fontSize: 16, color: '#00AEEF', transition: 'transform 0.2s', display: 'inline-block', transform: showComments ? 'rotate(180deg)' : 'none' }}>▼</span>
+                )}
               </div>
+              {(!asCard || showComments) && (
               <div style={{ maxHeight: 240, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 8 }}>
                 {comments.length === 0 && <div style={{ fontSize: 12, color: '#aaa' }}>No activity yet</div>}
                 {comments.map(c => {
@@ -1384,6 +1391,7 @@ function ExpandedRow({ load, onRefresh, onCostUpdate, asCard = false }) {
                   );
                 })}
               </div>
+              )}
               {/* Add comment */}
               <div style={{ display: 'flex', gap: 6 }}>
                 <input value={newComment} onChange={e => setNewComment(e.target.value)}

@@ -635,12 +635,12 @@ export default function PurchaseOrders() {
               saving={saving}
             />
           ) : (
-            <div style={{ background: '#f8fafc' }}>
-              {/* ── PO card banner — lighter blue so it differs from the dark page header ── */}
+            <div style={{ background: '#f8fafc', overflow: 'hidden', maxWidth: '100%', boxSizing: 'border-box' }}>
+              {/* ── PO card banner ── */}
               <div style={{
                 background: '#d0e8f5', borderTop: '2px solid #005A8E',
-                padding: '10px 18px', display: 'flex', alignItems: 'center',
-                gap: 12, flexWrap: 'wrap',
+                padding: '10px 14px', display: 'flex', alignItems: 'flex-start',
+                gap: 8, flexWrap: 'wrap',
               }}>
                 <span style={{ fontWeight: 700, fontSize: 13, color: '#003a5c' }}>{dpPO.po_number}</span>
                 <span className={`badge ${PO_STATUS_COLORS[dpPO.status] || 'badge-gray'}`} style={{ fontSize: 10 }}>{PO_STATUS_LABELS[dpPO.status] || dpPO.status}</span>
@@ -653,10 +653,10 @@ export default function PurchaseOrders() {
                 <span style={{ fontSize: 11, color: '#336b87', marginLeft: 'auto' }}>by {dpPO.created_by} · {fmtDate(dpPO.created_at)}</span>
               </div>
 
-              <div style={{ padding: '12px 18px' }}>
+              <div style={{ padding: '12px 14px', overflowX: 'hidden', maxWidth: '100%', boxSizing: 'border-box' }}>
                 {/* Lines — Type shows Horse/Trailer/Inventory + Item code */}
                 {detail.lines?.length > 0 && (
-                  <div className="table-wrap" style={{ marginBottom: 10 }}>
+                  <div className="table-wrap" style={{ marginBottom: 10, overflowX: 'auto', maxWidth: '100%' }}>
                     <table>
                       <thead>
                         <tr style={{ background: '#4a90b8', color: 'white' }}>
@@ -862,7 +862,11 @@ export default function PurchaseOrders() {
                   <span className="load-card-chevron">▼</span>
                 </div>
               </div>
-              {isOpen && renderExpanded(po)}
+              {isOpen && (
+                <div style={{ maxWidth: '100%', overflow: 'hidden' }}>
+                  {renderExpanded(po)}
+                </div>
+              )}
             </div>
           );
         })}
