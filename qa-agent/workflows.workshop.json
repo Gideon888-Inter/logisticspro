@@ -1,0 +1,21 @@
+[
+  {
+    "name": "Workshop page renders after login",
+    "requiresAuth": true,
+    "steps": [
+      { "action": "login" },
+      { "action": "goto", "path": "/workshop" },
+      { "action": "expectVisible", "selector": "body" }
+    ]
+  },
+  {
+    "name": "Workshop page visible buttons do not crash",
+    "requiresAuth": true,
+    "steps": [
+      { "action": "login" },
+      { "action": "goto", "path": "/workshop" },
+      { "action": "expectVisible", "selector": "body" },
+      { "action": "clickEveryVisible", "selector": "button", "maxClicks": 30 }
+    ]
+  }
+]
