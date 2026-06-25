@@ -1,0 +1,21 @@
+[
+  {
+    "name": "Drivers page renders after login",
+    "requiresAuth": true,
+    "steps": [
+      { "action": "login" },
+      { "action": "goto", "path": "/drivers" },
+      { "action": "expectVisible", "selector": "body" }
+    ]
+  },
+  {
+    "name": "Drivers page visible buttons do not crash",
+    "requiresAuth": true,
+    "steps": [
+      { "action": "login" },
+      { "action": "goto", "path": "/drivers" },
+      { "action": "expectVisible", "selector": "body" },
+      { "action": "clickEveryVisible", "selector": "button", "maxClicks": 30 }
+    ]
+  }
+]
