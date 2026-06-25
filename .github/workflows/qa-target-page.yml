@@ -44,6 +44,8 @@ jobs:
           TARGET_PATH: ${{ inputs.target_path }}
           TEST_USERNAME: ${{ secrets.TEST_USERNAME }}
           TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}
+          TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
+          TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
           MAX_BUTTON_CLICKS: 30
         run: npx playwright test tests/target-page.spec.ts
 
