@@ -1531,24 +1531,21 @@ export default function Loads() {
           <option value="">All statuses</option>
           {ALL_STATUSES.map(s => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
         </select>
-        {/* Date range — labelled so they don't look like blank boxes on mobile */}
-        <div style={{ display: 'flex', gap: 6, flex: '1 1 auto', minWidth: 0 }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 10, color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>From</div>
-            <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(1); }}
-              style={{ width: '100%', padding: '7px 8px', fontSize: 13, border: '1px solid #ddd', borderRadius: 4 }} />
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 10, color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>To</div>
-            <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(1); }}
-              style={{ width: '100%', padding: '7px 8px', fontSize: 13, border: '1px solid #ddd', borderRadius: 4 }} />
-          </div>
-        </div>
-        {/* Action buttons — row on mobile, don't stretch full width */}
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {/* Date range — compact inline row with 'to' separator */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '1 1 auto', minWidth: 0 }}>
+          <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(1); }}
+            style={{ flex: 1, minWidth: 0, padding: '7px 8px', fontSize: 13, border: '1px solid #ddd', borderRadius: 4 }} />
+          <span style={{ fontSize: 12, color: '#aaa', flexShrink: 0 }}>to</span>
+          <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(1); }}
+            style={{ flex: 1, minWidth: 0, padding: '7px 8px', fontSize: 13, border: '1px solid #ddd', borderRadius: 4 }} />
           {(dateFrom || dateTo) && (
-            <button className="btn btn-sm" onClick={() => { setDateFrom(''); setDateTo(''); setPage(1); }}>✕ Clear dates</button>
+            <button onClick={() => { setDateFrom(''); setDateTo(''); setPage(1); }}
+              style={{ flexShrink: 0, background: 'none', border: 'none', color: '#aaa', fontSize: 16, cursor: 'pointer', padding: '0 2px', lineHeight: 1 }}
+              title="Clear dates">✕</button>
           )}
+        </div>
+        {/* Action buttons */}
+        <div style={{ display: 'flex', gap: 6 }}>
           <button className="btn btn-sm" onClick={() => {
             if (window.confirm('Export all matching loads? This may take a moment for large datasets.'))
               exportAllLoadsCSV(dateFrom, dateTo, filters.status, filters.search);
