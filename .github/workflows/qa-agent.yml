@@ -23,7 +23,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       - name: Install QA agent dependencies
         working-directory: qa-agent
@@ -37,6 +37,7 @@ jobs:
         working-directory: qa-agent
         env:
           APP_BASE_URL: ${{ inputs.app_base_url }}
+          WORKFLOWS_FILE: ./workflows.smoke.json
           TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
           TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
           SKIP_AUTH_WORKFLOWS: ${{ secrets.TEST_USER_EMAIL == '' && '1' || '0' }}
