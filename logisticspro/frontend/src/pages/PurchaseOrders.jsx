@@ -102,12 +102,32 @@ function InlinePOEditor({ po, lines: existingLines, suppliers, vehicles, onSave,
   const totalVat  = (form.lines || []).reduce((s, l) => s + (parseFloat(l.vat)  || 0), 0);
   const totalIncl = (form.lines || []).reduce((s, l) => s + (parseFloat(l.incl) || 0), 0);
 
+  const inp = { width: '100%', padding: '8px 10px', fontSize: 13, border: '1px solid #ddd', borderRadius: 4, fontFamily: 'inherit', boxSizing: 'border-box' };
+  const lbl = { fontSize: 11, color: '#555', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 500, display: 'block', marginBottom: 4 };
+
+  const validate = () => {
+    if (!form.supplier_code) { alert('Supplier is required'); return false; }
+    const activeLines = (form.lines || []).filter(l => l.description.trim() || l.excl);
+    if (!activeLines.length) { alert('At least one line with a description is required'); return false; }
+    const badLine = activeLines.find(l =>
+      l.typeCategory !== 'INVENTORY' && (!l.type || !l.description.trim())
+    );
+    if (badLine) {
+      const idx = activeLines.indexOf(badLine) + 1;
+      if (!badLine.type) alert(`Line ${idx}: please select a ${badLine.typeCategory === 'HORSE' ? 'horse' : 'trailer'}.`);
+      else alert(`Line ${idx}: description is required.`);
+      return false;
+    }
+    return true;
+  };
+
   return (
-    <div style={{ padding: '12px 16px', background: '#f0f7ff', borderTop: '2px solid #005A8E' }}>
-      {/* Supplier + Invoice No row */}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
-        <div className="form-group" style={{ flex: '1 1 240px', marginBottom: 0, minWidth: 0 }}>
-          <label style={{ fontWeight: 600, fontSize: 12 }}>Supplier *</label>
+    <div style={{ padding: '16px' }}>
+
+      {/* ── Supplier + Invoice No ─────────────────────────────── */}
+      <div className="form-row">
+        <div className="form-group">
+          <label style={lbl}>Supplier *</label>
           <select value={form.supplier_code} onChange={e => {
             const sup    = suppliers.find(s => s.supplier_code === e.target.value);
             const vatReg = !!(sup?.vat_number || sup?.vat_enabled);
@@ -118,7 +138,7 @@ function InlinePOEditor({ po, lines: existingLines, suppliers, vehicles, onSave,
               supplier_vat:  vatReg ? (sup.vat_number || 'Y') : '',
               lines: recalcLines(vatReg, f.lines),
             }));
-          }} style={{ width: '100%', fontSize: 12 }}>
+          }} style={inp}>
             <option value="">— Select supplier —</option>
             {suppliers.map(s => (
               <option key={s.supplier_code} value={s.supplier_code}>
@@ -127,137 +147,212 @@ function InlinePOEditor({ po, lines: existingLines, suppliers, vehicles, onSave,
             ))}
           </select>
           {isVatReg
-            ? <span style={{ fontSize: 10, color: '#059669' }}>✓ VAT at 15%</span>
-            : form.supplier_code ? <span style={{ fontSize: 10, color: '#888' }}>No VAT</span> : null}
+            ? <span style={{ fontSize: 11, color: '#059669', marginTop: 3, display: 'block' }}>✓ VAT registered — 15% applied automatically</span>
+            : form.supplier_code
+              ? <span style={{ fontSize: 11, color: '#888', marginTop: 3, display: 'block' }}>Not VAT registered — no VAT applied</span>
+              : null}
         </div>
-        <div className="form-group" style={{ flex: '1 1 200px', marginBottom: 0, minWidth: 0 }}>
-          <label style={{ fontWeight: 600, fontSize: 12 }}>
+        <div className="form-group">
+          <label style={lbl}>
             Supplier Invoice No
-            <span style={{ fontWeight: 400, color: '#888', marginLeft: 4 }}>(required before approval)</span>
+            <span style={{ fontWeight: 400, color: '#aaa', marginLeft: 4, textTransform: 'none' }}>(required before approval)</span>
           </label>
           <input value={form.supplier_invoice_no} onChange={e => setF('supplier_invoice_no', e.target.value)}
-            placeholder="e.g. INV-2025-001" style={{ width: '100%', fontSize: 12 }} />
+            placeholder="e.g. INV-2025-001" style={inp} />
         </div>
       </div>
 
-      {/* Lines table */}
-      <div style={{ marginBottom: 10 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-          <span style={{ fontWeight: 600, fontSize: 12 }}>Line Items *</span>
-          <button className="btn btn-sm" onClick={addLine} style={{ fontSize: 10 }}>+ Add Line</button>
+      {/* ── Line Items ───────────────────────────────────────────── */}
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <span style={{ fontWeight: 600, fontSize: 13, color: '#005A8E' }}>Line Items *</span>
+          <button className="btn btn-sm" onClick={addLine}>+ Add Line</button>
         </div>
-        <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, minWidth: 580 }}>
-            <thead>
-              <tr style={{ background: '#2d6a96', color: 'white' }}>
-                <th style={{ padding: '6px 7px', textAlign: 'left', width: 100 }}>Type</th>
-                <th style={{ padding: '6px 7px', textAlign: 'left', width: 175 }}>Item</th>
-                <th style={{ padding: '6px 7px', textAlign: 'left' }}>Description *</th>
-                <th style={{ padding: '6px 7px', textAlign: 'right', width: 105 }}>Excl VAT (R)</th>
-                <th style={{ padding: '6px 7px', textAlign: 'right', width: 85 }}>VAT (R)</th>
-                <th style={{ padding: '6px 7px', textAlign: 'right', width: 105 }}>Incl VAT (R)</th>
-                <th style={{ width: 24 }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {(form.lines || []).map((l, i) => (
-                <tr key={i} style={{ borderBottom: '1px solid #e2e8f0', background: i % 2 === 0 ? 'white' : '#f7f9fc' }}>
-                  <td style={{ padding: '3px 5px' }}>
-                    <select value={l.typeCategory} onChange={e => setLine(i, 'typeCategory', e.target.value)}
-                      style={{ width: '100%', fontSize: 10, border: '1px solid #cbd5e0', borderRadius: 3, padding: '2px 3px' }}>
-                      <option value="HORSE">Horse</option>
-                      <option value="TRAILER">Trailer</option>
-                      <option value="INVENTORY">Inventory</option>
+
+        {/* Mobile: stacked cards per line */}
+        <div className="mobile-card-list" style={{ gap: 8 }}>
+          {(form.lines || []).map((l, i) => (
+            <div key={i} style={{ background: 'white', border: '1px solid #ddd', borderRadius: 6, padding: '12px 14px', borderLeft: '3px solid #00AEEF' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <span style={{ fontWeight: 600, fontSize: 12, color: '#005A8E' }}>Line {i + 1}</span>
+                <button onClick={() => removeLine(i)} disabled={(form.lines || []).length <= 1}
+                  style={{ background: 'none', border: '1px solid #fca5a5', borderRadius: 4, color: '#e53e3e', fontSize: 11, padding: '2px 8px', cursor: (form.lines || []).length > 1 ? 'pointer' : 'not-allowed', opacity: (form.lines || []).length > 1 ? 1 : 0.3 }}>
+                  Remove
+                </button>
+              </div>
+              <div className="form-row">
+                <div className="form-group" style={{ marginBottom: 8 }}>
+                  <label style={lbl}>Type</label>
+                  <select value={l.typeCategory} onChange={e => setLine(i, 'typeCategory', e.target.value)} style={inp}>
+                    <option value="HORSE">Horse</option>
+                    <option value="TRAILER">Trailer</option>
+                    <option value="INVENTORY">Inventory</option>
+                  </select>
+                </div>
+                <div className="form-group" style={{ marginBottom: 8 }}>
+                  <label style={lbl}>
+                    {l.typeCategory === 'HORSE' ? 'Horse *' : l.typeCategory === 'TRAILER' ? 'Trailer *' : 'Item'}
+                  </label>
+                  {l.typeCategory === 'HORSE' && (
+                    <select value={l.type} onChange={e => setLine(i, 'type', e.target.value)}
+                      style={{ ...inp, borderColor: !l.type ? '#e53e3e' : '#ddd' }}>
+                      <option value="">— Select horse —</option>
+                      {vehicleOptions.map(v => <option key={v.vh_code} value={v.vh_code}>{v.vh_code}{v.vh_display_name ? ' — ' + v.vh_display_name : ''}</option>)}
+                      <option value="GENERAL_HORSE">General / Unspecified</option>
                     </select>
-                  </td>
-                  <td style={{ padding: '3px 5px' }}>
-                    {l.typeCategory === 'HORSE' && (
-                      <select value={l.type} onChange={e => setLine(i, 'type', e.target.value)}
-                        style={{ width: '100%', fontSize: 10, borderRadius: 3, padding: '2px 3px',
-                                 border: !l.type ? '1px solid #e53e3e' : '1px solid #cbd5e0' }}>
-                        <option value="">— Select horse * —</option>
-                        {vehicleOptions.map(v => <option key={v.vh_code} value={v.vh_code}>{v.vh_code}{v.vh_display_name ? ' — ' + v.vh_display_name : ''}</option>)}
-                        <option value="GENERAL_HORSE">General / Unspecified</option>
-                      </select>
-                    )}
-                    {l.typeCategory === 'TRAILER' && (
-                      <select value={l.type} onChange={e => setLine(i, 'type', e.target.value)}
-                        style={{ width: '100%', fontSize: 10, borderRadius: 3, padding: '2px 3px',
-                                 border: !l.type ? '1px solid #e53e3e' : '1px solid #cbd5e0' }}>
-                        <option value="">— Select trailer * —</option>
-                        {trailerOptions.map(v => <option key={v.vh_code} value={v.vh_code}>{v.vh_code}{v.vh_display_name ? ' — ' + v.vh_display_name : ''}</option>)}
-                        <option value="GENERAL_TRAILER">General / Unspecified</option>
-                      </select>
-                    )}
-                    {l.typeCategory === 'INVENTORY' && (
-                      <span style={{ fontSize: 10, color: '#059669', padding: '2px 3px', display: 'block' }}>Stock / Parts</span>
-                    )}
-                  </td>
-                  <td style={{ padding: '3px 5px' }}>
-                    <input value={l.description} onChange={e => setLine(i, 'description', e.target.value)}
-                      placeholder="e.g. Front brake pads"
-                      style={{ width: '100%', fontSize: 11, border: '1px solid #cbd5e0', borderRadius: 3, padding: '2px 5px' }} />
-                  </td>
-                  <td style={{ padding: '3px 5px' }}>
-                    <input type="number" value={l.excl} onChange={e => setLine(i, 'excl', e.target.value)}
-                      placeholder="0.00" min="0" step="0.01"
-                      style={{ width: '100%', textAlign: 'right', fontSize: 11, border: '1px solid #cbd5e0', borderRadius: 3, padding: '2px 5px' }} />
-                  </td>
-                  <td style={{ padding: '3px 5px' }}>
-                    <input type="number" value={l.vat} readOnly placeholder={isVatReg ? 'auto' : 'N/A'}
-                      style={{ width: '100%', textAlign: 'right', fontSize: 11, background: '#f0f4f8', color: isVatReg ? '#c05621' : '#ccc', border: '1px solid #e2e8f0', borderRadius: 3, padding: '2px 5px', cursor: 'default' }} />
-                  </td>
-                  <td style={{ padding: '3px 5px' }}>
-                    <input type="number" value={l.incl} readOnly placeholder="0.00"
-                      style={{ width: '100%', textAlign: 'right', fontSize: 11, fontWeight: 600, background: '#e8f0f8', color: '#005A8E', border: '1px solid #c3d4e8', borderRadius: 3, padding: '2px 5px', cursor: 'default' }} />
-                  </td>
-                  <td style={{ padding: '3px 2px', textAlign: 'center' }}>
-                    <button onClick={() => removeLine(i)} disabled={(form.lines || []).length <= 1}
-                      style={{ background: 'none', border: 'none', cursor: (form.lines || []).length > 1 ? 'pointer' : 'default',
-                               color: (form.lines || []).length > 1 ? '#e53e3e' : '#ddd', fontSize: 13 }}>✕</button>
-                  </td>
+                  )}
+                  {l.typeCategory === 'TRAILER' && (
+                    <select value={l.type} onChange={e => setLine(i, 'type', e.target.value)}
+                      style={{ ...inp, borderColor: !l.type ? '#e53e3e' : '#ddd' }}>
+                      <option value="">— Select trailer —</option>
+                      {trailerOptions.map(v => <option key={v.vh_code} value={v.vh_code}>{v.vh_code}{v.vh_display_name ? ' — ' + v.vh_display_name : ''}</option>)}
+                      <option value="GENERAL_TRAILER">General / Unspecified</option>
+                    </select>
+                  )}
+                  {l.typeCategory === 'INVENTORY' && (
+                    <div style={{ ...inp, background: '#f0fdf4', color: '#059669', fontWeight: 500 }}>Stock / Parts</div>
+                  )}
+                </div>
+              </div>
+              <div className="form-group" style={{ marginBottom: 8 }}>
+                <label style={lbl}>Description *</label>
+                <input value={l.description} onChange={e => setLine(i, 'description', e.target.value)}
+                  placeholder="e.g. Front brake pads" style={inp} />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label style={lbl}>Excl VAT (R)</label>
+                  <input type="number" value={l.excl} onChange={e => setLine(i, 'excl', e.target.value)}
+                    placeholder="0.00" min="0" step="0.01"
+                    style={{ ...inp, textAlign: 'right' }} />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label style={lbl}>VAT (R)</label>
+                  <input type="number" value={l.vat} readOnly
+                    style={{ ...inp, textAlign: 'right', background: '#f8f9fa', color: isVatReg ? '#c05621' : '#ccc', cursor: 'default' }} />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label style={lbl}>Incl VAT (R)</label>
+                  <input type="number" value={l.incl} readOnly
+                    style={{ ...inp, textAlign: 'right', background: '#e8f0f8', color: '#005A8E', fontWeight: 700, cursor: 'default' }} />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Desktop: compact table */}
+        <div className="desktop-table">
+          <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, minWidth: 580 }}>
+              <thead>
+                <tr style={{ background: '#2d6a96', color: 'white' }}>
+                  <th style={{ padding: '6px 7px', textAlign: 'left', width: 100 }}>Type</th>
+                  <th style={{ padding: '6px 7px', textAlign: 'left', width: 175 }}>Item</th>
+                  <th style={{ padding: '6px 7px', textAlign: 'left' }}>Description *</th>
+                  <th style={{ padding: '6px 7px', textAlign: 'right', width: 105 }}>Excl VAT (R)</th>
+                  <th style={{ padding: '6px 7px', textAlign: 'right', width: 85 }}>VAT (R)</th>
+                  <th style={{ padding: '6px 7px', textAlign: 'right', width: 105 }}>Incl VAT (R)</th>
+                  <th style={{ width: 24 }}></th>
                 </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr style={{ background: '#2d6a96', color: 'white', fontWeight: 700 }}>
-                <td colSpan={3} style={{ padding: '6px 7px', textAlign: 'right', fontSize: 11 }}>TOTALS</td>
-                <td style={{ padding: '6px 7px', textAlign: 'right', fontFamily: 'monospace', fontSize: 11 }}>R {totalExcl.toFixed(2)}</td>
-                <td style={{ padding: '6px 7px', textAlign: 'right', fontFamily: 'monospace', fontSize: 11, color: '#fbd38d' }}>{totalVat > 0 ? 'R ' + totalVat.toFixed(2) : '—'}</td>
-                <td style={{ padding: '6px 7px', textAlign: 'right', fontFamily: 'monospace', fontSize: 11, color: '#90cdf4' }}>R {totalIncl.toFixed(2)}</td>
-                <td></td>
-              </tr>
-            </tfoot>
-          </table>
+              </thead>
+              <tbody>
+                {(form.lines || []).map((l, i) => (
+                  <tr key={i} style={{ borderBottom: '1px solid #e2e8f0', background: i % 2 === 0 ? 'white' : '#f7f9fc' }}>
+                    <td style={{ padding: '3px 5px' }}>
+                      <select value={l.typeCategory} onChange={e => setLine(i, 'typeCategory', e.target.value)}
+                        style={{ width: '100%', fontSize: 10, border: '1px solid #cbd5e0', borderRadius: 3, padding: '2px 3px' }}>
+                        <option value="HORSE">Horse</option>
+                        <option value="TRAILER">Trailer</option>
+                        <option value="INVENTORY">Inventory</option>
+                      </select>
+                    </td>
+                    <td style={{ padding: '3px 5px' }}>
+                      {l.typeCategory === 'HORSE' && (
+                        <select value={l.type} onChange={e => setLine(i, 'type', e.target.value)}
+                          style={{ width: '100%', fontSize: 10, borderRadius: 3, padding: '2px 3px',
+                                   border: !l.type ? '1px solid #e53e3e' : '1px solid #cbd5e0' }}>
+                          <option value="">— Select horse * —</option>
+                          {vehicleOptions.map(v => <option key={v.vh_code} value={v.vh_code}>{v.vh_code}{v.vh_display_name ? ' — ' + v.vh_display_name : ''}</option>)}
+                          <option value="GENERAL_HORSE">General / Unspecified</option>
+                        </select>
+                      )}
+                      {l.typeCategory === 'TRAILER' && (
+                        <select value={l.type} onChange={e => setLine(i, 'type', e.target.value)}
+                          style={{ width: '100%', fontSize: 10, borderRadius: 3, padding: '2px 3px',
+                                   border: !l.type ? '1px solid #e53e3e' : '1px solid #cbd5e0' }}>
+                          <option value="">— Select trailer * —</option>
+                          {trailerOptions.map(v => <option key={v.vh_code} value={v.vh_code}>{v.vh_code}{v.vh_display_name ? ' — ' + v.vh_display_name : ''}</option>)}
+                          <option value="GENERAL_TRAILER">General / Unspecified</option>
+                        </select>
+                      )}
+                      {l.typeCategory === 'INVENTORY' && (
+                        <span style={{ fontSize: 10, color: '#059669', padding: '2px 3px', display: 'block' }}>Stock / Parts</span>
+                      )}
+                    </td>
+                    <td style={{ padding: '3px 5px' }}>
+                      <input value={l.description} onChange={e => setLine(i, 'description', e.target.value)}
+                        placeholder="e.g. Front brake pads"
+                        style={{ width: '100%', fontSize: 11, border: '1px solid #cbd5e0', borderRadius: 3, padding: '2px 5px' }} />
+                    </td>
+                    <td style={{ padding: '3px 5px' }}>
+                      <input type="number" value={l.excl} onChange={e => setLine(i, 'excl', e.target.value)}
+                        placeholder="0.00" min="0" step="0.01"
+                        style={{ width: '100%', textAlign: 'right', fontSize: 11, border: '1px solid #cbd5e0', borderRadius: 3, padding: '2px 5px' }} />
+                    </td>
+                    <td style={{ padding: '3px 5px' }}>
+                      <input type="number" value={l.vat} readOnly placeholder={isVatReg ? 'auto' : 'N/A'}
+                        style={{ width: '100%', textAlign: 'right', fontSize: 11, background: '#f0f4f8', color: isVatReg ? '#c05621' : '#ccc', border: '1px solid #e2e8f0', borderRadius: 3, padding: '2px 5px', cursor: 'default' }} />
+                    </td>
+                    <td style={{ padding: '3px 5px' }}>
+                      <input type="number" value={l.incl} readOnly placeholder="0.00"
+                        style={{ width: '100%', textAlign: 'right', fontSize: 11, fontWeight: 600, background: '#e8f0f8', color: '#005A8E', border: '1px solid #c3d4e8', borderRadius: 3, padding: '2px 5px', cursor: 'default' }} />
+                    </td>
+                    <td style={{ padding: '3px 2px', textAlign: 'center' }}>
+                      <button onClick={() => removeLine(i)} disabled={(form.lines || []).length <= 1}
+                        style={{ background: 'none', border: 'none', cursor: (form.lines || []).length > 1 ? 'pointer' : 'default',
+                                 color: (form.lines || []).length > 1 ? '#e53e3e' : '#ddd', fontSize: 13 }}>✕</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr style={{ background: '#2d6a96', color: 'white', fontWeight: 700 }}>
+                  <td colSpan={3} style={{ padding: '6px 7px', textAlign: 'right', fontSize: 11 }}>TOTALS</td>
+                  <td style={{ padding: '6px 7px', textAlign: 'right', fontFamily: 'monospace', fontSize: 11 }}>R {totalExcl.toFixed(2)}</td>
+                  <td style={{ padding: '6px 7px', textAlign: 'right', fontFamily: 'monospace', fontSize: 11, color: '#fbd38d' }}>{totalVat > 0 ? 'R ' + totalVat.toFixed(2) : '—'}</td>
+                  <td style={{ padding: '6px 7px', textAlign: 'right', fontFamily: 'monospace', fontSize: 11, color: '#90cdf4' }}>R {totalIncl.toFixed(2)}</td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
         </div>
       </div>
 
-      {/* Save / Cancel */}
+      {/* ── Totals bar (always visible) ──────────────────────────── */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 20, padding: '10px 14px', background: '#005A8E', borderRadius: 6, marginBottom: 14, color: 'white', flexWrap: 'wrap' }}>
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: 10, opacity: 0.7, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Excl VAT</div>
+          <div style={{ fontFamily: 'monospace', fontWeight: 700 }}>R {totalExcl.toFixed(2)}</div>
+        </div>
+        {totalVat > 0 && (
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 10, opacity: 0.7, textTransform: 'uppercase', letterSpacing: '0.06em' }}>VAT</div>
+            <div style={{ fontFamily: 'monospace', fontWeight: 700, color: '#fbd38d' }}>R {totalVat.toFixed(2)}</div>
+          </div>
+        )}
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: 10, opacity: 0.7, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Total Incl VAT</div>
+          <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 16 }}>R {totalIncl.toFixed(2)}</div>
+        </div>
+      </div>
+
+      {/* ── Actions ──────────────────────────────────────────────── */}
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-        <button className="btn btn-sm" onClick={onCancel} disabled={saving}>Cancel</button>
-        <button className="btn btn-primary btn-sm" onClick={() => {
-          // Validate: supplier required
-          if (!form.supplier_code) { alert('Supplier is required'); return; }
-          // Validate lines
-          const activeLines = (form.lines || []).filter(l => l.description.trim() || l.excl);
-          if (!activeLines.length) { alert('At least one line with a description is required'); return; }
-          const badLine = activeLines.find(l => {
-            if (l.typeCategory === 'INVENTORY') return !l.description.trim();
-            // Horse and Trailer require an item selection
-            return !l.type || !l.description.trim();
-          });
-          if (badLine) {
-            const idx = activeLines.indexOf(badLine) + 1;
-            if (!badLine.type && badLine.typeCategory !== 'INVENTORY') {
-              alert(`Line ${idx}: please select a ${badLine.typeCategory === 'HORSE' ? 'horse' : 'trailer'} from the Item column.`);
-            } else {
-              alert(`Line ${idx}: description is required.`);
-            }
-            return;
-          }
-          onSave(form, totalExcl, totalVat, totalIncl);
-        }} disabled={saving}>
-          {saving ? 'Saving…' : '💾 Save Changes'}
+        <button className="btn" onClick={onCancel} disabled={saving}>Cancel</button>
+        <button className="btn btn-primary" onClick={() => { if (validate()) onSave(form, totalExcl, totalVat, totalIncl); }} disabled={saving}>
+          {saving ? 'Saving…' : '💾 Save PO'}
         </button>
       </div>
     </div>
