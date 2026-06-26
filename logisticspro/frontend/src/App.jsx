@@ -220,7 +220,7 @@ export default function App() {
   };
 
   return (
-    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: '#f5f7fa' }}>
+    <div style={{ display: 'flex', height: '100dvh', overflow: 'hidden', background: '#f5f7fa' }}>
 
       {sidebarOpen && (
         <div
@@ -324,7 +324,7 @@ export default function App() {
           </span>
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
+        <div className="main-content" style={{ flex: 1, overflowY: 'auto' }}>
           {renderPage()}
         </div>
       </div>
