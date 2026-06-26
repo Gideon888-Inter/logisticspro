@@ -73,7 +73,7 @@ router.get('/', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
     .select(
       'm_load_no, m_date, m_customer, m_truck, m_driver_id, m_from, m_to, ' +
       'm_rate, m_status, m_invoice, m_opening_km, m_closing_km, ' +
-      'm_trailer1, m_trailer2, m_responsible_operator, ' +
+      'm_trailer1, m_trailer2, m_responsible_operator, m_operator, ' +
       'm_order_no, m_order_no_pending, m_order_no_requested_by, ' +
       'm_loading_address, m_offloading_address, ' +
       'm_pod_received, m_pod_received_by, m_pod_received_at, m_pod_sharepoint_url',
