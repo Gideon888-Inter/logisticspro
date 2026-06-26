@@ -1016,17 +1016,24 @@ router.post('/po/:id/receive',
     for (const recv of received_lines) {
       const { data: line } = await supabase()
         .from('lp_po_lines')
-        .select('*, lp_inventory_items(item_id, qty_on_hand, qty_on_order, average_cost, last_cost)')
+        .select('*')
         .eq('po_line_id', recv.po_line_id)
         .single();
       if (!line || !line.item_id) continue;
+
+      // Fetch inventory item separately (avoid PostgREST join shorthand — causes silent failures)
+      const { data: item } = await supabase()
+        .from('lp_inventory_items')
+        .select('item_id, qty_on_hand, qty_on_order, average_cost, last_cost')
+        .eq('item_id', line.item_id)
+        .single();
+      if (!item) continue;
 
       const qty   = Number(recv.qty_received);
       const cost  = Number(recv.unit_cost_excl || line.unit_price_excl || 0);
       const total = qty * cost;
 
       // Update inventory qty
-      const item = line.lp_inventory_items;
       const newQty    = Number(item.qty_on_hand || 0) + qty;
       const newOnOrder = Math.max(0, Number(item.qty_on_order || 0) - qty);
       // Weighted average cost
