@@ -32,11 +32,11 @@ export default function Login() {
 
   return (
     <div style={{
-      minHeight: '100vh',
-      height: '100vh',
+      minHeight: '100dvh',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
+      overflowY: 'auto',
       backgroundImage: `url(${TRUCK_BG})`,
       backgroundSize: 'cover',
       backgroundPosition: 'center',
@@ -46,8 +46,9 @@ export default function Login() {
       <div style={{
         background: 'white',
         borderRadius: 4,
-        padding: '36px 40px 28px',
+        padding: '36px 28px 28px',
         width: 340,
+        maxWidth: 'calc(100vw - 32px)',
         boxShadow: '0 8px 40px rgba(0,0,0,0.35)',
         display: 'flex',
         flexDirection: 'column',
@@ -83,7 +84,7 @@ export default function Login() {
           </svg>
           <input style={{ flex:1, border:'none', outline:'none', fontSize:14, color:'#333', background:'transparent', padding:'4px 0', fontFamily:'inherit' }}
             type="text" placeholder="Username" value={username}
-            onChange={e => setUsername(e.target.value)} onKeyDown={handleKey} autoFocus />
+            onChange={e => setUsername(e.target.value)} onKeyDown={handleKey} />
         </div>
 
         {/* Password */}
