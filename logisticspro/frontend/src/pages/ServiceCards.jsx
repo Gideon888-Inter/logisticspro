@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useAuth } from '../lib/AuthContext';
 
 const API = import.meta.env.VITE_API_URL || '';
 const tok = () => localStorage.getItem('lp_token');
