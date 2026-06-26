@@ -1583,6 +1583,9 @@ export default function Loads() {
                 <div className="load-card-meta">
                   <div>🚛 <strong>{l.m_truck || '—'}</strong></div>
                   <div>👤 <strong>{l.m_driver_id || '—'}</strong></div>
+                  {(l.m_responsible_operator || l.m_operator) && (
+                    <div>🧑‍💼 <strong>{l.m_responsible_operator || l.m_operator}</strong></div>
+                  )}
                   <div>📦 <strong>{l.m_customer || '—'}</strong></div>
                   <div>🗺 <strong>{l.m_from} → {l.m_to}</strong></div>
                   {l.m_order_no && <div>PO: <strong>{l.m_order_no}</strong></div>}
@@ -1609,14 +1612,14 @@ export default function Loads() {
           <thead>
             <tr>
               <th style={{ width: 32 }}></th>
-              <th>Load No</th><th>Date</th><th>Truck</th>
+              <th>Load No</th><th>Date</th><th>Truck</th><th>Operator</th>
               <th>Customer</th><th>From</th><th>To</th>
               <th>Rate</th><th>Extra Costs</th><th>Total</th><th>Order No</th><th>Status</th>
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={12}><div className="loading">Loading…</div></td></tr>}
-            {!loading && loads.length === 0 && <tr><td colSpan={12}><div className="empty-state">No loads found</div></td></tr>}
+            {loading && <tr><td colSpan={13}><div className="loading">Loading…</div></td></tr>}
+            {!loading && loads.length === 0 && <tr><td colSpan={13}><div className="empty-state">No loads found</div></td></tr>}
             {!loading && loads.map(l => {
               const extra = Number(loadCosts[l.m_load_no] || 0);
               const tot = Number(l.m_rate || 0) + extra;
@@ -1631,6 +1634,7 @@ export default function Loads() {
                     <td className="mono" style={{ fontWeight: 600 }}>{l.m_load_no}</td>
                     <td>{fmtDate(l.m_date)}</td>
                     <td className="mono">{l.m_truck}</td>
+                    <td style={{ fontSize: 12, color: '#555' }}>{l.m_responsible_operator || l.m_operator || '—'}</td>
                     <td>{l.m_customer}</td>
                     <td>{l.m_from}</td>
                     <td>{l.m_to}</td>
