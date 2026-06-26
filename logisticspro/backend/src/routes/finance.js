@@ -1975,7 +1975,7 @@ router.post('/cashbook/staging/post-bulk', requireFin, async (req, res) => {
   for (const entry of (toPost || [])) {
     try {
       const r = await fetch(
-        `${process.env.BACKEND_URL || 'http://localhost:3000'}/api/fin/cashbook/staging/${entry.staging_id}/post`,
+        `${process.env.BACKEND_URL || 'http://localhost:3001'}/api/fin/cashbook/staging/${entry.staging_id}/post`,
         {
           method: 'POST',
           headers: {
@@ -2694,102 +2694,109 @@ router.post('/depreciation/run', requireFin, async (req, res) => {
   const { period_id } = req.body;
   if (!period_id) return res.status(400).json({ error: 'period_id is required' });
 
-  // Re-run preview to get fresh numbers
-  const previewRes = await fetch(
-    `${process.env.BACKEND_URL || 'http://localhost:3000'}/api/fin/depreciation/preview?period_id=${period_id}`,
-    { headers: { 'Authorization': req.headers.authorization } }
-  );
-  const preview = await previewRes.json();
-  if (preview.error) return res.status(400).json({ error: preview.error });
-  if (!preview.asset_lines?.length) return res.status(400).json({ error: 'No assets to depreciate' });
+  try {
+    // Re-run preview to get fresh numbers
+    const previewRes = await fetch(
+      `${process.env.BACKEND_URL || 'http://localhost:3001'}/api/fin/depreciation/preview?period_id=${period_id}`,
+      { headers: { 'Authorization': req.headers.authorization } }
+    );
+    const preview = await previewRes.json();
+    if (preview.error) return res.status(400).json({ error: preview.error });
+    if (!preview.asset_lines?.length) return res.status(400).json({ error: 'No assets to depreciate' });
 
-  // Validate journal is balanced
-  const totalDR = preview.journal_lines.reduce((s, l) => s + (l.debit  || 0), 0);
-  const totalCR = preview.journal_lines.reduce((s, l) => s + (l.credit || 0), 0);
-  if (Math.abs(totalDR - totalCR) > 0.01) {
-    return res.status(500).json({ error: 'Depreciation journal does not balance — contact support' });
-  }
+    // Validate journal is balanced
+    const totalDR = preview.journal_lines.reduce((s, l) => s + (l.debit  || 0), 0);
+    const totalCR = preview.journal_lines.reduce((s, l) => s + (l.credit || 0), 0);
+    if (Math.abs(totalDR - totalCR) > 0.01) {
+      return res.status(500).json({ error: 'Depreciation journal does not balance — contact support' });
+    }
 
-  // Get period date for journal
-  const { data: period } = await supabase
-    .from('fin_periods')
-    .select('period_end, period_name')
-    .eq('period_id', period_id)
-    .single();
+    // Get period date for journal
+    const { data: period } = await supabase
+      .from('fin_periods')
+      .select('period_end, period_name')
+      .eq('period_id', period_id)
+      .single();
 
-  // Create depreciation journal
-  const datePart   = period.period_end.replace(/-/g,'').slice(0,6);
-  const { count }  = await supabase
-    .from('fin_gl_journals')
-    .select('*', { count: 'exact', head: true })
-    .like('journal_ref', `DA-${datePart}-%`);
-  const seq         = String((count || 0) + 1).padStart(5, '0');
-  const journal_ref = `DA-${datePart}-${seq}`;
+    if (!period) return res.status(404).json({ error: 'Period not found' });
 
-  const { data: journal, error: jErr } = await supabase
-    .from('fin_gl_journals')
-    .insert({
+    // Create depreciation journal
+    const datePart   = period.period_end.replace(/-/g,'').slice(0,6);
+    const { count }  = await supabase
+      .from('fin_gl_journals')
+      .select('*', { count: 'exact', head: true })
+      .like('journal_ref', `DA-${datePart}-%`);
+    const seq         = String((count || 0) + 1).padStart(5, '0');
+    const journal_ref = `DA-${datePart}-${seq}`;
+
+    const { data: journal, error: jErr } = await supabase
+      .from('fin_gl_journals')
+      .insert({
+        journal_ref,
+        journal_type:  'DA',
+        description:   `Depreciation — ${period.period_name}`,
+        period_id:     Number(period_id),
+        journal_date:  period.period_end,
+        source_module: 'ASSETS',
+        posted:        false, // Leave unposted — user reviews and posts manually
+        created_by:    req.user.username,
+      })
+      .select().single();
+
+    if (jErr) return res.status(500).json({ error: jErr.message });
+
+    await supabase.from('fin_gl_journal_lines').insert(
+      preview.journal_lines.map((l, i) => ({
+        journal_id:  journal.journal_id,
+        line_number: i + 1,
+        account_code: l.account_code,
+        description:  l.description,
+        debit:        l.debit || 0,
+        credit:       l.credit || 0,
+        vat_type:     null,
+        vat_amount:   0,
+      }))
+    );
+
+    // Update each asset and create depreciation run records
+    const runRecords = [];
+    for (const line of preview.asset_lines) {
+      await supabase.from('fin_assets').update({
+        book_depre_period:  line.book_depre_amount,
+        book_depre_curr_yr: line.book_depre_amount, // TODO: accumulate across periods in a future update
+        book_nbv:           line.book_nbv_after,
+        tax_depre_period:   line.tax_depre_amount,
+        tax_value:          line.tax_value_after,
+        fully_depreciated:  line.fully_depreciated_after,
+        book_report_date:   period.period_end,
+      }).eq('asset_id', line.asset_id);
+
+      runRecords.push({
+        asset_id:          line.asset_id,
+        period_id:         Number(period_id),
+        run_date:          period.period_end,
+        book_depre_amount: line.book_depre_amount,
+        tax_depre_amount:  line.tax_depre_amount,
+        book_nbv_after:    line.book_nbv_after,
+        tax_value_after:   line.tax_value_after,
+        journal_id:        journal.journal_id,
+      });
+    }
+
+    await supabase.from('fin_depreciation_runs').insert(runRecords);
+
+    res.json({
+      success:       true,
       journal_ref,
-      journal_type:  'DA',
-      description:   `Depreciation — ${period.period_name}`,
-      period_id:     Number(period_id),
-      journal_date:  period.period_end,
-      source_module: 'ASSETS',
-      posted:        false, // Leave unposted — user reviews and posts manually
-      created_by:    req.user.username,
-    })
-    .select().single();
-
-  if (jErr) return res.status(500).json({ error: jErr.message });
-
-  await supabase.from('fin_gl_journal_lines').insert(
-    preview.journal_lines.map((l, i) => ({
-      journal_id:  journal.journal_id,
-      line_number: i + 1,
-      account_code: l.account_code,
-      description:  l.description,
-      debit:        l.debit || 0,
-      credit:       l.credit || 0,
-      vat_type:     null,
-      vat_amount:   0,
-    }))
-  );
-
-  // Update each asset and create depreciation run records
-  const runRecords = [];
-  for (const line of preview.asset_lines) {
-    await supabase.from('fin_assets').update({
-      book_depre_period:  line.book_depre_amount,
-      book_depre_curr_yr: supabase.rpc ? line.book_depre_amount : line.book_depre_amount, // will accumulate in future
-      book_nbv:           line.book_nbv_after,
-      tax_depre_period:   line.tax_depre_amount,
-      tax_value:          line.tax_value_after,
-      fully_depreciated:  line.fully_depreciated_after,
-      book_report_date:   period.period_end,
-    }).eq('asset_id', line.asset_id);
-
-    runRecords.push({
-      asset_id:          line.asset_id,
-      period_id:         Number(resolvedPeriodId),
-      run_date:          period.period_end,
-      book_depre_amount: line.book_depre_amount,
-      tax_depre_amount:  line.tax_depre_amount,
-      book_nbv_after:    line.book_nbv_after,
-      tax_value_after:   line.tax_value_after,
-      journal_id:        journal.journal_id,
+      journal_id:    journal.journal_id,
+      assets_run:    preview.asset_lines.length,
+      total_depre:   preview.total_depre,
+      note:          'Journal created as UNPOSTED — review and post manually in GL Journals',
     });
+  } catch (err) {
+    console.error('[depreciation/run]', err);
+    res.status(500).json({ error: 'Depreciation run failed: ' + err.message });
   }
-
-  await supabase.from('fin_depreciation_runs').insert(runRecords);
-
-  res.json({
-    success:       true,
-    journal_ref,
-    journal_id:    journal.journal_id,
-    assets_run:    preview.asset_lines.length,
-    total_depre:   preview.total_depre,
-    note:          'Journal created as UNPOSTED — review and post manually in GL Journals',
-  });
 });
 
 
