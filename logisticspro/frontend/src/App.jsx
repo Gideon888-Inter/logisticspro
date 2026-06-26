@@ -227,7 +227,7 @@ export default function App() {
           onClick={() => setSidebarOpen(false)}
           style={{
             position: 'fixed', inset: 0,
-            background: 'rgba(0,0,0,0.4)',
+            background: 'rgba(0,0,0,0.55)',
             zIndex: 98,
           }}
         />
@@ -235,9 +235,10 @@ export default function App() {
 
       <div style={{
         position: 'fixed', top: 0, left: 0, bottom: 0,
-        width: 220, background: '#005A8E', color: 'white',
+        width: 'min(280px, 85vw)', background: '#005A8E', color: 'white',
         display: 'flex', flexDirection: 'column',
         zIndex: 99,
+        boxShadow: '4px 0 24px rgba(0,0,0,0.35)',
         transform: sidebarOpen ? 'translateX(0)' : 'translateX(-100%)',
         transition: 'transform 0.22s ease',
         overflowX: 'hidden',
