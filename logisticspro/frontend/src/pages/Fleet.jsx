@@ -1033,7 +1033,7 @@ export default function Fleet({ focusServiceDue }) {
       </div>
 
       {pageTab === 'live'     && <LiveLocation />}
-      {pageTab === 'movement' && <Loads />}
+      {pageTab === 'movement' && <Loads viewMode="movement" />}
       {pageTab === 'list'     && <FleetList focusServiceDue={focusServiceDue} />}
     </div>
   );
