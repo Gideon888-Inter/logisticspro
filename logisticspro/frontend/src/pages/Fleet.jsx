@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../lib/AuthContext';
 import { api } from '../lib/api';
+import { loadGoogleMaps, resetGoogleMapsLoader } from '../lib/googleMaps';
 import Loads from './Loads';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -904,7 +905,7 @@ function FleetList({ focusServiceDue }) {
 
 // ════════════════════════════════════════════════════════════════════════════
 // Live Location tab — vehicle list (Horse/Trailer) + live Pulsit GPS map.
-// Polls /api/tracking/positions every 20s and plots markers via Leaflet.
+// Polls /api/tracking/positions every 20s and plots markers via Google Maps.
 // Matches vehicles to positions on vh_registration (falls back to vh_code).
 // ════════════════════════════════════════════════════════════════════════════
 const POSITION_POLL_MS = 20000;
@@ -921,54 +922,50 @@ function fmtRelativeTime(iso) {
   return new Date(iso).toLocaleString('en-ZA', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
-// ── Leaflet map, kept imperative (no react-leaflet dependency) ─────────────
+// ── Google Maps tracking map (shared loader — see lib/googleMaps.js) ──────
 function TrackingMap({ vehicles, positions, selectedCode, onSelectVehicle }) {
   const mapElRef = useRef(null);
   const mapRef = useRef(null);
   const markersRef = useRef({});
-  const leafletRef = useRef(null);
   const [mapError, setMapError] = useState(null);
+  const [retryKey, setRetryKey] = useState(0);
+
+  // South Africa bounding box — fleet never leaves the country, so there's
+  // no reason to let the map pan/zoom out to the rest of the world.
+  const SA_BOUNDS = { north: -21.5, south: -35.5, east: 33.5, west: 15.0 };
 
   // Init map once
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    setMapError(null);
+    loadGoogleMaps((err) => {
+      if (cancelled) return;
+      if (err) { setMapError(err); return; }
       try {
-        const L = (await import('leaflet')).default;
-        await import('leaflet/dist/leaflet.css');
-        if (cancelled || mapRef.current) return;
-        leafletRef.current = L;
-
-        // South Africa bounding box (with a little padding) — fleet never
-        // leaves the country, so there's no reason to show the rest of the world.
-        const SA_BOUNDS = L.latLngBounds([-35.5, 15.0], [-21.5, 33.5]);
-
-        mapRef.current = L.map(mapElRef.current, {
-          maxBounds: SA_BOUNDS,
-          maxBoundsViscosity: 1.0,
+        const bounds = new window.google.maps.LatLngBounds(
+          { lat: SA_BOUNDS.south, lng: SA_BOUNDS.west },
+          { lat: SA_BOUNDS.north, lng: SA_BOUNDS.east }
+        );
+        mapRef.current = new window.google.maps.Map(mapElRef.current, {
+          restriction: { latLngBounds: bounds, strictBounds: false },
           minZoom: 5,
-        }).fitBounds(SA_BOUNDS);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          attribution: '&copy; OpenStreetMap contributors',
-          maxZoom: 19,
-        }).addTo(mapRef.current);
+          mapTypeControl: false,
+          streetViewControl: false,
+          fullscreenControl: true,
+        });
+        mapRef.current.fitBounds(bounds);
       } catch (e) {
         console.error('TrackingMap init failed:', e);
-        if (!cancelled) setMapError(e.message || 'Failed to load the map');
+        setMapError(e.message || 'Failed to load the map');
       }
-    })();
-    return () => {
-      cancelled = true;
-      mapRef.current?.remove();
-      mapRef.current = null;
-    };
-  }, []);
+    });
+    return () => { cancelled = true; };
+  }, [retryKey]);
 
   // Plot / update markers whenever positions change
   useEffect(() => {
-    const L = leafletRef.current;
     const map = mapRef.current;
-    if (!L || !map) return;
+    if (!map || !window.google) return;
 
     try {
       const seen = new Set();
@@ -980,24 +977,32 @@ function TrackingMap({ vehicles, positions, selectedCode, onSelectVehicle }) {
         const code = vehicle?.vh_code || p.code || p.regNo;
         seen.add(code);
         const isSelected = code === selectedCode;
+        const position = { lat: p.lat, lng: p.lng };
 
-        const icon = L.divIcon({
-          className: '',
-          html: `<div style="
-            background:${isSelected ? '#005A8E' : '#0ea5e9'}; color:white;
-            padding:4px 9px; border-radius:6px; font-size:11px; font-weight:700;
-            white-space:nowrap; box-shadow:0 2px 6px rgba(0,0,0,0.35);
-            transform: translate(-50%, -120%); font-family: monospace;
-          ">${code}</div>`,
-          iconSize: [0, 0],
-        });
+        const icon = {
+          path: window.google.maps.SymbolPath.CIRCLE,
+          scale: isSelected ? 16 : 13,
+          fillColor: isSelected ? '#005A8E' : '#0ea5e9',
+          fillOpacity: 1,
+          strokeColor: 'white',
+          strokeWeight: 2,
+        };
+        const label = {
+          text: code,
+          color: 'white',
+          fontSize: '10px',
+          fontWeight: '700',
+        };
 
         if (markersRef.current[code]) {
-          markersRef.current[code].setLatLng([p.lat, p.lng]);
+          markersRef.current[code].setPosition(position);
           markersRef.current[code].setIcon(icon);
+          markersRef.current[code].setLabel(label);
         } else {
-          const marker = L.marker([p.lat, p.lng], { icon }).addTo(map);
-          marker.on('click', () => onSelectVehicle?.(vehicle || { vh_code: code }));
+          const marker = new window.google.maps.Marker({
+            position, map, icon, label, title: code,
+          });
+          marker.addListener('click', () => onSelectVehicle?.(vehicle || { vh_code: code }));
           markersRef.current[code] = marker;
         }
       });
@@ -1006,16 +1011,18 @@ function TrackingMap({ vehicles, positions, selectedCode, onSelectVehicle }) {
       Object.keys(markersRef.current).forEach(code => {
         if (code === '__fitted') return;
         if (!seen.has(code)) {
-          map.removeLayer(markersRef.current[code]);
+          markersRef.current[code].setMap(null);
           delete markersRef.current[code];
         }
       });
 
       // Fit bounds once, on first data load
       if (firstFit && positions.length > 0) {
-        const pts = positions.filter(p => p.lat != null && p.lng != null).map(p => [p.lat, p.lng]);
+        const pts = positions.filter(p => p.lat != null && p.lng != null);
         if (pts.length > 0) {
-          map.fitBounds(pts, { padding: [40, 40], maxZoom: 12 });
+          const bounds = new window.google.maps.LatLngBounds();
+          pts.forEach(p => bounds.extend({ lat: p.lat, lng: p.lng }));
+          map.fitBounds(bounds, 60);
           markersRef.current.__fitted = true;
         }
       }
@@ -1031,11 +1038,19 @@ function TrackingMap({ vehicles, positions, selectedCode, onSelectVehicle }) {
     if (!map || !selectedCode) return;
     try {
       const marker = markersRef.current[selectedCode];
-      if (marker) map.panTo(marker.getLatLng());
+      if (marker) map.panTo(marker.getPosition());
     } catch (e) {
       console.error('TrackingMap pan failed:', e);
     }
   }, [selectedCode]);
+
+  const retry = () => {
+    resetGoogleMapsLoader();
+    Object.keys(markersRef.current).forEach(k => { if (k !== '__fitted') markersRef.current[k].setMap?.(null); });
+    markersRef.current = {};
+    mapRef.current = null;
+    setRetryKey(k => k + 1);
+  };
 
   if (mapError) {
     return (
@@ -1043,13 +1058,18 @@ function TrackingMap({ vehicles, positions, selectedCode, onSelectVehicle }) {
         alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 24 }}>
         <div style={{ fontSize: 36, marginBottom: 10 }}>⚠️</div>
         <div style={{ fontSize: 14, fontWeight: 700, color: '#c05621', marginBottom: 6 }}>Map failed to load</div>
-        <div style={{ fontSize: 12, color: '#888', maxWidth: 360 }}>{mapError}</div>
+        <div style={{ fontSize: 12, color: '#888', maxWidth: 360, marginBottom: 12 }}>{mapError}</div>
+        <button onClick={retry} style={{
+          fontSize: 12, padding: '6px 14px', border: '1px solid #ddd', borderRadius: 6,
+          background: 'white', cursor: 'pointer', color: '#555',
+        }}>↻ Retry</button>
       </div>
     );
   }
 
   return <div ref={mapElRef} style={{ width: '100%', height: '100%', minHeight: 400, borderRadius: 8 }} />;
 }
+
 
 function LiveLocation() {
   const { user } = useAuth();
