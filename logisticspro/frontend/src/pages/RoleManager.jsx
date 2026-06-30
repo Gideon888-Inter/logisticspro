@@ -42,6 +42,8 @@ export default function RoleManager() {
   const [selectedKey, setSelectedKey]   = useState(null);
   const [perms, setPerms]               = useState([]);
   const [permsLoading, setPermsLoading] = useState(false);
+  const [poTier, setPoTier]             = useState(null);
+  const [poTierSaving, setPoTierSaving] = useState(false);
   const [showNew, setShowNew]           = useState(false);
   const [saving, setSaving]             = useState(false);
   const [deactivating, setDeactivating] = useState(null);
@@ -62,9 +64,27 @@ export default function RoleManager() {
   const loadPerms = async (key) => {
     setSelectedKey(key);
     setPermsLoading(true);
-    const data = await apiFetch(`/${key}/permissions`);
+    const [data, tierData] = await Promise.all([
+      apiFetch(`/${key}/permissions`),
+      apiFetch(`/${key}/po-approval-tier`),
+    ]);
     setPerms(data.permissions || []);
+    setPoTier(tierData);
     setPermsLoading(false);
+  };
+
+  const savePoTier = async (updates) => {
+    const merged = { ...poTier, ...updates };
+    setPoTier(merged);
+    setPoTierSaving(true);
+    try {
+      await apiFetch(`/${selectedKey}/po-approval-tier`, {
+        method: 'PATCH',
+        body: JSON.stringify({ tier: merged.tier, can_use_capital_po: merged.can_use_capital_po }),
+      });
+    } finally {
+      setPoTierSaving(false);
+    }
   };
 
   const togglePerm = async (moduleKey, action, current) => {
@@ -222,6 +242,43 @@ export default function RoleManager() {
                   </span>
                 )}
               </div>
+
+              {!permsLoading && poTier && (
+                <div style={{
+                  background: 'white', border: '1px solid #e8edf2', borderRadius: 8,
+                  padding: '12px 16px', marginBottom: 16, display: 'flex',
+                  alignItems: 'center', gap: 20, flexWrap: 'wrap',
+                }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    PO Approval Tier
+                  </div>
+                  <select
+                    value={poTier.tier}
+                    onChange={e => savePoTier({ tier: Number(e.target.value) })}
+                    disabled={selectedKey === 'ADMIN' || poTierSaving}
+                    style={{ padding: '6px 10px', fontSize: 13, border: '1px solid #ddd', borderRadius: 6 }}
+                  >
+                    <option value={0}>0 — No PO approval duties</option>
+                    <option value={1}>1 — Approves PENDING_L1 (Stock Controller level)</option>
+                    <option value={2}>2 — Approves L1/L2 (Workshop Assistant level)</option>
+                    <option value={3}>3 — Approves L1/L2/L3, jumps to Financial (Workshop Manager level)</option>
+                    <option value={4}>4 — Financial approval (Finance/Admin level)</option>
+                  </select>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: selectedKey === 'ADMIN' ? 'not-allowed' : 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={poTier.can_use_capital_po || false}
+                      disabled={selectedKey === 'ADMIN' || poTierSaving}
+                      onChange={() => savePoTier({ can_use_capital_po: !poTier.can_use_capital_po })}
+                    />
+                    Can create capital POs
+                  </label>
+                  {selectedKey === 'ADMIN' && (
+                    <span style={{ fontSize: 11, color: '#aaa' }}>Admin always has tier 4 — not editable</span>
+                  )}
+                  {poTierSaving && <span style={{ fontSize: 11, color: '#888' }}>Saving…</span>}
+                </div>
+              )}
 
               {permsLoading && <div className="loading">Loading permissions…</div>}
 
