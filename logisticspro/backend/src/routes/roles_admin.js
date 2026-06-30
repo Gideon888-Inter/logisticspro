@@ -158,6 +158,20 @@ router.get('/:key', async (req, res) => {
   res.json({ role: roleData, permissions: matrix, po_approval_tier: poTier });
 });
 
+// GET /roles/:key/po-approval-tier — fetch a role's PO approval hierarchy tier
+router.get('/:key/po-approval-tier', async (req, res) => {
+  const { key } = req.params;
+  if (key === ROLES.ADMIN) {
+    return res.json({ role_key: key, tier: 4, can_use_capital_po: true });
+  }
+  const { data } = await supabase()
+    .from('lp_po_approval_tiers')
+    .select('tier, can_use_capital_po')
+    .eq('role_key', key)
+    .single();
+  res.json(data || { role_key: key, tier: 0, can_use_capital_po: false });
+});
+
 // PATCH /roles/:key/po-approval-tier — set a role's PO approval hierarchy tier
 // tier: 0 (none) .. 4 (financial). ADMIN cannot be changed (always tier 4).
 router.patch('/:key/po-approval-tier', async (req, res) => {
