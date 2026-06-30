@@ -239,13 +239,22 @@ router.get('/fleet-overview', requirePermission('FLEET', 'view'), async (req, re
       const trailers = trailerCodes.map(rawCode => {
         const code = codeKeyMap.get(normalizeVehicleKey(rawCode)) || rawCode;
         const trailerPos = findPos(code);
+        const trailerRecord = vehicleByCode.get(code);
         let confirmed = null; // null = can't confirm (no GPS on trailer or horse)
         let distance_km = null;
         if (trailerPos && pos && pos.lat != null && pos.lng != null) {
           distance_km = distanceKm(pos.lat, pos.lng, trailerPos.lat, trailerPos.lng);
           confirmed = distance_km != null && distance_km <= TRAILER_CONFIRM_RADIUS_KM;
         }
-        return { code, tracked: !!trailerPos, confirmed, distance_km: distance_km != null ? Number(distance_km.toFixed(2)) : null };
+        return {
+          code,
+          make: trailerRecord?.vh_make || null,
+          model: trailerRecord?.vh_model || null,
+          registration: trailerRecord?.vh_registration || null,
+          tracked: !!trailerPos,
+          confirmed,
+          distance_km: distance_km != null ? Number(distance_km.toFixed(2)) : null,
+        };
       });
 
       // Friendly location name — nearest configured address (any type)
