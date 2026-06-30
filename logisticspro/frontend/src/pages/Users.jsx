@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, Fragment } from 'react';
 import { useAuth } from '../lib/AuthContext';
-import { ROLES, ROLE_LABELS, ROLE_BADGE_COLORS, canManageUsers } from '../lib/roles';
+import { ROLES, ROLE_LABELS, ROLE_BADGE_COLORS, canManageUsers, canManagePasswords, ACCESS_GROUP_LABELS } from '../lib/roles';
+import { api } from '../lib/api';
 
 const API = import.meta.env.VITE_API_URL || '';
 const token = () => localStorage.getItem('lp_token');
@@ -375,6 +376,27 @@ export default function Users() {
   const [actionSaving, setActionSaving]         = useState(false);
   const [allRoles, setAllRoles]                 = useState([]);  // built-in + custom from API
 
+  // ── Per-user access overrides (Basic/Operational/Fleet/Workshop/
+  // Finance/Management/Director quick toggles) ──
+  const [accessModalUser, setAccessModalUser]   = useState(null);
+  const [accessData, setAccessData]             = useState(null);
+  const [accessLoading, setAccessLoading]       = useState(false);
+  const [accessSaving, setAccessSaving]         = useState(false);
+
+  // ── Reset another user's password (Admin/Manager only) ──
+  const [resetPwUser, setResetPwUser]           = useState(null);
+  const [resetPwValue, setResetPwValue]         = useState('');
+  const [resetPwError, setResetPwError]         = useState('');
+  const [resetPwSaving, setResetPwSaving]       = useState(false);
+
+  // ── Change my own password (Admin/Manager only — no other role has
+  // self-service password change in the app) ──
+  const [myPwOpen, setMyPwOpen]                 = useState(false);
+  const [myPwCurrent, setMyPwCurrent]           = useState('');
+  const [myPwNew, setMyPwNew]                   = useState('');
+  const [myPwError, setMyPwError]               = useState('');
+  const [myPwSaving, setMyPwSaving]             = useState(false);
+
   const load = async () => {
     setLoading(true);
     try {
@@ -403,12 +425,11 @@ export default function Users() {
     setSaveError(''); setSaveResult(null);
     if (!form.u_username.trim()) return setSaveError('Username is required');
     if (!editId && !form.u_password.trim()) return setSaveError('Password is required for new users');
-    if (!editId && form.u_password.length < 8) return setSaveError('Password must be at least 8 characters');
     setSaving(true);
     try {
       if (editId) {
         const payload = { ...form };
-        if (!payload.u_password) delete payload.u_password;
+        delete payload.u_password; // password changes go through Reset Password, not this form
         const result = await req(`/users/${editId}`, { method: 'PATCH', body: JSON.stringify(payload) });
         if (result.error) return setSaveError(result.error);
         setShowModal(false); load();
@@ -434,6 +455,76 @@ export default function Users() {
       setSelectedApproval(null); setRejectionReason(''); load();
     } catch (e) { alert(e.message); }
     finally { setActionSaving(false); }
+  };
+
+  // ── Access overrides ─────────────────────────────────────────
+  const openAccess = async (u) => {
+    setAccessModalUser(u);
+    setAccessData(null);
+    setAccessLoading(true);
+    try {
+      const result = await api.getUserAccess(u.u_id);
+      if (result.error) { alert(result.error); setAccessModalUser(null); return; }
+      setAccessData(result);
+    } catch (e) { alert(e.message); setAccessModalUser(null); }
+    finally { setAccessLoading(false); }
+  };
+
+  const toggleAccessGroup = (groupKey) => {
+    setAccessData(d => ({ ...d, groups: { ...d.groups, [groupKey]: !d.groups[groupKey] } }));
+  };
+
+  const saveAccess = async () => {
+    if (!accessModalUser || !accessData) return;
+    setAccessSaving(true);
+    try {
+      const result = await api.updateUserAccess(accessModalUser.u_id, { groups: accessData.groups });
+      if (result.error) return alert(result.error);
+      setAccessModalUser(null);
+      load();
+    } catch (e) { alert(e.message); }
+    finally { setAccessSaving(false); }
+  };
+
+  const revertToBaseRole = async () => {
+    if (!accessModalUser || !accessData) return;
+    const baseLabel = ROLE_LABELS[accessData.base_role] || accessData.base_role;
+    if (!window.confirm(`Revert ${accessModalUser.u_username} to the standard ${baseLabel} role? This removes their individual access customizations (the custom role itself is kept, just deactivated, in case this needs to be undone).`)) return;
+    setAccessSaving(true);
+    try {
+      const result = await api.revertUserRole(accessModalUser.u_id, accessData.base_role);
+      if (result.error) return alert(result.error);
+      setAccessModalUser(null);
+      load();
+    } catch (e) { alert(e.message); }
+    finally { setAccessSaving(false); }
+  };
+
+  // ── Password reset (another user) ───────────────────────────
+  const openResetPw = (u) => { setResetPwUser(u); setResetPwValue(''); setResetPwError(''); };
+
+  const saveResetPw = async () => {
+    setResetPwError('');
+    setResetPwSaving(true);
+    try {
+      const result = await api.resetUserPassword(resetPwUser.u_id, resetPwValue);
+      if (result.error) return setResetPwError(result.error);
+      setResetPwUser(null);
+    } catch (e) { setResetPwError(e.message); }
+    finally { setResetPwSaving(false); }
+  };
+
+  // ── Change my own password ──────────────────────────────────
+  const saveMyPassword = async () => {
+    setMyPwError('');
+    setMyPwSaving(true);
+    try {
+      const result = await api.changePassword({ current_password: myPwCurrent, new_password: myPwNew });
+      if (result.error) return setMyPwError(result.error);
+      setMyPwOpen(false); setMyPwCurrent(''); setMyPwNew('');
+      alert('Password changed successfully.');
+    } catch (e) { setMyPwError(e.message); }
+    finally { setMyPwSaving(false); }
   };
 
   const filtered = data.filter(u =>
@@ -486,6 +577,9 @@ export default function Users() {
             {canManageUsers(currentUser) && (
               <button className="btn btn-primary btn-sm" onClick={openAdd}>+ Add User</button>
             )}
+            {canManagePasswords(currentUser) && (
+              <button className="btn btn-sm" onClick={() => { setMyPwError(''); setMyPwCurrent(''); setMyPwNew(''); setMyPwOpen(true); }}>🔑 Change My Password</button>
+            )}
             <button className="btn btn-sm" onClick={() => exportCSV(data)}>⬇ Export CSV</button>
           </div>
           <div className="mobile-card-list">
@@ -507,6 +601,11 @@ export default function Users() {
                   {u.u_email && <div>✉ <strong>{u.u_email}</strong></div>}
                   {u.u_region && <div>Region: <strong>{u.u_region}</strong></div>}
                 </div>
+                {canManagePasswords(currentUser) && u.u_role !== ROLES.ADMIN && (
+                  <div style={{ marginTop: 8 }}>
+                    <button className="btn btn-sm" onClick={e => { e.stopPropagation(); openAccess(u); }}>🔐 Access</button>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -514,11 +613,11 @@ export default function Users() {
           <div className="table-wrap">
             <table>
               <thead>
-                <tr><th>Username</th><th>Full Name</th><th>Email</th><th>Role</th><th>Region</th><th>Active</th></tr>
+                <tr><th>Username</th><th>Full Name</th><th>Email</th><th>Role</th><th>Region</th><th>Active</th><th>Access</th></tr>
               </thead>
               <tbody>
-                {loading && <tr><td colSpan={6}><div className="loading">Loading users…</div></td></tr>}
-                {!loading && filtered.length === 0 && <tr><td colSpan={6}><div className="empty-state">No users found</div></td></tr>}
+                {loading && <tr><td colSpan={7}><div className="loading">Loading users…</div></td></tr>}
+                {!loading && filtered.length === 0 && <tr><td colSpan={7}><div className="empty-state">No users found</div></td></tr>}
                 {!loading && filtered.map(u => (
                   <tr key={u.u_id} onClick={() => canManageUsers(currentUser) && openEdit(u)} style={{ cursor: canManageUsers(currentUser) ? 'pointer' : 'default' }}>
                     <td className="mono" style={{ fontWeight: 600 }}>{u.u_username}</td>
@@ -527,6 +626,11 @@ export default function Users() {
                     <td><span className={`badge ${ROLE_BADGE_COLORS[u.u_role] || 'badge-gray'}`}>{ROLE_LABELS[u.u_role] || u.u_role}</span></td>
                     <td>{u.u_region || '—'}</td>
                     <td><span className={`badge ${u.u_active === 'Y' ? 'badge-green' : 'badge-red'}`}>{u.u_active === 'Y' ? 'Active' : 'Inactive'}</span></td>
+                    <td>
+                      {canManagePasswords(currentUser) && u.u_role !== ROLES.ADMIN ? (
+                        <button className="btn btn-sm" onClick={e => { e.stopPropagation(); openAccess(u); }}>🔐 Access</button>
+                      ) : (u.u_role === ROLES.ADMIN ? <span style={{ color: '#aaa', fontSize: 11 }}>Always full access</span> : null)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -658,8 +762,24 @@ export default function Users() {
                       <input value={form.u_username} onChange={e => set('u_username', e.target.value)} disabled={!!editId} placeholder="e.g. liam.smith" />
                     </div>
                     <div className="form-group">
-                      <label>{editId ? 'New Password (leave blank to keep)' : 'Password *'}</label>
-                      <input type="password" value={form.u_password} onChange={e => set('u_password', e.target.value)} placeholder={editId ? '(leave blank to keep current)' : 'Min 8 characters'} />
+                      {editId ? (
+                        <>
+                          <label>Password</label>
+                          {canManagePasswords(currentUser) ? (
+                            <button type="button" className="btn btn-sm" onClick={() => openResetPw({ u_id: editId, u_username: form.u_username })}>
+                              🔑 Reset Password
+                            </button>
+                          ) : (
+                            <div style={{ fontSize: 12, color: '#aaa' }}>Only an Admin or Manager can change a user's password.</div>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <label>Password *</label>
+                          <input type="password" value={form.u_password} onChange={e => set('u_password', e.target.value)}
+                            placeholder="Min 10 chars, upper+lower+number+symbol" />
+                        </>
+                      )}
                     </div>
                   </div>
                   <div className="form-row">
@@ -709,6 +829,132 @@ export default function Users() {
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Access modal — Basic/Operational/Fleet/Workshop/Finance/Management/Director toggles ── */}
+      {accessModalUser && (
+        <div className="modal-overlay" onClick={() => setAccessModalUser(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Access — {accessModalUser.u_username}</h3>
+              <button onClick={() => setAccessModalUser(null)} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', fontSize: 18 }}>✕</button>
+            </div>
+            <div className="modal-body">
+              {accessLoading && <div className="loading">Loading access…</div>}
+              {!accessLoading && accessData && (
+                <>
+                  <div style={{ fontSize: 12, color: '#666', marginBottom: 14 }}>
+                    Base role: <strong>{ROLE_LABELS[accessData.base_role] || accessData.base_role}</strong>.{' '}
+                    {accessData.has_personal_role
+                      ? 'This user has individual customizations on top of their base role — toggling below only affects them, not anyone else with the base role.'
+                      : 'Toggling a switch below will create a personal access profile for this user (cloned from their current role) without changing the role itself for anyone else.'}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {ACCESS_GROUP_LABELS.map(g => (
+                      <label key={g.key} style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        padding: '10px 12px', border: '1px solid #e8edf2', borderRadius: 6,
+                        background: accessData.groups?.[g.key] ? '#f0fdf4' : '#fafbfc', cursor: 'pointer',
+                      }}>
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: 13 }}>{g.label}</div>
+                          <div style={{ fontSize: 11, color: '#888' }}>{g.hint}</div>
+                        </div>
+                        <input type="checkbox" checked={!!accessData.groups?.[g.key]}
+                          onChange={() => toggleAccessGroup(g.key)} style={{ width: 18, height: 18, cursor: 'pointer' }} />
+                      </label>
+                    ))}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 12 }}>
+                    Need finer control than these 7 switches? Use Role Manager to edit the detailed per-module permission matrix for this user's role directly.
+                  </div>
+                </>
+              )}
+            </div>
+            {!accessLoading && accessData && (
+              <div className="modal-footer" style={{ justifyContent: 'space-between' }}>
+                {accessData.has_personal_role ? (
+                  <button className="btn btn-sm" onClick={revertToBaseRole} disabled={accessSaving} style={{ color: '#e53e3e' }}>
+                    ↩ Revert to standard {ROLE_LABELS[accessData.base_role] || accessData.base_role}
+                  </button>
+                ) : <span />}
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="btn" onClick={() => setAccessModalUser(null)}>Cancel</button>
+                  <button className="btn btn-primary" onClick={saveAccess} disabled={accessSaving}>
+                    {accessSaving ? 'Saving…' : 'Save Access'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Reset another user's password (Admin/Manager only) ── */}
+      {resetPwUser && (
+        <div className="modal-overlay" onClick={() => setResetPwUser(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }}>
+            <div className="modal-header">
+              <h3>Reset Password — {resetPwUser.u_username}</h3>
+              <button onClick={() => setResetPwUser(null)} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', fontSize: 18 }}>✕</button>
+            </div>
+            <div className="modal-body">
+              {resetPwError && (
+                <div style={{ background: '#fff5f5', border: '1px solid #fca5a5', borderRadius: 4, padding: '10px 14px', marginBottom: 12, color: '#e53e3e', fontSize: 13 }}>
+                  ⚠ {resetPwError}
+                </div>
+              )}
+              <div className="form-group">
+                <label>New Password *</label>
+                <input type="password" value={resetPwValue} onChange={e => setResetPwValue(e.target.value)}
+                  placeholder="Min 10 chars, upper+lower+number+symbol" autoFocus />
+              </div>
+              <div style={{ fontSize: 11, color: '#888', marginTop: 6 }}>
+                Relay this password to {resetPwUser.u_username} directly — it isn't emailed automatically.
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn" onClick={() => setResetPwUser(null)}>Cancel</button>
+              <button className="btn btn-primary" onClick={saveResetPw} disabled={resetPwSaving || !resetPwValue}>
+                {resetPwSaving ? 'Saving…' : 'Set Password'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Change my own password (Admin/Manager only) ── */}
+      {myPwOpen && (
+        <div className="modal-overlay" onClick={() => setMyPwOpen(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }}>
+            <div className="modal-header">
+              <h3>Change My Password</h3>
+              <button onClick={() => setMyPwOpen(false)} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', fontSize: 18 }}>✕</button>
+            </div>
+            <div className="modal-body">
+              {myPwError && (
+                <div style={{ background: '#fff5f5', border: '1px solid #fca5a5', borderRadius: 4, padding: '10px 14px', marginBottom: 12, color: '#e53e3e', fontSize: 13 }}>
+                  ⚠ {myPwError}
+                </div>
+              )}
+              <div className="form-group">
+                <label>Current Password *</label>
+                <input type="password" value={myPwCurrent} onChange={e => setMyPwCurrent(e.target.value)} autoFocus />
+              </div>
+              <div className="form-group">
+                <label>New Password *</label>
+                <input type="password" value={myPwNew} onChange={e => setMyPwNew(e.target.value)}
+                  placeholder="Min 10 chars, upper+lower+number+symbol" />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn" onClick={() => setMyPwOpen(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={saveMyPassword} disabled={myPwSaving || !myPwCurrent || !myPwNew}>
+                {myPwSaving ? 'Saving…' : 'Change Password'}
+              </button>
+            </div>
           </div>
         </div>
       )}
