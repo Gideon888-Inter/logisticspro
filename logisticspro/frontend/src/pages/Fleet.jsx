@@ -936,7 +936,16 @@ function TrackingMap({ vehicles, positions, selectedCode, onSelectVehicle }) {
       await import('leaflet/dist/leaflet.css');
       if (cancelled || mapRef.current) return;
       leafletRef.current = L;
-      mapRef.current = L.map(mapElRef.current).setView([-33.9249, 18.4241], 6); // Cape Town fallback
+
+      // South Africa bounding box (with a little padding) — fleet never
+      // leaves the country, so there's no reason to show the rest of the world.
+      const SA_BOUNDS = L.latLngBounds([-35.5, 15.0], [-21.5, 33.5]);
+
+      mapRef.current = L.map(mapElRef.current, {
+        maxBounds: SA_BOUNDS,
+        maxBoundsViscosity: 1.0,
+        minZoom: 5,
+      }).fitBounds(SA_BOUNDS);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '&copy; OpenStreetMap contributors',
         maxZoom: 19,
@@ -960,8 +969,8 @@ function TrackingMap({ vehicles, positions, selectedCode, onSelectVehicle }) {
 
     positions.forEach(p => {
       if (p.lat == null || p.lng == null) return;
-      const vehicle = vehicles.find(v => v.vh_registration === p.regNo || v.vh_code === p.regNo);
-      const code = vehicle?.vh_code || p.regNo;
+      const vehicle = vehicles.find(v => v.vh_code === p.code || v.vh_registration === p.regNo);
+      const code = vehicle?.vh_code || p.code || p.regNo;
       seen.add(code);
       const isSelected = code === selectedCode;
 
@@ -1082,7 +1091,7 @@ function LiveLocation() {
     return matchesType && matchesSearch;
   });
 
-  const positionFor = (v) => positions.find(p => p.regNo === v?.vh_registration || p.regNo === v?.vh_code);
+  const positionFor = (v) => positions.find(p => p.code === v?.vh_code || p.regNo === v?.vh_registration);
   const selectedPosition = positionFor(selected);
 
   return (
@@ -1197,8 +1206,14 @@ function LiveLocation() {
               <div style={{ color: '#888' }}>{selected.vh_type} · {[selected.vh_make, selected.vh_model].filter(Boolean).join(' ') || '—'}</div>
               {selectedPosition ? (
                 <div style={{ color: '#555', marginTop: 4 }}>
-                  {selectedPosition.speed != null && <>{Math.round(selectedPosition.speed)} km/h · </>}
-                  {fmtRelativeTime(selectedPosition.lastUpdate) || 'position live'}
+                  <div>
+                    {selectedPosition.speed != null && <>{Math.round(selectedPosition.speed)} km/h · </>}
+                    {selectedPosition.ignition === 1 ? 'Ignition on' : selectedPosition.ignition === 0 ? 'Ignition off' : null}
+                  </div>
+                  {selectedPosition.location && (
+                    <div style={{ fontSize: 11, color: '#888', marginTop: 2, maxWidth: 220 }}>{selectedPosition.location}</div>
+                  )}
+                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>{fmtRelativeTime(selectedPosition.lastUpdate) || 'position live'}</div>
                 </div>
               ) : (
                 <div style={{ color: '#aaa', marginTop: 4 }}>No live position for this vehicle</div>
