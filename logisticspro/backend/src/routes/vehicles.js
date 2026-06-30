@@ -482,6 +482,23 @@ router.get('/:code/audit', async (req, res) => {
   res.json(data || []);
 });
 
+// ── GET /api/vehicles/:code/trips ─────────────────────────────────────────────
+// Pulsit Trip Report history for one vehicle — powers the Fleet card's
+// Tracking History tab (grouped/collapsed by year and month client-side).
+// Capped at 5000 most recent trips: even a vehicle running several trips a
+// day stays well under that across a few years, and this is an
+// on-demand detail view rather than something polled.
+router.get('/:code/trips', async (req, res) => {
+  const { data, error } = await supabase
+    .from('lp_vehicle_trips')
+    .select('start_time, end_time, start_location, end_location, elapsed_minutes, distance_km, avg_speed, max_speed')
+    .eq('vh_code', req.params.code)
+    .order('start_time', { ascending: false })
+    .limit(5000);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data || []);
+});
+
 // ── GET /api/vehicles/:code/maintenance ───────────────────────────────────────
 router.get('/:code/maintenance', async (req, res) => {
   const { data, error } = await supabase
