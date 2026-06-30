@@ -104,9 +104,10 @@ export default function Rates() {
   const fmtR = n => n ? 'R '+Number(n).toLocaleString('en-ZA') : '—';
 
   return (
-    <div style={{display:'flex', gap:20, height:'calc(100vh - 140px)'}}>
+    <div className="split-pane" style={{display:'flex', gap:20, height:'calc(100vh - 140px)'}}>
       {/* Left: client list */}
-      <div style={{width:300, flexShrink:0, display:'flex', flexDirection:'column', gap:12}}>
+      <div className={`split-pane-list${selectedClient ? ' hide-on-mobile' : ''}`}
+        style={{width:300, flexShrink:0, display:'flex', flexDirection:'column', gap:12}}>
         <div className="filter-bar" style={{marginBottom:0}}>
           <input placeholder="Search client…" value={search} onChange={e=>setSearch(e.target.value)} style={{flex:1}} />
         </div>
@@ -134,7 +135,8 @@ export default function Rates() {
       </div>
 
       {/* Right: rate card detail */}
-      <div style={{flex:1, display:'flex', flexDirection:'column', gap:12}}>
+      <div className={`split-pane-detail${!selectedClient ? ' hide-on-mobile' : ''}`}
+        style={{flex:1, display:'flex', flexDirection:'column', gap:12, minWidth:0}}>
         {!selectedClient ? (
           <div className="empty-state" style={{paddingTop:80}}>
             <div style={{fontSize:32, marginBottom:12}}>💰</div>
@@ -142,14 +144,41 @@ export default function Rates() {
           </div>
         ) : (
           <>
-            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+            <button className="split-pane-back-btn btn btn-sm" onClick={()=>setSelectedClient(null)} style={{alignSelf:'flex-start'}}>← All clients</button>
+            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:8}}>
               <div>
                 <div style={{fontWeight:700, fontSize:16}}>{selectedClient.c_code} — {selectedClient.c_name}</div>
                 <div style={{fontSize:12, color:'#888', marginTop:2}}>{clientRates.length} routes configured</div>
               </div>
               <button className="btn btn-sm" onClick={()=>exportClientCSV(selectedClient.c_code, selectedClient.c_name, rates)}>⬇ Export Rate Card</button>
             </div>
-            <div className="table-wrap" style={{flex:1, overflowY:'auto'}}>
+
+            {/* Mobile card list */}
+            <div className="mobile-card-list" style={{flex:1, overflowY:'auto'}}>
+              {clientRates.length===0 && <div className="empty-state">No routes on this rate card</div>}
+              {clientRates.map(r=>(
+                <div key={r.id} className="data-card" style={{cursor:'default'}}>
+                  <div className="data-card-header">
+                    <div>
+                      <div className="data-card-title">{r.rc_from} → {r.rc_to}</div>
+                      <div className="data-card-sub">{r.rc_kms ? Number(r.rc_kms).toLocaleString()+' km' : '— km'}</div>
+                    </div>
+                  </div>
+                  <div className="data-card-meta">
+                    <div>15m: <strong>{fmtR(r.rc_rate_15m)}</strong></div>
+                    <div>18m: <strong>{fmtR(r.rc_rate_18m)}</strong></div>
+                  </div>
+                  <div style={{display:'flex', gap:8, marginTop:10}}>
+                    <button className="btn btn-sm" style={{flex:1}} onClick={()=>openEditRoute(r)}>Edit</button>
+                    <button className="btn btn-sm" style={{color:'#e53e3e',borderColor:'#fca5a5'}} onClick={()=>deleteRoute(r.id)}>Delete</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Desktop table */}
+            <div className="desktop-table" style={{flex:1, minHeight:0}}>
+            <div className="table-wrap" style={{height:'100%', overflowY:'auto'}}>
               <table>
                 <thead><tr><th>From</th><th>To</th><th>KM's</th><th>15m Rate</th><th>18m Rate</th><th style={{width:80}}></th></tr></thead>
                 <tbody>
@@ -169,6 +198,7 @@ export default function Rates() {
                   ))}
                 </tbody>
               </table>
+            </div>
             </div>
           </>
         )}
@@ -191,7 +221,8 @@ export default function Rates() {
                 </select>
               </div>
               <div style={{marginBottom:8, fontWeight:600, fontSize:12, color:'#555', textTransform:'uppercase', letterSpacing:'0.06em'}}>Routes & Pricing</div>
-              <table style={{width:'100%', borderCollapse:'collapse', fontSize:13, marginBottom:8}}>
+              <div style={{overflowX:'auto', WebkitOverflowScrolling:'touch'}}>
+              <table style={{width:'100%', borderCollapse:'collapse', fontSize:13, marginBottom:8, minWidth:520}}>
                 <thead>
                   <tr style={{background:'#f8f9fa'}}>
                     <th style={{padding:'6px 8px', textAlign:'left', fontWeight:600, fontSize:11, color:'#555'}}>From</th>
@@ -220,6 +251,7 @@ export default function Rates() {
                   ))}
                 </tbody>
               </table>
+              </div>
               <button className="btn btn-sm" onClick={addRoute}>+ Add Route</button>
             </div>
             <div className="modal-footer">

@@ -493,3 +493,24 @@ html, body, #root { height: 100%; min-height: 100dvh; }
   margin-top: 6px;
 }
 .data-card-meta strong { color: var(--text); font-weight: 500; }
+
+/* ── Master/detail split layout (Client Rates, Role Manager) ────
+   Desktop: fixed-width list pane + flexible detail pane side by side
+   (via flexbox or CSS grid). Mobile: stacked, one pane visible at a
+   time (list, or detail with a back button) — a fixed-width sidebar
+   would otherwise force the detail pane off-screen on a phone. ──── */
+.split-pane-back-btn { display: none; }
+
+@media (max-width: 768px) {
+  .split-pane {
+    flex-direction: column !important;
+    grid-template-columns: 1fr !important;
+    height: auto !important;
+  }
+  .split-pane-list  { width: 100% !important; }
+  .split-pane-list.hide-on-mobile,
+  .split-pane-detail.hide-on-mobile { display: none !important; }
+  .split-pane-back-btn { display: inline-flex; }
+}
+
+

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
 import { useAuth } from '../lib/AuthContext';
 import { ROLES, ROLE_LABELS, ROLE_BADGE_COLORS, canManageUsers } from '../lib/roles';
 
@@ -172,9 +172,9 @@ function RoleManagerPanel() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 16, marginTop: 16 }}>
+      <div className="split-pane" style={{ display: 'grid', gridTemplateColumns: '260px 1fr', gap: 16, marginTop: 16 }}>
         {/* Role list */}
-        <div>
+        <div className={`split-pane-list${selectedKey ? ' hide-on-mobile' : ''}`}>
           <div style={{ display: 'flex', gap: 4, marginBottom: 10 }}>
             <button className={`btn btn-sm ${roleTab === 'builtin' ? 'btn-primary' : ''}`} onClick={() => setRoleTab('builtin')}>
               Built-in ({roles.builtin.length})
@@ -224,7 +224,7 @@ function RoleManagerPanel() {
         </div>
 
         {/* Permission matrix */}
-        <div>
+        <div className={`split-pane-detail${!selectedKey ? ' hide-on-mobile' : ''}`}>
           {!selectedKey && (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 280, color: '#aaa', gap: 10 }}>
               <div style={{ fontSize: 36 }}>🔑</div>
@@ -236,7 +236,8 @@ function RoleManagerPanel() {
           )}
           {selectedKey && (
             <>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <button className="split-pane-back-btn btn btn-sm" onClick={() => setSelectedKey(null)} style={{ marginBottom: 12 }}>← All roles</button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
                 <span className={`badge ${selectedRole?.badge_color || 'badge-gray'}`}>{selectedKey}</span>
                 <span style={{ fontWeight: 600, fontSize: 15 }}>{selectedRole?.role_label}</span>
                 {selectedRole?.description && <span style={{ fontSize: 12, color: '#888' }}>— {selectedRole.description}</span>}
@@ -266,7 +267,7 @@ function RoleManagerPanel() {
                     </thead>
                     <tbody>
                       {groupedPerms.map(({ group, modules }) => (
-                        <>
+                        <Fragment key={group}>
                           <tr key={`grp-${group}`}>
                             <td colSpan={5} style={{ background: '#f5f7fa', fontWeight: 700, fontSize: 11, color: '#888', textTransform: 'uppercase', letterSpacing: 1, padding: '5px 12px' }}>
                               {group}
@@ -287,7 +288,7 @@ function RoleManagerPanel() {
                               ))}
                             </tr>
                           ))}
-                        </>
+                        </Fragment>
                       ))}
                     </tbody>
                   </table>
