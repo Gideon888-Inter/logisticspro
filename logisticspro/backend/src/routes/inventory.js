@@ -30,6 +30,7 @@ const multer    = require('multer');
 const path      = require('path');
 const fs        = require('fs');
 const supabase  = require('../supabase');
+const { fetchChunked } = require('../lib/supabasePaging');
 const { authMiddleware, requireRole, ROLES } = require('../middleware/auth');
 
 // PO approval stage order — index = tier ceiling for that stage
@@ -197,14 +198,23 @@ router.get('/items',
              ROLES.WORKSHOP_MANAGER, ROLES.WORKSHOP_ASSISTANT, ROLES.STOCK_CONTROLLER, ROLES.WORKSHOP),
   async (req, res) => {
     const { role } = req.user;
-    let query = supabase.from('lp_inventory_items').select('*').order('item_code');
-    // Non-workshop users only see ACTIVE items
-    if (![ROLES.ADMIN, ROLES.WORKSHOP_MANAGER, ROLES.WORKSHOP_ASSISTANT, ROLES.STOCK_CONTROLLER].includes(role)) {
-      query = query.eq('status', 'ACTIVE');
+    // Chunk-fetched (lib/supabasePaging) as a preemptive guard against the
+    // same Supabase max-rows truncation that bit GET /loads — item catalog
+    // growth is much slower, but no reason to leave the same trap armed.
+    const buildQuery = () => {
+      let q = supabase.from('lp_inventory_items').select('*', { count: 'exact' }).order('item_code');
+      // Non-workshop users only see ACTIVE items
+      if (![ROLES.ADMIN, ROLES.WORKSHOP_MANAGER, ROLES.WORKSHOP_ASSISTANT, ROLES.STOCK_CONTROLLER].includes(role)) {
+        q = q.eq('status', 'ACTIVE');
+      }
+      return q;
+    };
+    try {
+      const { rows } = await fetchChunked(buildQuery, 0, Number.MAX_SAFE_INTEGER);
+      res.json(rows);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
     }
-    const { data, error } = await query;
-    if (error) return res.status(500).json({ error: error.message });
-    res.json(data);
   }
 );
 
@@ -348,32 +358,43 @@ router.get('/po',
               ROLES.STOCK_CONTROLLER, ROLES.WORKSHOP),
   async (req, res) => {
     const { status, vehicle_code, supplier_code } = req.query;
-    let query = supabase
-      .from('lp_purchase_orders')
-      .select(`
-        po_id, po_number, supplier_code, supplier_name,
-        allocation_type, vehicle_code, vehicle_name,
-        po_description, subtotal_excl_vat, vat_amount, total_incl_vat,
-        status, is_capital, attachment_filename, onedrive_url, onedrive_offloaded,
-        created_by, created_at, submitted_at,
-        l1_approver, l1_approved_at, l2_approver, l2_approved_at,
-        l3_approver, l3_approved_at, financial_approver, financial_approved_at,
-        rejected_by, rejection_reason, rejection_stage
-      `)
-      .order('created_at', { ascending: false });
 
-    if (status)       query = query.eq('status', status);
-    if (vehicle_code) query = query.eq('vehicle_code', vehicle_code);
-    if (supplier_code) query = query.eq('supplier_code', supplier_code);
+    // Chunk-fetched (lib/supabasePaging) as a preemptive guard against the
+    // same Supabase max-rows truncation that bit GET /loads — PO volume
+    // grows much slower, but no reason to leave the same trap armed.
+    const buildQuery = () => {
+      let q = supabase
+        .from('lp_purchase_orders')
+        .select(`
+          po_id, po_number, supplier_code, supplier_name,
+          allocation_type, vehicle_code, vehicle_name,
+          po_description, subtotal_excl_vat, vat_amount, total_incl_vat,
+          status, is_capital, attachment_filename, onedrive_url, onedrive_offloaded,
+          created_by, created_at, submitted_at,
+          l1_approver, l1_approved_at, l2_approver, l2_approved_at,
+          l3_approver, l3_approved_at, financial_approver, financial_approved_at,
+          rejected_by, rejection_reason, rejection_stage
+        `, { count: 'exact' })
+        .order('created_at', { ascending: false })
+        .order('po_id', { ascending: false });
 
-    // Control Room only sees their own POs
-    if (req.user.role === ROLES.CONTROL_ROOM) {
-      query = query.eq('created_by', req.user.username);
+      if (status)        q = q.eq('status', status);
+      if (vehicle_code)  q = q.eq('vehicle_code', vehicle_code);
+      if (supplier_code) q = q.eq('supplier_code', supplier_code);
+
+      // Control Room only sees their own POs
+      if (req.user.role === ROLES.CONTROL_ROOM) {
+        q = q.eq('created_by', req.user.username);
+      }
+      return q;
+    };
+
+    try {
+      const { rows } = await fetchChunked(buildQuery, 0, Number.MAX_SAFE_INTEGER);
+      res.json(rows);
+    } catch (error) {
+      res.status(500).json({ error: error.message });
     }
-
-    const { data, error } = await query;
-    if (error) return res.status(500).json({ error: error.message });
-    res.json(data);
   }
 );
 
