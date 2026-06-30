@@ -1858,7 +1858,7 @@ export default function Loads({ viewMode = 'standard' } = {}) {
         <div className="stat-card"><div className="stat-label">Active Loads</div><div className="stat-value">{stats.active ?? '—'}</div></div>
         <div className="stat-card"><div className="stat-label">En Route</div><div className="stat-value" style={{ color: '#00AEEF' }}>{stats.en_route ?? '—'}</div></div>
         <div className="stat-card"><div className="stat-label">Awaiting Approval</div><div className="stat-value" style={{ color: '#d97706' }}>{stats.wait_approval ?? '—'}</div></div>
-        <div className="stat-card"><div className="stat-label">Invoiced Value</div><div className="stat-value" style={{ fontSize: 18 }}>{fmtR(stats.total_value)}</div></div>
+        <div className="stat-card"><div className="stat-label">Invoiced Value</div><div className="stat-value" style={{ fontSize: 18 }}>{fmtR(stats.invoiced_value)}</div></div>
       </div>
 
       <div className="filter-bar">

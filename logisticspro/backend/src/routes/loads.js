@@ -151,13 +151,21 @@ router.get('/stats/summary', requirePermission('LOADS', 'view'), async (req, res
     // LOAD_INVOICED or REJECTED).
     const { rows: data } = await fetchChunked(buildQuery, 0, Number.MAX_SAFE_INTEGER);
 
+    const invoicedRows = data.filter(r => r.m_status === 'LOAD_INVOICED');
+
     res.json({
-      total:         data.length,
-      active:        data.filter(r => !['LOAD_INVOICED', 'REJECTED'].includes(r.m_status)).length,
-      en_route:      data.filter(r => r.m_status === 'EN_ROUTE').length,
-      wait_approval: data.filter(r => r.m_status === 'WAIT_APPROVAL').length,
-      invoiced:      data.filter(r => r.m_status === 'LOAD_INVOICED').length,
-      total_value:   data.reduce((s, r) => s + Number(r.m_rate || 0), 0),
+      total:          data.length,
+      active:         data.filter(r => !['LOAD_INVOICED', 'REJECTED'].includes(r.m_status)).length,
+      en_route:       data.filter(r => r.m_status === 'EN_ROUTE').length,
+      wait_approval:  data.filter(r => r.m_status === 'WAIT_APPROVAL').length,
+      invoiced:       invoicedRows.length,
+      // NOTE: this used to sum m_rate across ALL non-deleted loads (every
+      // historic load ever recorded, ~31k rows) and the frontend displayed
+      // it as "Invoiced Value" — wildly overstated. Now correctly sums only
+      // LOAD_INVOICED rows, using m_load_total (the actual amount an
+      // invoice is generated from — see POST /api/invoices) falling back
+      // to m_rate for older rows that predate m_load_total being populated.
+      invoiced_value: invoicedRows.reduce((s, r) => s + Number(r.m_load_total || r.m_rate || 0), 0),
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
