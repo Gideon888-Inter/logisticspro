@@ -509,7 +509,12 @@ function NewLoadModal({ onClose, onCreated }) {
                     }
                   }} style={inputStyle} disabled={form.m_trailer_size === 'None'}>
                 <option value="">— Select trailer —</option>
-                {trailers.map(v => (
+                {/* 18m loads can only start from a designated front-link trailer — an
+                    18m combo is, by definition, a pre-configured front+rear pair, so
+                    showing standalone trailers here would let someone build a load
+                    around two trailers that were never actually linked. See
+                    Trailer 2 below, which is now always auto-resolved from this. */}
+                {(form.m_trailer_size === '18m' ? trailers.filter(v => v.vh_is_link === 'Y' && v.vh_link_pair) : trailers).map(v => (
                   <option key={v.vh_code} value={v.vh_code}>
                     {v.vh_code} — {v.vh_make} {v.vh_model}{v.vh_is_link === 'Y' && v.vh_link_pair ? ' 🔗' : ''}
                   </option>
@@ -531,17 +536,21 @@ function NewLoadModal({ onClose, onCreated }) {
                       Trailer 2 *{' '}
                       {isLinked
                         ? <span style={{ color: '#7c3aed', fontWeight: 600 }}>🔗 Auto-linked with {form.m_trailer1}</span>
-                        : <span style={{ color: '#00AEEF', fontWeight: 400, textTransform: 'none' }}>(18m requires 2 trailers)</span>
+                        : <span style={{ color: '#bbb', fontWeight: 400, textTransform: 'none' }}>(select Trailer 1 first — it determines the pair)</span>
                       }
                     </label>
-                    <select value={form.m_trailer2} onChange={e => set('m_trailer2', e.target.value)}
-                      style={{ ...inputStyle, background: isLinked ? '#f5f3ff' : undefined,
-                        border: isLinked ? '1px solid #7c3aed66' : undefined }}
-                      disabled={!!isLinked}>
-                      <option value="">— Select second trailer —</option>
-                      {trailers.filter(v => v.vh_code !== form.m_trailer1).map(v => (
-                        <option key={v.vh_code} value={v.vh_code}>{v.vh_code} — {v.vh_make} {v.vh_model}</option>
-                      ))}
+                    {/* Always locked — Trailer 1's dropdown above is already
+                        restricted to front-link trailers, so the only valid
+                        Trailer 2 is whatever it's actually paired with. No
+                        independent selection here, which is what previously
+                        let any unlinked trailer be picked as Trailer 2. */}
+                    <select value={form.m_trailer2} onChange={() => {}}
+                      style={{ ...inputStyle, background: '#f5f3ff', border: '1px solid #7c3aed66' }}
+                      disabled>
+                      <option value="">— Select Trailer 1 first —</option>
+                      {isLinked && (
+                        <option value={t1.vh_link_pair}>{t1.vh_link_pair}</option>
+                      )}
                     </select>
                     {isLinked && (
                       <div style={{ fontSize: 11, color: '#7c3aed', marginTop: 4 }}>
@@ -1265,14 +1274,20 @@ function ExpandedRow({ load, onRefresh, onCostUpdate, asCard = false }) {
                             setAssignForm(f => ({
                               ...f,
                               m_trailer1: code,
-                              m_trailer2: linked ? v.vh_link_pair : f.m_trailer2,
+                              m_trailer2: linked ? v.vh_link_pair : (assignForm.m_trailer_size === '18m' ? '' : f.m_trailer2),
                             }));
                           }}
                           style={{ width: '100%', padding: '7px 8px', fontSize: 13, border: '1px solid #ddd', borderRadius: 4, fontFamily: 'inherit' }}>
                           <option value="">— None —</option>
-                          {assignVehicles.filter(v => v.vh_type === 'Trailer').map(v => (
-                            <option key={v.vh_code} value={v.vh_code}>{v.vh_code}{v.vh_is_link === 'Y' && v.vh_link_pair ? ' 🔗' : ''}</option>
-                          ))}
+                          {/* Same restriction as the new-load form: 18m can only start
+                              from a designated front-link trailer, since the pair is
+                              pre-configured, not assembled freely. */}
+                          {assignVehicles
+                            .filter(v => v.vh_type === 'Trailer')
+                            .filter(v => assignForm.m_trailer_size !== '18m' || (v.vh_is_link === 'Y' && v.vh_link_pair))
+                            .map(v => (
+                              <option key={v.vh_code} value={v.vh_code}>{v.vh_code}{v.vh_is_link === 'Y' && v.vh_link_pair ? ' 🔗' : ''}</option>
+                            ))}
                         </select>
                       </div>
                     )}
@@ -1284,20 +1299,27 @@ function ExpandedRow({ load, onRefresh, onCostUpdate, asCard = false }) {
                           const t1 = assignVehicles.find(v => v.vh_code === assignForm.m_trailer1);
                           const isLinked = t1?.vh_is_link === 'Y' && t1?.vh_link_pair;
                           return (
+                            <>
+                            {/* Always locked — Trailer 1 above is already restricted to
+                                front-link trailers, so this can only ever be its actual
+                                paired rear trailer, never an independent choice. */}
                             <select
                               value={assignForm.m_trailer2}
-                              onChange={e => setAssignForm(f => ({ ...f, m_trailer2: e.target.value }))}
-                              disabled={!!isLinked}
+                              onChange={() => {}}
+                              disabled
                               style={{
                                 width: '100%', padding: '7px 8px', fontSize: 13, borderRadius: 4, fontFamily: 'inherit',
-                                border: isLinked ? '1px solid #7c3aed66' : '1px solid #ddd',
-                                background: isLinked ? '#f5f3ff' : 'white',
+                                border: '1px solid #7c3aed66', background: '#f5f3ff',
                               }}>
-                              <option value="">— None —</option>
-                              {assignVehicles.filter(v => v.vh_type === 'Trailer' && v.vh_code !== assignForm.m_trailer1).map(v => (
-                                <option key={v.vh_code} value={v.vh_code}>{v.vh_code}</option>
-                              ))}
+                              <option value="">— Select Trailer 1 first —</option>
+                              {isLinked && <option value={t1.vh_link_pair}>{t1.vh_link_pair}</option>}
                             </select>
+                            {isLinked && (
+                              <div style={{ fontSize: 11, color: '#7c3aed', marginTop: 4 }}>
+                                🔗 Locked — travels with {assignForm.m_trailer1}
+                              </div>
+                            )}
+                            </>
                           );
                         })()}
                       </div>
