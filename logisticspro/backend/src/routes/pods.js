@@ -1,9 +1,10 @@
 const express = require('express');
 const supabase = require('../supabase');
-const { authMiddleware, requireRole, CAN_VIEW_LOADS, CAN_MARK_POD } = require('../middleware/auth');
+const { authMiddleware, loadUserPermissions, requirePermission } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(authMiddleware);
+router.use(loadUserPermissions);
 
 // Roles that can mark a POD as received
 
@@ -21,7 +22,7 @@ function sharepointLink(loadNo) {
 // NOTE: Must be registered BEFORE /:loadNo routes to avoid
 //       Express treating "pending" as a loadNo parameter.
 // ============================================================
-router.get('/pending', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
+router.get('/pending', requirePermission('PODS', 'view'), async (req, res) => {
   const { bus_unit } = req.query;
 
   let q = supabase
@@ -49,7 +50,7 @@ router.get('/pending', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
 // Loads that have been marked as POD received (m_pod_received = true).
 // NOTE: Must be registered BEFORE /:loadNo routes.
 // ============================================================
-router.get('/received', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
+router.get('/received', requirePermission('PODS', 'view'), async (req, res) => {
   const { bus_unit, search } = req.query;
 
   let q = supabase
@@ -81,7 +82,7 @@ router.get('/received', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
 // or a future direct SharePoint API call). If found, advances the status
 // automatically to WAIT_APPROVAL and returns the SharePoint link.
 // ============================================================
-router.get('/:loadNo/check', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
+router.get('/:loadNo/check', requirePermission('PODS', 'view'), async (req, res) => {
   const { loadNo } = req.params;
 
   try {
@@ -117,7 +118,7 @@ router.get('/:loadNo/check', requireRole(...CAN_VIEW_LOADS), async (req, res) =>
 // the load status from WAIT_POD_SCAN -> WAIT_APPROVAL.
 // No file is uploaded. The POD lives in SharePoint.
 // ============================================================
-router.post('/:loadNo/mark-received', requireRole(...CAN_MARK_POD), async (req, res) => {
+router.post('/:loadNo/mark-received', requirePermission('PODS', 'edit'), async (req, res) => {
   const { loadNo } = req.params;
 
   try {
