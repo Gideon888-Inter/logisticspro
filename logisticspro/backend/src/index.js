@@ -18,6 +18,7 @@ const stockRouter    = require('./routes/inventory');    // LP2.0 Inventory & PO
 const rolesRouter    = require('./routes/roles_admin');  // LP2.0 Role Manager
 const financeRouter  = require('./routes/finance');       // LP2.0 Financial Module
 const trackingRouter = require('./routes/tracking');      // LP2.0 Pulsit GPS tracking integration
+const trackingIngestRouter = require('./routes/tracking-ingest'); // LP2.0 scheduled Pulsit history ingestion (shared-secret auth, not JWT)
 const addressesRouter = require('./routes/addresses');     // LP2.0 Named addresses / home bases
 const stopsRouter     = require('./routes/stops');         // LP2.0 Load card extra stops
 
@@ -58,6 +59,7 @@ app.use('/api/maintenance', maintenanceRouter);
 app.use('/api/stock',       stockRouter);       // LP2.0 Inventory & Purchase Orders module
 app.use('/api/roles',       rolesRouter);       // LP2.0 Role Manager (Admin only)
 app.use('/api/fin',         financeRouter);    // LP2.0 Financial Module
+app.use('/api/tracking',    trackingIngestRouter);  // POST /ingest-snapshot — shared-secret auth, no JWT
 app.use('/api/tracking',    trackingRouter);    // LP2.0 Pulsit GPS tracking integration
 app.use('/api/rates',       clientRatesRouter);
 app.use('/api/users',       usersRouter);
