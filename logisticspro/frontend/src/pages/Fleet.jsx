@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../lib/AuthContext';
 import { api } from '../lib/api';
 import Loads from './Loads';
@@ -903,16 +903,132 @@ function FleetList({ focusServiceDue }) {
 
 
 // ════════════════════════════════════════════════════════════════════════════
-// Live Location tab — vehicle list (Horse/Trailer) + map placeholder.
-// Wire in the tracking-company API feed here once available: poll/subscribe
-// for {vh_code -> {lat, lng, heading, speed, last_update}} and plot markers.
+// Live Location tab — vehicle list (Horse/Trailer) + live Pulsit GPS map.
+// Polls /api/tracking/positions every 20s and plots markers via Leaflet.
+// Matches vehicles to positions on vh_registration (falls back to vh_code).
 // ════════════════════════════════════════════════════════════════════════════
+const POSITION_POLL_MS = 20000;
+
+function fmtRelativeTime(iso) {
+  if (!iso) return null;
+  const diffMs = Date.now() - new Date(iso).getTime();
+  if (isNaN(diffMs)) return null;
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return new Date(iso).toLocaleString('en-ZA', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+
+// ── Leaflet map, kept imperative (no react-leaflet dependency) ─────────────
+function TrackingMap({ vehicles, positions, selectedCode, onSelectVehicle }) {
+  const mapElRef = useRef(null);
+  const mapRef = useRef(null);
+  const markersRef = useRef({});
+  const leafletRef = useRef(null);
+
+  // Init map once
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const L = (await import('leaflet')).default;
+      await import('leaflet/dist/leaflet.css');
+      if (cancelled || mapRef.current) return;
+      leafletRef.current = L;
+      mapRef.current = L.map(mapElRef.current).setView([-33.9249, 18.4241], 6); // Cape Town fallback
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors',
+        maxZoom: 19,
+      }).addTo(mapRef.current);
+    })();
+    return () => {
+      cancelled = true;
+      mapRef.current?.remove();
+      mapRef.current = null;
+    };
+  }, []);
+
+  // Plot / update markers whenever positions change
+  useEffect(() => {
+    const L = leafletRef.current;
+    const map = mapRef.current;
+    if (!L || !map) return;
+
+    const seen = new Set();
+    let firstFit = !markersRef.current.__fitted;
+
+    positions.forEach(p => {
+      if (p.lat == null || p.lng == null) return;
+      const vehicle = vehicles.find(v => v.vh_registration === p.regNo || v.vh_code === p.regNo);
+      const code = vehicle?.vh_code || p.regNo;
+      seen.add(code);
+      const isSelected = code === selectedCode;
+
+      const icon = L.divIcon({
+        className: '',
+        html: `<div style="
+          background:${isSelected ? '#005A8E' : '#0ea5e9'}; color:white;
+          padding:4px 9px; border-radius:6px; font-size:11px; font-weight:700;
+          white-space:nowrap; box-shadow:0 2px 6px rgba(0,0,0,0.35);
+          transform: translate(-50%, -120%); font-family: monospace;
+        ">${code}</div>`,
+        iconSize: [0, 0],
+      });
+
+      if (markersRef.current[code]) {
+        markersRef.current[code].setLatLng([p.lat, p.lng]);
+        markersRef.current[code].setIcon(icon);
+      } else {
+        const marker = L.marker([p.lat, p.lng], { icon }).addTo(map);
+        marker.on('click', () => onSelectVehicle?.(vehicle || { vh_code: code }));
+        markersRef.current[code] = marker;
+      }
+    });
+
+    // Drop markers for vehicles no longer in the feed
+    Object.keys(markersRef.current).forEach(code => {
+      if (code === '__fitted') return;
+      if (!seen.has(code)) {
+        map.removeLayer(markersRef.current[code]);
+        delete markersRef.current[code];
+      }
+    });
+
+    // Fit bounds once, on first data load
+    if (firstFit && positions.length > 0) {
+      const pts = positions.filter(p => p.lat != null && p.lng != null).map(p => [p.lat, p.lng]);
+      if (pts.length > 0) {
+        map.fitBounds(pts, { padding: [40, 40], maxZoom: 12 });
+        markersRef.current.__fitted = true;
+      }
+    }
+  }, [positions, vehicles, selectedCode, onSelectVehicle]);
+
+  // Pan to selected vehicle
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !selectedCode) return;
+    const marker = markersRef.current[selectedCode];
+    if (marker) map.panTo(marker.getLatLng());
+  }, [selectedCode]);
+
+  return <div ref={mapElRef} style={{ width: '100%', height: '100%', minHeight: 400, borderRadius: 8 }} />;
+}
+
 function LiveLocation() {
+  const { user } = useAuth();
   const [vehicles, setVehicles] = useState([]);
   const [loading, setLoading]   = useState(true);
   const [typeFilter, setTypeFilter] = useState('all'); // all | Horse | Trailer
   const [search, setSearch]     = useState('');
   const [selected, setSelected] = useState(null);
+  const [positions, setPositions] = useState([]);
+  const [posError, setPosError] = useState(null);
+  const [posLoading, setPosLoading] = useState(true);
+  const [debugOpen, setDebugOpen] = useState(false);
+  const [debugData, setDebugData] = useState(null);
+  const [debugLoading, setDebugLoading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -923,7 +1039,38 @@ function LiveLocation() {
     finally { setLoading(false); }
   }, []);
 
+  const loadPositions = useCallback(async () => {
+    try {
+      const r = await api.getTrackingPositions();
+      setPositions(Array.isArray(r) ? r : []);
+      setPosError(null);
+    } catch (e) {
+      setPosError(e.message || 'Could not reach tracking service');
+    } finally {
+      setPosLoading(false);
+    }
+  }, []);
+
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    loadPositions();
+    const id = setInterval(loadPositions, POSITION_POLL_MS);
+    return () => clearInterval(id);
+  }, [loadPositions]);
+
+  const runDebug = async () => {
+    setDebugOpen(true);
+    setDebugLoading(true);
+    try {
+      const r = await api.getTrackingDebug();
+      setDebugData(r);
+    } catch (e) {
+      setDebugData({ error: e.message });
+    } finally {
+      setDebugLoading(false);
+    }
+  };
 
   const filtered = vehicles.filter(v => {
     const matchesType = typeFilter === 'all' || v.vh_type === typeFilter;
@@ -935,64 +1082,130 @@ function LiveLocation() {
     return matchesType && matchesSearch;
   });
 
-  return (
-    <div style={{ display: 'flex', gap: 16, alignItems: 'stretch' }} className="live-location-layout">
-      {/* ── Vehicle list ── */}
-      <div style={{ width: 300, flexShrink: 0, background: 'white', border: '1px solid #e8edf2',
-        borderRadius: 8, display: 'flex', flexDirection: 'column', maxHeight: 640 }}>
-        <div style={{ padding: 10, borderBottom: '1px solid #e8edf2' }}>
-          <input placeholder="Search vehicles…" value={search} onChange={e => setSearch(e.target.value)}
-            style={{ width: '100%', padding: '7px 10px', fontSize: 13, border: '1px solid #ddd',
-              borderRadius: 6, outline: 'none', marginBottom: 8 }} />
-          <div style={{ display: 'flex', gap: 6 }}>
-            {[['all', 'All'], ['Horse', 'Horses'], ['Trailer', 'Trailers']].map(([key, label]) => (
-              <button key={key} onClick={() => setTypeFilter(key)} style={{
-                flex: 1, padding: '6px 4px', fontSize: 11, fontWeight: typeFilter === key ? 700 : 400,
-                border: '1px solid #ddd', borderRadius: 6, cursor: 'pointer',
-                background: typeFilter === key ? '#005A8E' : 'white',
-                color: typeFilter === key ? 'white' : '#555',
-              }}>{label}</button>
-            ))}
-          </div>
-        </div>
-        <div style={{ overflowY: 'auto', flex: 1 }}>
-          {loading && <div style={{ padding: 16, fontSize: 13, color: '#888' }}>Loading vehicles…</div>}
-          {!loading && filtered.length === 0 && (
-            <div style={{ padding: 16, fontSize: 13, color: '#888' }}>No vehicles match.</div>
-          )}
-          {filtered.map(v => (
-            <div key={v.vh_code} onClick={() => setSelected(v)} style={{
-              padding: '10px 12px', borderBottom: '1px solid #f0f2f5', cursor: 'pointer',
-              background: selected?.vh_code === v.vh_code ? '#eef6fb' : 'white',
-            }}>
-              <div style={{ fontWeight: 700, fontSize: 13, fontFamily: 'monospace' }}>{v.vh_code}</div>
-              <div style={{ fontSize: 11, color: '#888' }}>
-                {v.vh_type} · {[v.vh_make, v.vh_model].filter(Boolean).join(' ') || '—'}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+  const positionFor = (v) => positions.find(p => p.regNo === v?.vh_registration || p.regNo === v?.vh_code);
+  const selectedPosition = positionFor(selected);
 
-      {/* ── Map placeholder ── */}
-      <div style={{ flex: 1, background: '#eef1f4', border: '1px solid #e8edf2', borderRadius: 8,
-        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-        minHeight: 400, padding: 24, textAlign: 'center' }}>
-        <div style={{ fontSize: 40, marginBottom: 12 }}>🛰️</div>
-        <div style={{ fontSize: 15, fontWeight: 700, color: '#444', marginBottom: 6 }}>
-          Live tracking not yet connected
+  return (
+    <div>
+      {user?.role === 'ADMIN' && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+          <button onClick={runDebug} style={{
+            fontSize: 11, padding: '5px 10px', border: '1px solid #ddd', borderRadius: 6,
+            background: 'white', color: '#888', cursor: 'pointer',
+          }}>🔧 Debug tracking API</button>
         </div>
-        <div style={{ fontSize: 13, color: '#888', maxWidth: 360, marginBottom: 14 }}>
-          Once the tracking company's API is connected, vehicle positions will plot here in real time.
-        </div>
-        {selected && (
-          <div style={{ background: 'white', border: '1px solid #e8edf2', borderRadius: 8,
-            padding: '10px 16px', fontSize: 13 }}>
-            <div style={{ fontWeight: 700, fontFamily: 'monospace' }}>{selected.vh_code}</div>
-            <div style={{ color: '#888' }}>{selected.vh_type} · {[selected.vh_make, selected.vh_model].filter(Boolean).join(' ') || '—'}</div>
-            <div style={{ color: '#aaa', marginTop: 4 }}>Position: awaiting tracking integration</div>
+      )}
+
+      {debugOpen && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+          onClick={() => setDebugOpen(false)}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: 'white', borderRadius: 8, maxWidth: 800, width: '100%',
+            maxHeight: '80vh', overflow: 'auto', padding: 20,
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
+              <strong>Pulsit tracking debug</strong>
+              <button onClick={() => setDebugOpen(false)} style={{ border: 'none', background: 'none', cursor: 'pointer', fontSize: 16 }}>✕</button>
+            </div>
+            {debugLoading
+              ? <div style={{ fontSize: 13, color: '#888' }}>Calling Pulsit…</div>
+              : <pre style={{ fontSize: 11, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{JSON.stringify(debugData, null, 2)}</pre>}
           </div>
-        )}
+        </div>
+      )}
+
+      {posError && (
+        <div style={{ background: '#fff7ed', border: '1px solid #fcd9b8', color: '#c05621',
+          borderRadius: 8, padding: '8px 12px', fontSize: 12, marginBottom: 10 }}>
+          Tracking feed unavailable: {posError}
+          {user?.role === 'ADMIN' && ' — use Debug tracking API above to see why.'}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 16, alignItems: 'stretch' }} className="live-location-layout">
+        {/* ── Vehicle list ── */}
+        <div style={{ width: 300, flexShrink: 0, background: 'white', border: '1px solid #e8edf2',
+          borderRadius: 8, display: 'flex', flexDirection: 'column', maxHeight: 640 }}>
+          <div style={{ padding: 10, borderBottom: '1px solid #e8edf2' }}>
+            <input placeholder="Search vehicles…" value={search} onChange={e => setSearch(e.target.value)}
+              style={{ width: '100%', padding: '7px 10px', fontSize: 13, border: '1px solid #ddd',
+                borderRadius: 6, outline: 'none', marginBottom: 8 }} />
+            <div style={{ display: 'flex', gap: 6 }}>
+              {[['all', 'All'], ['Horse', 'Horses'], ['Trailer', 'Trailers']].map(([key, label]) => (
+                <button key={key} onClick={() => setTypeFilter(key)} style={{
+                  flex: 1, padding: '6px 4px', fontSize: 11, fontWeight: typeFilter === key ? 700 : 400,
+                  border: '1px solid #ddd', borderRadius: 6, cursor: 'pointer',
+                  background: typeFilter === key ? '#005A8E' : 'white',
+                  color: typeFilter === key ? 'white' : '#555',
+                }}>{label}</button>
+              ))}
+            </div>
+          </div>
+          <div style={{ overflowY: 'auto', flex: 1 }}>
+            {loading && <div style={{ padding: 16, fontSize: 13, color: '#888' }}>Loading vehicles…</div>}
+            {!loading && filtered.length === 0 && (
+              <div style={{ padding: 16, fontSize: 13, color: '#888' }}>No vehicles match.</div>
+            )}
+            {filtered.map(v => {
+              const pos = positionFor(v);
+              return (
+                <div key={v.vh_code} onClick={() => setSelected(v)} style={{
+                  padding: '10px 12px', borderBottom: '1px solid #f0f2f5', cursor: 'pointer',
+                  background: selected?.vh_code === v.vh_code ? '#eef6fb' : 'white',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
+                      background: pos ? '#10b981' : '#d1d5db' }} />
+                    <div style={{ fontWeight: 700, fontSize: 13, fontFamily: 'monospace' }}>{v.vh_code}</div>
+                  </div>
+                  <div style={{ fontSize: 11, color: '#888', marginLeft: 13 }}>
+                    {v.vh_type} · {[v.vh_make, v.vh_model].filter(Boolean).join(' ') || '—'}
+                  </div>
+                  {pos?.lastUpdate && (
+                    <div style={{ fontSize: 10, color: '#aaa', marginLeft: 13 }}>{fmtRelativeTime(pos.lastUpdate)}</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* ── Map ── */}
+        <div style={{ flex: 1, background: '#eef1f4', border: '1px solid #e8edf2', borderRadius: 8,
+          overflow: 'hidden', minHeight: 400, position: 'relative' }}>
+          {posLoading && positions.length === 0 ? (
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 24 }}>
+              <div style={{ fontSize: 40, marginBottom: 12 }}>🛰️</div>
+              <div style={{ fontSize: 13, color: '#888' }}>Connecting to tracking feed…</div>
+            </div>
+          ) : (
+            <TrackingMap
+              vehicles={vehicles}
+              positions={positions}
+              selectedCode={selected?.vh_code}
+              onSelectVehicle={setSelected}
+            />
+          )}
+
+          {selected && (
+            <div style={{ position: 'absolute', bottom: 14, left: 14, background: 'white',
+              border: '1px solid #e8edf2', borderRadius: 8, padding: '10px 16px', fontSize: 13,
+              boxShadow: '0 2px 10px rgba(0,0,0,0.12)', zIndex: 500 }}>
+              <div style={{ fontWeight: 700, fontFamily: 'monospace' }}>{selected.vh_code}</div>
+              <div style={{ color: '#888' }}>{selected.vh_type} · {[selected.vh_make, selected.vh_model].filter(Boolean).join(' ') || '—'}</div>
+              {selectedPosition ? (
+                <div style={{ color: '#555', marginTop: 4 }}>
+                  {selectedPosition.speed != null && <>{Math.round(selectedPosition.speed)} km/h · </>}
+                  {fmtRelativeTime(selectedPosition.lastUpdate) || 'position live'}
+                </div>
+              ) : (
+                <div style={{ color: '#aaa', marginTop: 4 }}>No live position for this vehicle</div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
