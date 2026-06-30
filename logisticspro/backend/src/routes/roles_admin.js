@@ -140,7 +140,51 @@ router.get('/:key', async (req, res) => {
     is_seeded:    isBuiltin || (permMap[mod.module_key] !== undefined),
   }));
 
-  res.json({ role: roleData, permissions: matrix });
+  // PO approval tier — separate from the module permission matrix, since it's
+  // a hierarchy/workflow concept (lp_po_approval_tiers), not a view/edit/delete/
+  // approve toggle per module. ADMIN is always tier 4 (lockout safeguard).
+  let poTier;
+  if (key === ROLES.ADMIN) {
+    poTier = { tier: 4, can_use_capital_po: true };
+  } else {
+    const { data: tierRow } = await supabase()
+      .from('lp_po_approval_tiers')
+      .select('tier, can_use_capital_po')
+      .eq('role_key', key)
+      .single();
+    poTier = tierRow || { tier: 0, can_use_capital_po: false };
+  }
+
+  res.json({ role: roleData, permissions: matrix, po_approval_tier: poTier });
+});
+
+// PATCH /roles/:key/po-approval-tier — set a role's PO approval hierarchy tier
+// tier: 0 (none) .. 4 (financial). ADMIN cannot be changed (always tier 4).
+router.patch('/:key/po-approval-tier', async (req, res) => {
+  const { key } = req.params;
+  if (key === ROLES.ADMIN) {
+    return res.status(400).json({ error: 'ADMIN always has tier 4 — this cannot be changed' });
+  }
+
+  const { tier, can_use_capital_po } = req.body;
+  if (![0, 1, 2, 3, 4].includes(tier)) {
+    return res.status(400).json({ error: 'tier must be an integer between 0 and 4' });
+  }
+
+  const { data, error } = await supabase()
+    .from('lp_po_approval_tiers')
+    .upsert({
+      role_key:           key,
+      tier,
+      can_use_capital_po: can_use_capital_po ?? false,
+      updated_by:         req.user.username,
+      updated_at:         new Date().toISOString(),
+    }, { onConflict: 'role_key' })
+    .select()
+    .single();
+
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data);
 });
 
 // POST /roles — create a new custom role
