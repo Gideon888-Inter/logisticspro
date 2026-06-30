@@ -131,16 +131,28 @@ router.get('/', requirePermission('LOADS', 'view'), async (req, res) => {
 // GET /api/loads/stats/summary
 // ============================================================
 router.get('/stats/summary', requirePermission('LOADS', 'view'), async (req, res) => {
+  // Same date_from/date_to the Loads page list already filters on (see
+  // GET / below) — without this, the tiles silently computed an all-time
+  // total across the ENTIRE table (years of Sage-imported history) while
+  // the list directly below them showed only the selected date range.
+  // That mismatch — not a calculation bug — was what produced numbers
+  // like "4954 Active Loads" / "R512m Invoiced Value" sitting above a
+  // list of 999 loads for the visible month. See
+  // database/migration_load_stats_date_scope.sql.
+  const { date_from, date_to } = req.query;
+
   // Prefers a single aggregate query computed in Postgres — see
-  // database/migration_load_stats_perf.sql. Falls back to the old
-  // chunked-fetch-and-reduce-in-JS approach only if that migration hasn't
-  // been run yet, so this degrades gracefully rather than breaking during
-  // rollout (same fallback pattern as getLatestLoadPerTruck in
-  // vehicles.js). The RPC path is the actual fix for "tile takes too long
-  // to load": lp_movement has ~31k historic rows, and pulling all of them
-  // on every page load (the old behaviour) was the real cause.
+  // database/migration_load_stats_perf.sql /
+  // migration_load_stats_date_scope.sql. Falls back to the old
+  // chunked-fetch-and-reduce-in-JS approach only if those migrations
+  // haven't been run yet, so this degrades gracefully rather than
+  // breaking during rollout (same fallback pattern as
+  // getLatestLoadPerTruck in vehicles.js).
   try {
-    const { data, error } = await supabase.rpc('get_load_stats');
+    const { data, error } = await supabase.rpc('get_load_stats', {
+      date_from: date_from || null,
+      date_to:   date_to   || null,
+    });
     if (error) throw error;
     const row = data?.[0];
     if (row) {
@@ -156,15 +168,20 @@ router.get('/stats/summary', requirePermission('LOADS', 'view'), async (req, res
   } catch (e) {
     console.error(
       '[loads/stats/summary] RPC unavailable, falling back to full table scan — ' +
-      'run database/migration_load_stats_perf.sql to fix this:', e.message
+      'run database/migration_load_stats_date_scope.sql to fix this:', e.message
     );
   }
 
-  const buildQuery = () => supabase
-    .from('lp_movement')
-    .select('m_status, m_load_total, m_rate', { count: 'exact' })
-    .neq('m_status', 'DELETED')
-    .order('m_load_no', { ascending: false });
+  const buildQuery = () => {
+    let q = supabase
+      .from('lp_movement')
+      .select('m_status, m_load_total, m_rate', { count: 'exact' })
+      .neq('m_status', 'DELETED')
+      .order('m_load_no', { ascending: false });
+    if (date_from) q = q.gte('m_date', date_from);
+    if (date_to)   q = q.lte('m_date', date_to);
+    return q;
+  };
 
   try {
     // No upper bound here (unlike GET /) — this needs every active load to
@@ -173,12 +190,12 @@ router.get('/stats/summary', requirePermission('LOADS', 'view'), async (req, res
     // max-rows cap — see fetchChunked for why a plain unranged select
     // silently truncates once the table grows past that cap.
     //
-    // NOTE: `total` here is every non-DELETED load ever recorded (full
-    // historic retention — easily tens of thousands for an established
-    // operation). It is NOT "active loads" — the frontend's "Active Loads"
-    // tile previously displayed this raw historic count by mistake. `active`
-    // below is the correct figure: anything still in the pipeline (not yet
-    // LOAD_INVOICED or REJECTED).
+    // NOTE: `total` here is every non-DELETED load matching the date range
+    // (full historic retention means that range can still be large for an
+    // established operation). It is NOT "active loads" — the frontend's
+    // "Active Loads" tile previously displayed this raw count by mistake.
+    // `active` below is the correct figure: anything still in the pipeline
+    // (not yet LOAD_INVOICED or REJECTED).
     const { rows: data } = await fetchChunked(buildQuery, 0, Number.MAX_SAFE_INTEGER);
 
     const invoicedRows = data.filter(r => r.m_status === 'LOAD_INVOICED');
@@ -192,9 +209,10 @@ router.get('/stats/summary', requirePermission('LOADS', 'view'), async (req, res
       // NOTE: this used to sum m_rate across ALL non-deleted loads (every
       // historic load ever recorded, ~31k rows) and the frontend displayed
       // it as "Invoiced Value" — wildly overstated. Now correctly sums only
-      // LOAD_INVOICED rows, using m_load_total (the actual amount an
-      // invoice is generated from — see POST /api/invoices) falling back
-      // to m_rate for older rows that predate m_load_total being populated.
+      // LOAD_INVOICED rows within the selected date range, using
+      // m_load_total (the actual amount an invoice is generated from —
+      // see POST /api/invoices) falling back to m_rate for older rows
+      // that predate m_load_total being populated.
       invoiced_value: invoicedRows.reduce((s, r) => s + Number(r.m_load_total || r.m_rate || 0), 0),
     });
   } catch (error) {
