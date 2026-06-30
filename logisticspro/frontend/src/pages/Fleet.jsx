@@ -3,6 +3,7 @@ import { useAuth } from '../lib/AuthContext';
 import { api } from '../lib/api';
 import { loadGoogleMaps, resetGoogleMapsLoader } from '../lib/googleMaps';
 import Loads from './Loads';
+import { canDebugTracking } from '../lib/roles';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 const SERVICE_WARN_KM = 5000;
@@ -244,8 +245,25 @@ function FleetList({ focusServiceDue }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await api.getVehicles({ active: 'all' });
-      setData(Array.isArray(r) ? r : []);
+      // getVehicles() is the master vehicle register (every vehicle, including
+      // trailers themselves); getFleetOverview() separately computes which
+      // trailer(s) are currently linked to each horse from its most recent
+      // load (see vehicles.js fleet-overview). Neither call alone has both
+      // pieces, so merge them here — this is what makes "linked trailers"
+      // show up on the Fleet List cards/table at all (previously they never
+      // did, since this component only ever fetched the plain vehicle list).
+      const [vehiclesRes, overviewRes] = await Promise.all([
+        api.getVehicles({ active: 'all' }),
+        api.getFleetOverview().catch(() => null), // non-fatal — list still works without it
+      ]);
+      const trailersByHorse = new Map(
+        (overviewRes?.vehicles || []).map(h => [h.vh_code, h.trailers || []])
+      );
+      const merged = (Array.isArray(vehiclesRes) ? vehiclesRes : []).map(v => ({
+        ...v,
+        linkedTrailers: trailersByHorse.get(v.vh_code) || [],
+      }));
+      setData(merged);
     } catch(e) { console.error(e); }
     finally { setLoading(false); }
   }, []);
@@ -332,6 +350,7 @@ function FleetList({ focusServiceDue }) {
       case 'vh_next_service': return Number(v.vh_next_service) || 0;
       case '_service_remaining': return (Number(v.vh_next_service)||0) - (Number(v.vh_odometer)||0);
       case '_wheel_remaining': return (Number(v.vh_next_wheel)||0) - (Number(v.vh_odometer)||0);
+      case '_linked_trailers': return (v.linkedTrailers || []).map(t => t.code).join(',').toLowerCase();
       case 'vh_cof_date': return v.vh_cof_date || 'zzzz';
       case 'vh_license_expiry': return v.vh_license_expiry || 'zzzz';
       default: return (v[col] || '').toString().toLowerCase();
@@ -354,7 +373,13 @@ function FleetList({ focusServiceDue }) {
       if (quickFilter === 'lic_expired'     && !(v.vh_license_expiry && new Date(v.vh_license_expiry) < today)) return false;
       if (quickFilter === 'lic_this_month'  && !(v.vh_license_expiry && new Date(v.vh_license_expiry) >= today && new Date(v.vh_license_expiry) <= monthEnd)) return false;
       return (!s || v.vh_code?.toLowerCase().includes(s) || v.vh_make?.toLowerCase().includes(s) ||
-              v.vh_registration?.toLowerCase().includes(s) || v.vh_model?.toLowerCase().includes(s))
+              v.vh_registration?.toLowerCase().includes(s) || v.vh_model?.toLowerCase().includes(s) ||
+              v.linkedTrailers?.some(t =>
+                t.code?.toLowerCase().includes(s) ||
+                t.registration?.toLowerCase().includes(s) ||
+                t.make?.toLowerCase().includes(s) ||
+                t.model?.toLowerCase().includes(s)
+              ))
         && (!typeFilter || v.vh_type === typeFilter)
         && (!activeFilter || v.vh_active === activeFilter);
     })
@@ -378,6 +403,7 @@ function FleetList({ focusServiceDue }) {
     { col: 'vh_year',          label: 'Year' },
     { col: 'make_model',       label: 'Make / Model' },
     { col: 'vh_registration',  label: 'Registration' },
+    { col: '_linked_trailers', label: 'Linked Trailer(s)' },
     { col: 'vh_odometer',      label: 'Odometer' },
     { col: '_service_remaining', label: 'Next Service' },
     { col: '_wheel_remaining', label: 'Next Alignment' },
@@ -492,6 +518,19 @@ function FleetList({ focusServiceDue }) {
                 </strong></div>
                 <div>COF: <strong>{v.vh_cof_date||'—'}</strong></div>
               </div>
+              {v.linkedTrailers?.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
+                  {v.linkedTrailers.map(t => (
+                    <span key={t.code} style={{
+                      fontSize: 10, fontFamily: 'monospace', padding: '1px 6px', borderRadius: 4,
+                      background: t.confirmed === true ? '#d1fae5' : t.confirmed === false ? '#fef3c7' : '#f1f5f9',
+                      color: t.confirmed === true ? '#065f46' : t.confirmed === false ? '#92400e' : '#64748b',
+                    }}>
+                      🔗 {t.code}{t.confirmed === true ? ' ✓' : t.confirmed === false ? ' ⚠' : ''}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           );
         })}
@@ -509,8 +548,8 @@ function FleetList({ focusServiceDue }) {
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={12}><div className="loading">Loading fleet…</div></td></tr>}
-            {!loading && filtered.length === 0 && <tr><td colSpan={12}><div className="empty-state">No vehicles found</div></td></tr>}
+            {loading && <tr><td colSpan={13}><div className="loading">Loading fleet…</div></td></tr>}
+            {!loading && filtered.length === 0 && <tr><td colSpan={13}><div className="empty-state">No vehicles found</div></td></tr>}
             {!loading && filtered.map(v => {
               const svcRemaining = (Number(v.vh_next_service)||0) - (Number(v.vh_odometer)||0);
               const whlRemaining = (Number(v.vh_next_wheel)||0) - (Number(v.vh_odometer)||0);
@@ -528,6 +567,21 @@ function FleetList({ focusServiceDue }) {
                   <td>{v.vh_year || '—'}</td>
                   <td>{[v.vh_make, v.vh_model].filter(Boolean).join(' ') || '—'}</td>
                   <td className="mono">{v.vh_registration || '—'}</td>
+                  <td>
+                    {v.linkedTrailers?.length > 0 ? (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                        {v.linkedTrailers.map(t => (
+                          <span key={t.code} title={[t.make, t.model].filter(Boolean).join(' ') || undefined} style={{
+                            fontSize: 10, fontFamily: 'monospace', padding: '1px 6px', borderRadius: 4,
+                            background: t.confirmed === true ? '#d1fae5' : t.confirmed === false ? '#fef3c7' : '#f1f5f9',
+                            color: t.confirmed === true ? '#065f46' : t.confirmed === false ? '#92400e' : '#64748b',
+                          }}>
+                            🔗 {t.code}{t.confirmed === true ? ' ✓' : t.confirmed === false ? ' ⚠' : ''}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (v.vh_type === 'Horse' ? <span style={{ color: '#bbb' }}>—</span> : null)}
+                  </td>
                   <td className="mono" style={{ fontWeight: 600 }}>
                     {v.vh_odometer ? Number(v.vh_odometer).toLocaleString() + ' km' : '—'}
                   </td>
@@ -1183,7 +1237,7 @@ function LiveLocation() {
 
   return (
     <div>
-      {user?.role === 'ADMIN' && (
+      {canDebugTracking(user) && (
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
           <button onClick={runDebug} style={{
             fontSize: 11, padding: '5px 10px', border: '1px solid #ddd', borderRadius: 6,
@@ -1215,7 +1269,7 @@ function LiveLocation() {
         <div style={{ background: '#fff7ed', border: '1px solid #fcd9b8', color: '#c05621',
           borderRadius: 8, padding: '8px 12px', fontSize: 12, marginBottom: 10 }}>
           Tracking feed unavailable: {posError}
-          {user?.role === 'ADMIN' && ' — use Debug tracking API above to see why.'}
+          {canDebugTracking(user) && ' — use Debug tracking API above to see why.'}
         </div>
       )}
 
@@ -1288,7 +1342,7 @@ function LiveLocation() {
           overflow: 'hidden', minHeight: 400, position: 'relative' }}>
           {sidebarCollapsed && (
             <button onClick={() => setSidebarCollapsed(false)} style={{
-              position: 'absolute', top: 12, left: 12, zIndex: 600,
+              position: 'absolute', top: 12, left: 12, zIndex: 30,
               background: 'white', border: '1px solid #e8edf2', borderRadius: 8,
               padding: '8px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', color: '#005A8E',
               boxShadow: '0 2px 10px rgba(0,0,0,0.15)',
@@ -1312,7 +1366,7 @@ function LiveLocation() {
           {selected && (
             <div style={{ position: 'absolute', bottom: 14, left: 14, background: 'white',
               border: '1px solid #e8edf2', borderRadius: 8, padding: '10px 16px', fontSize: 13,
-              boxShadow: '0 2px 10px rgba(0,0,0,0.12)', zIndex: 500 }}>
+              boxShadow: '0 2px 10px rgba(0,0,0,0.12)', zIndex: 20 }}>
               <div style={{ fontWeight: 700, fontFamily: 'monospace' }}>{selected.vh_code}</div>
               <div style={{ color: '#888' }}>{selected.vh_type} · {[selected.vh_make, selected.vh_model].filter(Boolean).join(' ') || '—'}</div>
               {selectedPosition ? (
