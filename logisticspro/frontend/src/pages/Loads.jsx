@@ -808,6 +808,7 @@ function ExpandedRow({ load, onRefresh, onCostUpdate, asCard = false }) {
   const [statusSaving, setStatusSaving] = useState(false);
   const [podLink, setPodLink] = useState(load.m_pod_sharepoint_url || null);
   const [podChecking, setPodChecking] = useState(false);
+  const [invoiceLink, setInvoiceLink] = useState(null);
   const [showComments, setShowComments] = useState(false);  // mobile: collapsed by default
 
   // ── Assignment edit (driver / horse / trailer) ─────────────
@@ -927,6 +928,19 @@ function ExpandedRow({ load, onRefresh, onCostUpdate, asCard = false }) {
     return () => { cancelled = true; clearInterval(interval); };
   }, [load.m_load_no, load.m_status]);
 
+  // Resolve the REAL SharePoint invoice link once the load is invoiced —
+  // see GET /loads/:loadNo/invoice-link for why this can't be guessed from
+  // the invoice number alone. Single fetch on reaching LOAD_INVOICED (no
+  // polling needed like POD, since the load doesn't transition again).
+  useEffect(() => {
+    if (load.m_status !== 'LOAD_INVOICED' || !load.m_invoice) return;
+    let cancelled = false;
+    api.getInvoiceLink(load.m_load_no)
+      .then(r => { if (!cancelled && r?.found) setInvoiceLink(r.sharepoint_url); })
+      .catch(() => {}); // silent — falls back to the folder listing link
+    return () => { cancelled = true; };
+  }, [load.m_load_no, load.m_status, load.m_invoice]);
+
   // Pre-fetch route KM for closing KM max calculation
   useEffect(() => {
     if (load.m_from && load.m_to && load.m_customer) {
@@ -1034,9 +1048,14 @@ function ExpandedRow({ load, onRefresh, onCostUpdate, asCard = false }) {
   const POD_PASSED_STATUSES = ['WAIT_APPROVAL', 'WAIT_RATE_CHECK', 'WAIT_INVOICE_NO', 'LOAD_INVOICED'];
   const hasPodPassed = POD_PASSED_STATUSES.includes(currentStatus);
   const sharepointPodUrl = `https://llamahosted.sharepoint.com/sites/Interland/Shared%20Documents/Forms/AllItems.aspx?id=%2Fsites%2FInterland%2FShared%20Documents%2FInterland%20Distribution%2FPODS%20New%2FA${load.m_load_no}&viewid=`;
-  const sharepointInvoiceUrl = load.m_invoice
-    ? `https://llamahosted.sharepoint.com/sites/Interland/Shared%20Documents/Interland%20Distribution/INVOICES/${encodeURIComponent(load.m_invoice)}?web=1`
-    : `https://llamahosted.sharepoint.com/sites/Interland/Shared%20Documents/Forms/AllItems.aspx?id=%2Fsites%2FInterland%2FShared%20Documents%2FInterland%20Distribution%2FINVOICES`;
+  // Fallback: the INVOICES folder listing itself (always resolves, even if
+  // we can't find/verify the specific file yet). The real, verified file
+  // link — when found — is fetched into invoiceLink state below; see the
+  // effect a few lines down. This mirrors the POD pattern (sharepointLink
+  // fallback + a verified check), since invoice files are uploaded to
+  // SharePoint manually and the invoice number alone isn't a reliable
+  // guess at the actual filename/extension.
+  const sharepointInvoiceFolderUrl = `https://llamahosted.sharepoint.com/sites/Interland/Shared%20Documents/Forms/AllItems.aspx?id=%2Fsites%2FInterland%2FShared%20Documents%2FInterland%20Distribution%2FINVOICES`;
 
   // Friendly next-step button labels
   const NEXT_LABELS = {
@@ -1122,10 +1141,13 @@ function ExpandedRow({ load, onRefresh, onCostUpdate, asCard = false }) {
             {currentStatus === 'LOAD_INVOICED' && (
               <div style={{ minWidth: 120 }}>
                 <div style={{ fontSize: 10, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>Invoice</div>
-                <a href={sharepointInvoiceUrl} target="_blank" rel="noopener noreferrer"
+                <a href={invoiceLink || sharepointInvoiceFolderUrl} target="_blank" rel="noopener noreferrer"
                   style={{ fontSize: 13, color: '#005A8E', textDecoration: 'underline', display: 'flex', alignItems: 'center', gap: 4 }}>
                   📄 {load.m_invoice || 'View Invoice'}
                 </a>
+                {!invoiceLink && load.m_invoice && (
+                  <div style={{ fontSize: 10, color: '#aaa', marginTop: 2 }}>Opens INVOICES folder — exact file not matched yet</div>
+                )}
               </div>
             )}
             {load.m_loading_address && cell('Loading Address', load.m_loading_address)}
