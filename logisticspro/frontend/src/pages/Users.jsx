@@ -538,32 +538,62 @@ export default function Users() {
 
       {/* ── APPROVALS TAB ── */}
       {tab === 'approvals' && (
-        <div className="table-wrap">
+        <>
           {pendingApprovals.length === 0 ? (
             <div className="empty-state" style={{ padding: 40 }}>No pending user approvals</div>
           ) : (
-            <table>
-              <thead>
-                <tr><th>Username</th><th>Name</th><th>Role</th><th>Requested By</th><th>Date</th><th>Action</th></tr>
-              </thead>
-              <tbody>
+            <>
+              {/* Mobile card list */}
+              <div className="mobile-card-list">
                 {pendingApprovals.map(a => (
-                  <tr key={a.id}>
-                    <td className="mono">{a.ua_username}</td>
-                    <td>{a.ua_name || '—'}</td>
-                    <td><span className={`badge ${ROLE_BADGE_COLORS[a.ua_role] || 'badge-gray'}`}>{ROLE_LABELS[a.ua_role] || a.ua_role}</span></td>
-                    <td>{a.ua_requested_by}</td>
-                    <td>{new Date(a.created_at).toLocaleDateString('en-ZA')}</td>
-                    <td style={{ display: 'flex', gap: 6 }}>
-                      <button className="btn btn-primary btn-sm" onClick={() => actionApproval(a.id, 'approve')}>Approve</button>
+                  <div key={a.id} className="data-card" style={{ cursor: 'default' }}>
+                    <div className="data-card-header">
+                      <div>
+                        <div className="data-card-title">{a.ua_username}</div>
+                        <div className="data-card-sub">{a.ua_name || '—'}</div>
+                      </div>
+                      <span className={`badge ${ROLE_BADGE_COLORS[a.ua_role] || 'badge-gray'}`}>{ROLE_LABELS[a.ua_role] || a.ua_role}</span>
+                    </div>
+                    <div className="data-card-meta">
+                      <div>Requested by: <strong>{a.ua_requested_by}</strong></div>
+                      <div>Date: <strong>{new Date(a.created_at).toLocaleDateString('en-ZA')}</strong></div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                      <button className="btn btn-primary btn-sm" style={{ flex: 1 }} onClick={() => actionApproval(a.id, 'approve')}>Approve</button>
                       <button className="btn btn-sm" style={{ color: '#e53e3e' }} onClick={() => setSelectedApproval(a)}>Reject</button>
-                    </td>
-                  </tr>
+                    </div>
+                  </div>
                 ))}
-              </tbody>
-            </table>
+              </div>
+
+              {/* Desktop table */}
+              <div className="desktop-table">
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr><th>Username</th><th>Name</th><th>Role</th><th>Requested By</th><th>Date</th><th>Action</th></tr>
+                  </thead>
+                  <tbody>
+                    {pendingApprovals.map(a => (
+                      <tr key={a.id}>
+                        <td className="mono">{a.ua_username}</td>
+                        <td>{a.ua_name || '—'}</td>
+                        <td><span className={`badge ${ROLE_BADGE_COLORS[a.ua_role] || 'badge-gray'}`}>{ROLE_LABELS[a.ua_role] || a.ua_role}</span></td>
+                        <td>{a.ua_requested_by}</td>
+                        <td>{new Date(a.created_at).toLocaleDateString('en-ZA')}</td>
+                        <td style={{ display: 'flex', gap: 6 }}>
+                          <button className="btn btn-primary btn-sm" onClick={() => actionApproval(a.id, 'approve')}>Approve</button>
+                          <button className="btn btn-sm" style={{ color: '#e53e3e' }} onClick={() => setSelectedApproval(a)}>Reject</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              </div>
+            </>
           )}
-        </div>
+        </>
       )}
 
       {/* ── ROLES TAB ── */}

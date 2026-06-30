@@ -137,37 +137,51 @@ router.get('/', requirePermission('WORKSHOP', 'view'), async (req, res) => {
   const { status, vehicle, page = 1, limit = 100 } = req.query;
   const offset = (page - 1) * limit;
 
-  let q = supabase
-    .from('lp_service_cards')
-    .select('*', { count: 'exact' })
-    .order('created_at', { ascending: false })
-    .range(offset, offset + Number(limit) - 1);
+  // Chunk-fetched — see lib/supabasePaging.js. ServiceCards.jsx requests
+  // limit=2000 to load its full board; without chunking this would hit the
+  // exact same silent-truncation bug as the Dashboard's "Total Loads" tile
+  // once service card count grows past Supabase's project max-rows cap.
+  const buildQuery = () => {
+    let q = supabase
+      .from('lp_service_cards')
+      .select('*', { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .order('sc_no', { ascending: false });
+    if (status)  q = q.eq('sc_status', status);
+    if (vehicle) q = q.eq('sc_vehicle', vehicle);
+    return q;
+  };
 
-  if (status)  q = q.eq('sc_status', status);
-  if (vehicle) q = q.eq('sc_vehicle', vehicle);
-
-  const { data, error, count } = await q;
-  if (error) return res.status(500).json({ error: error.message });
-  res.json({ data: data || [], total: count, page: Number(page), limit: Number(limit) });
+  try {
+    const { rows, count } = await fetchChunked(buildQuery, offset, Number(limit));
+    res.json({ data: rows, total: count, page: Number(page), limit: Number(limit) });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // ============================================================
 // GET /api/service/stats  ← MUST be before /:no
 // ============================================================
 router.get('/stats', requirePermission('WORKSHOP', 'view'), async (req, res) => {
-  const { data, error } = await supabase
+  const buildQuery = () => supabase
     .from('lp_service_cards')
-    .select('sc_status');
-  if (error) return res.status(500).json({ error: error.message });
+    .select('sc_status', { count: 'exact' })
+    .order('sc_no', { ascending: false });
 
-  res.json({
-    total:            data.length,
-    pending:          data.filter(r => r.sc_status === 'PENDING_SERVICE').length,
-    accepted:         data.filter(r => r.sc_status === 'SERVICE_ACCEPTED').length,
-    waiting_for_part: data.filter(r => r.sc_status === 'WAITING_FOR_PART').length,
-    complete:         data.filter(r => r.sc_status === 'COMPLETE').length,
-    rejected:         data.filter(r => r.sc_status === 'REJECTED').length,
-  });
+  try {
+    const { rows: data } = await fetchChunked(buildQuery, 0, Number.MAX_SAFE_INTEGER);
+    res.json({
+      total:            data.length,
+      pending:          data.filter(r => r.sc_status === 'PENDING_SERVICE').length,
+      accepted:         data.filter(r => r.sc_status === 'SERVICE_ACCEPTED').length,
+      waiting_for_part: data.filter(r => r.sc_status === 'WAITING_FOR_PART').length,
+      complete:         data.filter(r => r.sc_status === 'COMPLETE').length,
+      rejected:         data.filter(r => r.sc_status === 'REJECTED').length,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // ============================================================
@@ -375,11 +389,16 @@ router.post('/', requirePermission('WORKSHOP', 'edit'), async (req, res) => {
   }
 });
 
+// Fields that identify/originate a service card and must never change
+// after creation via the generic PATCH below (create a new card instead).
+const SERVICE_CARD_READ_ONLY = ['sc_no', 'sc_vehicle', 'sc_operator', 'sc_date'];
+
 // ============================================================
 // PATCH /api/service/:no — update status / notes
 // ============================================================
 router.patch('/:no', requirePermission('WORKSHOP', 'edit'), async (req, res) => {
   const updates = { ...req.body, updated_at: new Date().toISOString() };
+  SERVICE_CARD_READ_ONLY.forEach(f => delete updates[f]);
   const newStatus = updates.sc_status;
 
   // Guard: do not allow editing a completed service card
