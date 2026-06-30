@@ -27,10 +27,12 @@ router.get('/positions', requirePermission('FLEET', 'view'), async (req, res) =>
 });
 
 // ── GET /api/tracking/debug ──────────────────────────────────────────────────
-// Admin-only. Single Pulsit call (avoids tripping the rate limit) showing
-// both the raw response and our mapped/filtered result.
-router.get('/debug', async (req, res) => {
-  if (req.user?.role !== 'ADMIN') return res.status(403).json({ error: 'Admin only' });
+// Gated by the TRACKING_DEBUG permission (Admin-only by default, but DB-driven
+// like every other module — see middleware/auth.js — so it can be granted to
+// another role via User Roles without a code change. Single Pulsit call
+// (avoids tripping the rate limit) showing both the raw response and our
+// mapped/filtered result.
+router.get('/debug', requirePermission('TRACKING_DEBUG', 'view'), async (req, res) => {
   try {
     const list = await getPulsitVehicles(true);
     const mapped = list.map(mapVehicle).filter(p => (p.code || p.regNo) && p.lat != null && p.lng != null);
