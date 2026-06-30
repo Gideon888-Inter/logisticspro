@@ -58,6 +58,39 @@ const STATUS_BADGE = {
   KM_CORRECTION_NEEDED:  'badge-red',
 };
 
+// ── Movement view: short "current status" text + colour, derived from
+// the load's status + destination (no live GPS field exists yet) ──────────
+function movementStatusText(l) {
+  const to = l.m_to || '—';
+  switch (l.m_status) {
+    case 'PRELOAD':              return `Awaiting dispatch to ${to}`;
+    case 'EN_ROUTE':              return `En Route to ${to}`;
+    case 'OFFLOADED':             return `Arrived at ${to}`;
+    case 'WAIT_ORDER_NO':         return 'Awaiting Order Number';
+    case 'WAIT_POD_SCAN':         return 'Awaiting POD Scan';
+    case 'WAIT_APPROVAL':         return 'Awaiting Operator Approval';
+    case 'WAIT_RATE_CHECK':       return 'Awaiting Rate Check';
+    case 'WAIT_INVOICE_NO':       return 'Awaiting Invoice';
+    case 'LOAD_INVOICED':         return 'Invoiced';
+    case 'WAIT_PROCESSING':       return 'Processing';
+    case 'REJECTED':              return 'Rejected';
+    case 'PENDING_KM_APPROVAL':   return 'KM Pending Approval';
+    case 'KM_CORRECTION_NEEDED':  return 'KM Correction Needed';
+    default:                      return l.m_status?.replace(/_/g, ' ') || '—';
+  }
+}
+function movementStatusColor(l) {
+  const badgeClass = STATUS_BADGE[l.m_status] || 'badge-gray';
+  return {
+    'badge-gray':   '#374151',
+    'badge-blue':   '#1e40af',
+    'badge-green':  '#065f46',
+    'badge-amber':  '#92400e',
+    'badge-orange': '#9a3412',
+    'badge-red':    '#991b1b',
+  }[badgeClass] || '#374151';
+}
+
 // Statuses users can manually filter/view — KM system statuses are EXCLUDED
 // from the workflow buttons but INCLUDED in the filter dropdown
 const ALL_STATUSES = [
@@ -1475,7 +1508,9 @@ function PaginationBar({ page, total, limit, setPage }) {
 }
 
 // ── Main Loads Page ───────────────────────────────────────────
-export default function Loads() {
+// viewMode: 'standard' (default, full finance-oriented columns) or
+// 'movement' (fleet-ops oriented columns — used by Fleet > Movement tab).
+export default function Loads({ viewMode = 'standard' } = {}) {
   const [loads, setLoads] = useState([]);
   const [stats, setStats] = useState({});
   const [loading, setLoading] = useState(true);
@@ -1614,43 +1649,72 @@ export default function Loads() {
       <div className="table-wrap">
         <table>
           <thead>
-            <tr>
-              <th style={{ width: 32 }}></th>
-              <th>Load No</th><th>Date</th><th>Truck</th><th>Operator</th>
-              <th>Customer</th><th>From</th><th>To</th>
-              <th>Rate</th><th>Extra Costs</th><th>Total</th><th>Order No</th><th>Status</th>
-            </tr>
+            {viewMode === 'movement' ? (
+              <tr>
+                <th style={{ width: 32 }}></th>
+                <th>Vehicle</th><th>Client</th><th>#</th><th>Date</th>
+                <th>From</th><th>To</th><th>Status</th>
+              </tr>
+            ) : (
+              <tr>
+                <th style={{ width: 32 }}></th>
+                <th>Load No</th><th>Date</th><th>Truck</th><th>Operator</th>
+                <th>Customer</th><th>From</th><th>To</th>
+                <th>Rate</th><th>Extra Costs</th><th>Total</th><th>Order No</th><th>Status</th>
+              </tr>
+            )}
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={13}><div className="loading">Loading…</div></td></tr>}
-            {!loading && loads.length === 0 && <tr><td colSpan={13}><div className="empty-state">No loads found</div></td></tr>}
+            {loading && <tr><td colSpan={viewMode === 'movement' ? 8 : 13}><div className="loading">Loading…</div></td></tr>}
+            {!loading && loads.length === 0 && <tr><td colSpan={viewMode === 'movement' ? 8 : 13}><div className="empty-state">No loads found</div></td></tr>}
             {!loading && loads.map(l => {
               const extra = Number(loadCosts[l.m_load_no] || 0);
               const tot = Number(l.m_rate || 0) + extra;
               const isOpen = expandedRow === l.m_load_no;
+              const trailers = [l.m_trailer1, l.m_trailer2].filter(Boolean).join(', ');
               return (
                 <React.Fragment key={l.m_load_no}>
-                  <tr style={{ background: isOpen ? '#e8f4fd' : undefined, cursor: 'pointer' }}
-                    onClick={() => toggleRow(l.m_load_no)}>
-                    <td style={{ textAlign: 'center', color: '#00AEEF', fontWeight: 700, fontSize: 16 }}>
-                      {isOpen ? '▲' : '▼'}
-                    </td>
-                    <td className="mono" style={{ fontWeight: 600 }}>{l.m_load_no}</td>
-                    <td>{fmtDate(l.m_date)}</td>
-                    <td className="mono">{l.m_truck}</td>
-                    <td style={{ fontSize: 12, color: '#555' }}>{l.m_responsible_operator || l.m_operator || '—'}</td>
-                    <td>{l.m_customer}</td>
-                    <td>{l.m_from}</td>
-                    <td>{l.m_to}</td>
-                    <td className="mono">{fmtR(l.m_rate)}</td>
-                    <td className="mono" style={{ color: extra > 0 ? '#e53e3e' : '#aaa' }}>{extra > 0 ? fmtR(extra) : '—'}</td>
-                    <td className="mono" style={{ fontWeight: 600, color: '#005A8E' }}>{fmtR(tot)}</td>
-                    <td style={{ fontSize: 12, color: '#555' }}>
-                      {l.m_order_no_pending ? <span style={{ color: '#d97706' }}>⏳ </span> : ''}
-                      {l.m_order_no || '—'}
-                    </td>
-                    <td><span className={`badge ${STATUS_BADGE[l.m_status] || 'badge-gray'}`}>{l.m_status?.replace(/_/g, ' ')}</span></td>
-                  </tr>
+                  {viewMode === 'movement' ? (
+                    <tr style={{ background: isOpen ? '#e8f4fd' : undefined, cursor: 'pointer' }}
+                      onClick={() => toggleRow(l.m_load_no)}>
+                      <td style={{ textAlign: 'center', color: '#00AEEF', fontWeight: 700, fontSize: 16 }}>
+                        {isOpen ? '▲' : '▼'}
+                      </td>
+                      <td className="mono" style={{ fontWeight: 600 }}>
+                        {l.m_truck || '—'}{trailers && <span style={{ color: '#888', fontWeight: 400 }}> · {trailers}</span>}
+                      </td>
+                      <td>{l.m_customer}</td>
+                      <td className="mono">{l.m_load_no}</td>
+                      <td>{fmtDate(l.m_date)}</td>
+                      <td>{l.m_from}</td>
+                      <td>{l.m_to}</td>
+                      <td style={{ fontSize: 12, color: movementStatusColor(l), fontWeight: 600 }}>
+                        {movementStatusText(l)}
+                      </td>
+                    </tr>
+                  ) : (
+                    <tr style={{ background: isOpen ? '#e8f4fd' : undefined, cursor: 'pointer' }}
+                      onClick={() => toggleRow(l.m_load_no)}>
+                      <td style={{ textAlign: 'center', color: '#00AEEF', fontWeight: 700, fontSize: 16 }}>
+                        {isOpen ? '▲' : '▼'}
+                      </td>
+                      <td className="mono" style={{ fontWeight: 600 }}>{l.m_load_no}</td>
+                      <td>{fmtDate(l.m_date)}</td>
+                      <td className="mono">{l.m_truck}</td>
+                      <td style={{ fontSize: 12, color: '#555' }}>{l.m_responsible_operator || l.m_operator || '—'}</td>
+                      <td>{l.m_customer}</td>
+                      <td>{l.m_from}</td>
+                      <td>{l.m_to}</td>
+                      <td className="mono">{fmtR(l.m_rate)}</td>
+                      <td className="mono" style={{ color: extra > 0 ? '#e53e3e' : '#aaa' }}>{extra > 0 ? fmtR(extra) : '—'}</td>
+                      <td className="mono" style={{ fontWeight: 600, color: '#005A8E' }}>{fmtR(tot)}</td>
+                      <td style={{ fontSize: 12, color: '#555' }}>
+                        {l.m_order_no_pending ? <span style={{ color: '#d97706' }}>⏳ </span> : ''}
+                        {l.m_order_no || '—'}
+                      </td>
+                      <td><span className={`badge ${STATUS_BADGE[l.m_status] || 'badge-gray'}`}>{l.m_status?.replace(/_/g, ' ')}</span></td>
+                    </tr>
+                  )}
                   {isOpen && (
                     <ExpandedRow key={'exp-' + l.m_load_no} load={l} onRefresh={fetchLoads}
                       onCostUpdate={(id, total) => setLoadCosts(prev => ({ ...prev, [id]: total }))} />
