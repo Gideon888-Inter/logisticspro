@@ -7,10 +7,13 @@ const {
   CAN_CREATE_LOAD,
   CAN_DELETE_LOAD,
   CAN_ADD_COSTS,
+  loadUserPermissions,
+  requirePermission,
 } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(authMiddleware);
+router.use(loadUserPermissions);
 
 // ── Helpers ───────────────────────────────────────────────────
 
@@ -59,7 +62,7 @@ const ORDER_NO_LOCKED_STATUSES = [
 // ============================================================
 // GET /api/loads — list with filters
 // ============================================================
-router.get('/', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
+router.get('/', requirePermission('LOADS', 'view'), async (req, res) => {
   const {
     status, bus_unit, customer, truck,
     date_from, date_to, search,
@@ -107,7 +110,7 @@ router.get('/', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
 // ============================================================
 // GET /api/loads/stats/summary
 // ============================================================
-router.get('/stats/summary', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
+router.get('/stats/summary', requirePermission('LOADS', 'view'), async (req, res) => {
   const { bus_unit } = req.query;
   let q = supabase
     .from('lp_movement')
@@ -130,7 +133,7 @@ router.get('/stats/summary', requireRole(...CAN_VIEW_LOADS), async (req, res) =>
 // ============================================================
 // GET /api/loads/pending-order-nos
 // ============================================================
-router.get('/pending-order-nos', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
+router.get('/pending-order-nos', requirePermission('LOADS', 'view'), async (req, res) => {
   const { data, error } = await supabase
     .from('lp_movement')
     .select(
@@ -147,7 +150,7 @@ router.get('/pending-order-nos', requireRole(...CAN_VIEW_LOADS), async (req, res
 // ============================================================
 // GET /api/loads/pending-ops-actions — Ops Asst actions awaiting approval
 // ============================================================
-router.get('/pending-ops-actions', requireRole(ROLES.ADMIN, ROLES.OPERATOR), async (req, res) => {
+router.get('/pending-ops-actions', requirePermission('LOADS', 'approve'), async (req, res) => {
   let query = supabase
     .from('lp_ops_assistant_actions')
     .select('*')
@@ -168,7 +171,7 @@ router.get('/pending-ops-actions', requireRole(ROLES.ADMIN, ROLES.OPERATOR), asy
 // ============================================================
 // PATCH /api/loads/ops-actions/:id — approve or reject
 // ============================================================
-router.patch('/ops-actions/:id', requireRole(ROLES.ADMIN, ROLES.OPERATOR), async (req, res) => {
+router.patch('/ops-actions/:id', requirePermission('LOADS', 'approve'), async (req, res) => {
   const { action, rejection_reason } = req.body;
 
   const { data: opsAction } = await supabase
@@ -202,10 +205,7 @@ router.patch('/ops-actions/:id', requireRole(ROLES.ADMIN, ROLES.OPERATOR), async
       }]);
     } else if (opsAction.oa_action_type === 'DELETE_COST') {
       await supabase.from('lp_costs').delete().eq('c_cost_no', payload.cost_id);
-    } else if (
-      opsAction.oa_action_type === 'SET_ORDER_NO' ||
-      opsAction.oa_action_type === 'CHANGE_ORDER_NO'
-    ) {
+    } else if (opsAction.oa_action_type === 'SET_ORDER_NO') {
       await supabase.from('lp_movement')
         .update({ m_order_no: payload.order_no, updated_at: new Date().toISOString() })
         .eq('m_load_no', opsAction.oa_load_no);
@@ -251,7 +251,7 @@ router.patch('/ops-actions/:id', requireRole(ROLES.ADMIN, ROLES.OPERATOR), async
 // ============================================================
 // GET /api/loads/:id
 // ============================================================
-router.get('/:id', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
+router.get('/:id', requirePermission('LOADS', 'view'), async (req, res) => {
   const { data, error } = await supabase
     .from('lp_movement')
     .select('*, lp_customers(c_name), lp_vehicles(vh_type)')
@@ -265,7 +265,7 @@ router.get('/:id', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
 // ============================================================
 // GET /api/loads/:id/comments
 // ============================================================
-router.get('/:id/comments', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
+router.get('/:id/comments', requirePermission('LOADS', 'view'), async (req, res) => {
   const { data, error } = await supabase
     .from('lp_comments')
     .select('*')
@@ -279,7 +279,7 @@ router.get('/:id/comments', requireRole(...CAN_VIEW_LOADS), async (req, res) => 
 // ============================================================
 // POST /api/loads/:id/comments
 // ============================================================
-router.post('/:id/comments', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
+router.post('/:id/comments', requirePermission('LOADS', 'view'), async (req, res) => {
   const { comment } = req.body;
   const { data, error } = await supabase
     .from('lp_comments')
@@ -294,7 +294,7 @@ router.post('/:id/comments', requireRole(...CAN_VIEW_LOADS), async (req, res) =>
 // ============================================================
 // POST /api/loads — create new load
 // ============================================================
-router.post('/', requireRole(...CAN_CREATE_LOAD), async (req, res) => {
+router.post('/', requirePermission('LOADS', 'edit'), async (req, res) => {
   try {
     const { data: allLast } = await supabase
       .from('lp_movement')
@@ -348,7 +348,7 @@ router.post('/', requireRole(...CAN_CREATE_LOAD), async (req, res) => {
 // ============================================================
 // PATCH /api/loads/:id — update status or fields
 // ============================================================
-router.patch('/:id', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
+router.patch('/:id', requirePermission('LOADS', 'view'), async (req, res) => {
   const role = req.user.role;
   const newStatus = req.body.m_status;
 
@@ -463,7 +463,7 @@ router.patch('/:id', requireRole(...CAN_VIEW_LOADS), async (req, res) => {
 // ============================================================
 // DELETE /api/loads/:id — soft delete (Operator + Admin only)
 // ============================================================
-router.delete('/:id', requireRole(...CAN_DELETE_LOAD), async (req, res) => {
+router.delete('/:id', requirePermission('LOADS', 'delete'), async (req, res) => {
   const { reason } = req.body || {};
 
   const { error } = await supabase
@@ -501,7 +501,7 @@ router.delete('/:id', requireRole(...CAN_DELETE_LOAD), async (req, res) => {
 // POST /api/loads/:id/request-order-no
 // ── FIX: blocked after WAIT_APPROVAL status ──
 // ============================================================
-router.post('/:id/request-order-no', requireRole(...CAN_ADD_COSTS), async (req, res) => {
+router.post('/:id/request-order-no', requirePermission('LOADS', 'edit'), async (req, res) => {
   const { order_no } = req.body;
   if (!order_no?.trim())
     return res.status(400).json({ error: 'Please provide an order number' });
@@ -595,7 +595,7 @@ router.post('/:id/request-order-no', requireRole(...CAN_ADD_COSTS), async (req, 
 // ============================================================
 // PATCH /api/loads/:id/approve-order-no
 // ============================================================
-router.patch('/:id/approve-order-no', requireRole(ROLES.ADMIN, ROLES.OPERATOR), async (req, res) => {
+router.patch('/:id/approve-order-no', requirePermission('LOADS', 'approve'), async (req, res) => {
   const { action, rejection_reason } = req.body;
 
   const { data: load } = await supabase
