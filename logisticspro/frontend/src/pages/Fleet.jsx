@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, Fragment } from 'react';
 import { useAuth } from '../lib/AuthContext';
 import { api } from '../lib/api';
 import { loadGoogleMaps, resetGoogleMapsLoader } from '../lib/googleMaps';
@@ -229,6 +229,7 @@ function FleetList({ focusServiceDue }) {
   const [sortCol, setSortCol] = useState('vh_code');
   const [sortDir, setSortDir] = useState('asc');
   const [quickFilter, setQuickFilter] = useState('all');  // all | service_due | align_due | cof_expired | license_expired
+  const [expandedHorse, setExpandedHorse] = useState(null); // vh_code of the horse row currently expanded to show its nested trailer(s)
 
   // Modal state
   const [showModal, setShowModal]   = useState(false);
@@ -248,21 +249,27 @@ function FleetList({ focusServiceDue }) {
       // getVehicles() is the master vehicle register (every vehicle, including
       // trailers themselves); getFleetOverview() separately computes which
       // trailer(s) are currently linked to each horse from its most recent
-      // load (see vehicles.js fleet-overview). Neither call alone has both
-      // pieces, so merge them here — this is what makes "linked trailers"
-      // show up on the Fleet List cards/table at all (previously they never
-      // did, since this component only ever fetched the plain vehicle list).
+      // load (see vehicles.js fleet-overview), plus whether that load is
+      // currently active and its load number — needed for the
+      // Assigned/Unassigned tiles and the click-through to Loads.
       const [vehiclesRes, overviewRes] = await Promise.all([
         api.getVehicles({ active: 'all' }),
         api.getFleetOverview().catch(() => null), // non-fatal — list still works without it
       ]);
-      const trailersByHorse = new Map(
-        (overviewRes?.vehicles || []).map(h => [h.vh_code, h.trailers || []])
+      const overviewByHorse = new Map(
+        (overviewRes?.vehicles || []).map(h => [h.vh_code, h])
       );
-      const merged = (Array.isArray(vehiclesRes) ? vehiclesRes : []).map(v => ({
-        ...v,
-        linkedTrailers: trailersByHorse.get(v.vh_code) || [],
-      }));
+      const merged = (Array.isArray(vehiclesRes) ? vehiclesRes : []).map(v => {
+        const ov = overviewByHorse.get(v.vh_code);
+        return {
+          ...v,
+          linkedTrailers: ov?.trailers || [],
+          is_active:      !!ov?.is_active,
+          load_no:        ov?.load_no || null,
+          load_status:    ov?.load_status || null,
+          client_name:    ov?.client_name || null,
+        };
+      });
       setData(merged);
     } catch(e) { console.error(e); }
     finally { setLoading(false); }
@@ -277,6 +284,13 @@ function FleetList({ focusServiceDue }) {
       setSortDir('asc');
     }
   }, [focusServiceDue]);
+
+  // Click-through from a horse to its associated load — dispatches the same
+  // global navigation event App.jsx already listens for (lp-navigate), just
+  // with a loadNo riding along so the Loads page can open straight to it.
+  const goToLoad = (loadNo) => {
+    window.dispatchEvent(new CustomEvent('lp-navigate', { detail: { page: 'movement', loadNo } }));
+  };
 
   const openEdit = async (v) => {
     setEditVehicle(v);
@@ -391,10 +405,36 @@ function FleetList({ focusServiceDue }) {
     });
 
   // ── Stats ────────────────────────────────────────────────────────────────────
-  const total      = data.length;
-  const horses     = data.filter(v => v.vh_type === 'Horse').length;
-  const trailers   = data.filter(v => v.vh_type === 'Trailer').length;
-  const active     = data.filter(v => v.vh_active === 'Y').length;
+  // "Assigned" = currently out on an active load (PRELOAD/EN_ROUTE — see
+  // is_active in vehicles.js fleet-overview), not just "has a most-recent
+  // load on file" (a horse idle between loads still shows its last load's
+  // trailer for reference, but isn't "assigned" right now).
+  const allHorses          = data.filter(v => v.vh_type === 'Horse');
+  const allTrailers        = data.filter(v => v.vh_type === 'Trailer');
+  const totalHorsesCount   = allHorses.length;
+  const totalTrailersCount = allTrailers.length;
+  const assignedHorses     = allHorses.filter(h => h.is_active).length;
+  const unassignedHorses   = totalHorsesCount - assignedHorses;
+  const assignedTrailerCodes = new Set();
+  allHorses.filter(h => h.is_active).forEach(h => (h.linkedTrailers || []).forEach(t => assignedTrailerCodes.add(t.code)));
+  const assignedTrailersCount   = assignedTrailerCodes.size;
+  const unassignedTrailersCount = totalTrailersCount - assignedTrailersCount;
+
+  // Trailer codes linked to ANY horse's most recent load (regardless of
+  // active status) — used to split the list into Horse-grouped rows vs a
+  // standalone "Unlinked Trailers" section, so every trailer stays
+  // discoverable even if it's never been on a recorded load yet.
+  const everLinkedTrailerCodes = new Set();
+  allHorses.forEach(h => (h.linkedTrailers || []).forEach(t => everLinkedTrailerCodes.add(t.code)));
+
+  // The grouped Horse+nested-Trailers view is the default browsing
+  // experience. Maintenance/diagnostic filters (quick-filter tabs, or
+  // explicitly filtering to Trailers only) fall back to the flat list
+  // below instead, since those cut across vehicle type and don't fit a
+  // Horse-centric hierarchy well.
+  const showGrouped = typeFilter !== 'Trailer' && quickFilter === 'all';
+  const horseGroups = filtered.filter(v => v.vh_type === 'Horse');
+  const unlinkedTrailers = filtered.filter(v => v.vh_type === 'Trailer' && !everLinkedTrailerCodes.has(v.vh_code));
 
   // ── Table headings config ────────────────────────────────────────────────────
   const headings = [
@@ -421,10 +461,12 @@ function FleetList({ focusServiceDue }) {
     <div>
       {/* Stats */}
       <div className="stats-grid">
-        <div className="stat-card"><div className="stat-label">Total Fleet</div><div className="stat-value">{total}</div></div>
-        <div className="stat-card"><div className="stat-label">Horses</div><div className="stat-value" style={{color:'#00AEEF'}}>{horses}</div></div>
-        <div className="stat-card"><div className="stat-label">Trailers</div><div className="stat-value" style={{color:'#00AEEF'}}>{trailers}</div></div>
-        <div className="stat-card"><div className="stat-label">Active</div><div className="stat-value" style={{color:'#059669'}}>{active}</div></div>
+        <div className="stat-card"><div className="stat-label">Total Horses</div><div className="stat-value" style={{color:'#00AEEF'}}>{totalHorsesCount}</div></div>
+        <div className="stat-card"><div className="stat-label">Assigned Horses</div><div className="stat-value" style={{color:'#059669'}}>{assignedHorses}</div></div>
+        <div className="stat-card"><div className="stat-label">Unassigned Horses</div><div className="stat-value" style={{color:'#888'}}>{unassignedHorses}</div></div>
+        <div className="stat-card"><div className="stat-label">Total Trailers</div><div className="stat-value" style={{color:'#00AEEF'}}>{totalTrailersCount}</div></div>
+        <div className="stat-card"><div className="stat-label">Assigned Trailers</div><div className="stat-value" style={{color:'#059669'}}>{assignedTrailersCount}</div></div>
+        <div className="stat-card"><div className="stat-label">Unassigned Trailers</div><div className="stat-value" style={{color:'#888'}}>{unassignedTrailersCount}</div></div>
       </div>
 
       {/* Quick-filter tabs — computed counts */}
@@ -490,8 +532,101 @@ function FleetList({ focusServiceDue }) {
       {/* Mobile card list */}
       <div className="mobile-card-list">
         {loading && <div className="loading">Loading fleet…</div>}
-        {!loading && filtered.length === 0 && <div className="empty-state">No vehicles found</div>}
-        {!loading && filtered.map(v => {
+        {!loading && showGrouped && horseGroups.length === 0 && unlinkedTrailers.length === 0 && (
+          <div className="empty-state">No vehicles found</div>
+        )}
+        {!loading && showGrouped && (
+          <>
+            {horseGroups.map(h => {
+              const isOpen = expandedHorse === h.vh_code;
+              return (
+                <div key={h.vh_code} className="data-card" style={{ cursor: 'pointer' }}
+                  onClick={() => setExpandedHorse(o => o === h.vh_code ? null : h.vh_code)}>
+                  <div className="data-card-header">
+                    <div>
+                      <div className="data-card-title" style={{fontFamily:'monospace'}}>{h.vh_code}</div>
+                      <div className="data-card-sub">Horse · {[h.vh_make,h.vh_model].filter(Boolean).join(' ')||'—'} {h.vh_year?`(${h.vh_year})`:''}</div>
+                    </div>
+                    <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:4}}>
+                      <span style={{fontSize:10,fontWeight:700,padding:'2px 6px',borderRadius:10,background:h.vh_active==='Y'?'#059669':'#e53e3e',color:'white'}}>
+                        {h.vh_active==='Y'?'Active':'Inactive'}
+                      </span>
+                      <span style={{ fontSize: 14, color: '#aaa', transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
+                    </div>
+                  </div>
+                  <div className="data-card-meta">
+                    <div>Reg: <strong style={{fontFamily:'monospace'}}>{h.vh_registration||'—'}</strong></div>
+                    <div>ODO: <strong>{h.vh_odometer?Number(h.vh_odometer).toLocaleString()+' km':'—'}</strong></div>
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6, alignItems: 'center' }}>
+                    {h.linkedTrailers?.length > 0 ? h.linkedTrailers.map(t => (
+                      <span key={t.code} style={{
+                        fontSize: 10, fontFamily: 'monospace', padding: '1px 6px', borderRadius: 4,
+                        background: t.confirmed === true ? '#d1fae5' : t.confirmed === false ? '#fef3c7' : '#f1f5f9',
+                        color: t.confirmed === true ? '#065f46' : t.confirmed === false ? '#92400e' : '#64748b',
+                      }}>
+                        🔗 {t.code}{t.confirmed === true ? ' ✓' : t.confirmed === false ? ' ⚠' : ''}
+                      </span>
+                    )) : <span style={{ fontSize: 11, color: '#bbb' }}>No trailer linked</span>}
+                    {h.is_active && h.load_no && (
+                      <button onClick={e => { e.stopPropagation(); goToLoad(h.load_no); }} style={{
+                        marginLeft: 'auto', fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 10,
+                        border: '1px solid #00AEEF', background: '#e8f4fd', color: '#005A8E', cursor: 'pointer',
+                      }}>📦 #{h.load_no} →</button>
+                    )}
+                  </div>
+                  {isOpen && (
+                    <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px dashed #e2e8f0', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <div onClick={e => { e.stopPropagation(); openEdit(h); }} style={{
+                        padding: '8px 10px', borderRadius: 6, background: '#f8f9fa', border: '1px solid #e8edf2', cursor: 'pointer',
+                      }}>
+                        <div style={{ fontSize: 10, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Horse</div>
+                        <div style={{ fontSize: 13, fontWeight: 600 }}>{h.vh_code} — {[h.vh_make,h.vh_model].filter(Boolean).join(' ')||'—'}</div>
+                      </div>
+                      {(h.linkedTrailers || []).map(t => {
+                        const full = data.find(d => d.vh_code === t.code);
+                        return (
+                          <div key={t.code} onClick={e => { e.stopPropagation(); openEdit(full || { vh_code: t.code, vh_type: 'Trailer' }); }} style={{
+                            padding: '8px 10px', borderRadius: 6, background: '#f8f9fa', border: '1px solid #e8edf2', cursor: 'pointer',
+                          }}>
+                            <div style={{ fontSize: 10, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Trailer</div>
+                            <div style={{ fontSize: 13, fontWeight: 600 }}>{t.code} — {[t.make,t.model].filter(Boolean).join(' ')||'—'}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {unlinkedTrailers.length > 0 && (
+              <>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#888', margin: '14px 2px 6px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  Unlinked Trailers
+                </div>
+                {unlinkedTrailers.map(t => (
+                  <div key={t.vh_code} className="data-card" onClick={() => openEdit(t)} style={{ cursor: 'pointer' }}>
+                    <div className="data-card-header">
+                      <div>
+                        <div className="data-card-title" style={{fontFamily:'monospace'}}>{t.vh_code}</div>
+                        <div className="data-card-sub">Trailer · {[t.vh_make,t.vh_model].filter(Boolean).join(' ')||'—'}</div>
+                      </div>
+                      <span style={{fontSize:10,fontWeight:700,padding:'2px 6px',borderRadius:10,background:t.vh_active==='Y'?'#059669':'#e53e3e',color:'white'}}>
+                        {t.vh_active==='Y'?'Active':'Inactive'}
+                      </span>
+                    </div>
+                    <div className="data-card-meta">
+                      <div>Reg: <strong style={{fontFamily:'monospace'}}>{t.vh_registration||'—'}</strong></div>
+                      <div>COF: <strong>{t.vh_cof_date||'—'}</strong></div>
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
+          </>
+        )}
+        {!loading && !showGrouped && filtered.length === 0 && <div className="empty-state">No vehicles found</div>}
+        {!loading && !showGrouped && filtered.map(v => {
           const svcRemaining = (Number(v.vh_next_service)||0) - (Number(v.vh_odometer)||0);
           const whlRemaining = (Number(v.vh_next_wheel)||0) - (Number(v.vh_odometer)||0);
           const alert = svcRemaining < 0 || whlRemaining < 0 ? '#e53e3e'
@@ -541,16 +676,124 @@ function FleetList({ focusServiceDue }) {
         <table style={{ minWidth: 1100 }}>
           <thead>
             <tr>
-              {headings.map(h => (
-                <Th key={h.col} col={h.col} label={h.label}
-                  sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
-              ))}
+              {showGrouped
+                ? <>
+                    <th style={thStyle}></th>
+                    <th style={thStyle}>Code</th><th style={thStyle}>Type</th><th style={thStyle}>Make / Model</th>
+                    <th style={thStyle}>Registration</th><th style={thStyle}>Linked Trailer(s)</th>
+                    <th style={thStyle}>Current Load</th><th style={thStyle}>Active</th>
+                  </>
+                : headings.map(h => (
+                    <Th key={h.col} col={h.col} label={h.label}
+                      sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                  ))}
             </tr>
           </thead>
           <tbody>
             {loading && <tr><td colSpan={13}><div className="loading">Loading fleet…</div></td></tr>}
-            {!loading && filtered.length === 0 && <tr><td colSpan={13}><div className="empty-state">No vehicles found</div></td></tr>}
-            {!loading && filtered.map(v => {
+            {!loading && showGrouped && horseGroups.length === 0 && unlinkedTrailers.length === 0 && (
+              <tr><td colSpan={8}><div className="empty-state">No vehicles found</div></td></tr>
+            )}
+            {!loading && showGrouped && horseGroups.map(h => {
+              const isOpen = expandedHorse === h.vh_code;
+              return (
+                <Fragment key={h.vh_code}>
+                  <tr onClick={() => setExpandedHorse(o => o === h.vh_code ? null : h.vh_code)}
+                    style={{ background: isOpen ? '#e8f4fd' : undefined, cursor: 'pointer' }}>
+                    <td style={{ textAlign: 'center', color: '#00AEEF', fontWeight: 700 }}>{isOpen ? '▲' : '▼'}</td>
+                    <td className="mono" style={{ fontWeight: 700 }}>{h.vh_code}</td>
+                    <td>Horse</td>
+                    <td>{[h.vh_make, h.vh_model].filter(Boolean).join(' ') || '—'}</td>
+                    <td className="mono">{h.vh_registration || '—'}</td>
+                    <td>
+                      {h.linkedTrailers?.length > 0 ? (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                          {h.linkedTrailers.map(t => (
+                            <span key={t.code} title={[t.make, t.model].filter(Boolean).join(' ') || undefined} style={{
+                              fontSize: 10, fontFamily: 'monospace', padding: '1px 6px', borderRadius: 4,
+                              background: t.confirmed === true ? '#d1fae5' : t.confirmed === false ? '#fef3c7' : '#f1f5f9',
+                              color: t.confirmed === true ? '#065f46' : t.confirmed === false ? '#92400e' : '#64748b',
+                            }}>
+                              🔗 {t.code}{t.confirmed === true ? ' ✓' : t.confirmed === false ? ' ⚠' : ''}
+                            </span>
+                          ))}
+                        </div>
+                      ) : <span style={{ color: '#bbb' }}>—</span>}
+                    </td>
+                    <td>
+                      {h.is_active && h.load_no ? (
+                        <button onClick={e => { e.stopPropagation(); goToLoad(h.load_no); }} style={{
+                          fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10,
+                          border: '1px solid #00AEEF', background: '#e8f4fd', color: '#005A8E', cursor: 'pointer',
+                        }}>📦 #{h.load_no} →</button>
+                      ) : <span style={{ color: '#bbb' }}>—</span>}
+                    </td>
+                    <td>
+                      <span style={{
+                        display: 'inline-block', padding: '2px 8px', borderRadius: 10,
+                        fontSize: 10, fontWeight: 700,
+                        background: h.vh_active === 'Y' ? '#059669' : '#e53e3e', color: 'white',
+                      }}>{h.vh_active === 'Y' ? 'Active' : 'Inactive'}</span>
+                    </td>
+                  </tr>
+                  {isOpen && (
+                    <tr>
+                      <td colSpan={8} style={{ background: '#fafbfc', padding: '10px 16px' }}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+                          <div onClick={() => openEdit(h)} style={{
+                            minWidth: 220, padding: '8px 12px', borderRadius: 6, background: 'white', border: '1px solid #e8edf2', cursor: 'pointer',
+                          }}>
+                            <div style={{ fontSize: 10, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Horse — click to edit</div>
+                            <div style={{ fontSize: 13, fontWeight: 600 }}>{h.vh_code} — {[h.vh_make,h.vh_model].filter(Boolean).join(' ')||'—'}</div>
+                          </div>
+                          {(h.linkedTrailers || []).length === 0 && (
+                            <div style={{ fontSize: 12, color: '#aaa', alignSelf: 'center' }}>No trailer currently linked</div>
+                          )}
+                          {(h.linkedTrailers || []).map(t => {
+                            const full = data.find(d => d.vh_code === t.code);
+                            return (
+                              <div key={t.code} onClick={() => openEdit(full || { vh_code: t.code, vh_type: 'Trailer' })} style={{
+                                minWidth: 220, padding: '8px 12px', borderRadius: 6, background: 'white', border: '1px solid #e8edf2', cursor: 'pointer',
+                              }}>
+                                <div style={{ fontSize: 10, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Trailer — click to edit</div>
+                                <div style={{ fontSize: 13, fontWeight: 600 }}>{t.code} — {[t.make,t.model].filter(Boolean).join(' ')||'—'}</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
+            {!loading && showGrouped && unlinkedTrailers.length > 0 && (
+              <>
+                <tr><td colSpan={8} style={{ background: '#f8f9fa', fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em', padding: '8px 12px' }}>
+                  Unlinked Trailers
+                </td></tr>
+                {unlinkedTrailers.map(t => (
+                  <tr key={t.vh_code} onClick={() => openEdit(t)} style={{ cursor: 'pointer' }}>
+                    <td></td>
+                    <td className="mono" style={{ fontWeight: 700 }}>{t.vh_code}</td>
+                    <td>Trailer</td>
+                    <td>{[t.vh_make, t.vh_model].filter(Boolean).join(' ') || '—'}</td>
+                    <td className="mono">{t.vh_registration || '—'}</td>
+                    <td><span style={{ color: '#bbb' }}>—</span></td>
+                    <td><span style={{ color: '#bbb' }}>—</span></td>
+                    <td>
+                      <span style={{
+                        display: 'inline-block', padding: '2px 8px', borderRadius: 10,
+                        fontSize: 10, fontWeight: 700,
+                        background: t.vh_active === 'Y' ? '#059669' : '#e53e3e', color: 'white',
+                      }}>{t.vh_active === 'Y' ? 'Active' : 'Inactive'}</span>
+                    </td>
+                  </tr>
+                ))}
+              </>
+            )}
+            {!loading && !showGrouped && filtered.length === 0 && <tr><td colSpan={13}><div className="empty-state">No vehicles found</div></td></tr>}
+            {!loading && !showGrouped && filtered.map(v => {
               const svcRemaining = (Number(v.vh_next_service)||0) - (Number(v.vh_odometer)||0);
               const whlRemaining = (Number(v.vh_next_wheel)||0) - (Number(v.vh_odometer)||0);
               const rowAlert = svcRemaining < 0 || whlRemaining < 0
