@@ -4,6 +4,7 @@ const { authMiddleware, loadUserPermissions, requirePermission } = require('../m
 const { getPulsitVehicles, mapVehicle } = require('../lib/pulsit');
 const { normalizeVehicleKey, buildVehicleKeyMap } = require('../lib/vehicleCode');
 const { fetchChunked } = require('../lib/supabasePaging');
+const { distanceKm, matchAddress } = require('../lib/geo');
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -127,33 +128,41 @@ router.get('/', async (req, res) => {
 
 // ── GET /api/vehicles/fleet-overview ──────────────────────────────────────────
 // Dashboard "Fleet" tab: per-horse live status combining vehicle master data,
-// the truck's current/latest load (for trailer + load-number context), and
-// live Pulsit tracking (ignition + last known location).
+// the truck's most recent load (trailer pairing, client, load number — shown
+// regardless of whether that load is still actively being hauled), live
+// Pulsit tracking (ignition + position), trailer-link confirmation against
+// Pulsit, and friendly location naming via lp_addresses.
 // MUST be registered before /:code or Express treats "fleet-overview" as a
 // vehicle code parameter.
 const ACTIVE_LOAD_STATUSES = ['PRELOAD', 'EN_ROUTE']; // before/at OFFLOADED = no longer "active"
+const TRAILER_CONFIRM_RADIUS_KM = 2; // horse/trailer within this distance = link confirmed
 
 router.get('/fleet-overview', requirePermission('FLEET', 'view'), async (req, res) => {
   try {
-    const { data: horses, error: vErr } = await supabase
+    // All active vehicles (not just horses) — needed so trailer codes
+    // referenced on a load can be resolved to their registration (for
+    // Pulsit matching) the same way horses are.
+    const { data: allVehicles, error: vErr } = await supabase
       .from('lp_vehicles')
-      .select('vh_code, vh_make, vh_model, vh_registration')
-      .eq('vh_type', 'Horse')
+      .select('vh_code, vh_type, vh_make, vh_model, vh_registration')
       .eq('vh_active', 'Y')
       .order('vh_code');
     if (vErr) throw vErr;
 
-    const codes = (horses || []).map(h => h.vh_code);
-    const codeKeyMap = buildVehicleKeyMap(horses); // normalizedKey -> vh_code
+    const horses = (allVehicles || []).filter(v => v.vh_type === 'Horse');
+    const codeKeyMap = buildVehicleKeyMap(allVehicles); // normalizedKey -> vh_code
+    const vehicleByCode = new Map((allVehicles || []).map(v => [v.vh_code, v]));
+    const codes = horses.map(h => h.vh_code);
 
-    // Latest non-deleted load per horse, to determine "active" + trailers.
-    // Matched by normalized key — see lib/vehicleCode.js. Chunk-fetched —
-    // see lib/supabasePaging.js — for the same reason as GET / above.
+    // Most recent non-deleted load per horse — ANY status, not just active
+    // hauling statuses, so trailers/client/load-no still show for a truck
+    // that's idle between loads. Matched by normalized key (lib/vehicleCode)
+    // and chunk-fetched (lib/supabasePaging) — see GET / above for why.
     let loadMap = {};
     if (codes.length > 0) {
       const buildLoadsQuery = () => supabase
         .from('lp_movement')
-        .select('m_truck, m_load_no, m_status, m_trailer1, m_trailer2, m_date')
+        .select('m_truck, m_load_no, m_status, m_trailer1, m_trailer2, m_customer, m_date')
         .not('m_truck', 'is', null)
         .neq('m_status', 'DELETED')
         .order('m_date', { ascending: false })
@@ -165,8 +174,18 @@ router.get('/fleet-overview', requirePermission('FLEET', 'view'), async (req, re
       });
     }
 
+    // Client names for the "Client" column
+    const { data: customers } = await supabase.from('lp_customers').select('c_code, c_name');
+    const customerMap = new Map((customers || []).map(c => [c.c_code, c.c_name]));
+
+    // Named addresses (home bases + client sites/depots) for friendly
+    // location naming and the Home Base filter.
+    const { data: addresses } = await supabase.from('lp_addresses').select('*').eq('a_active', 'Y');
+    const homeBaseAddresses = (addresses || []).filter(a => a.a_type === 'HOME_BASE');
+
     // Live tracking — non-fatal if Pulsit is unreachable; fleet data still useful without it
     let posByCode = {};
+    let pulsitError = null;
     try {
       const list = await getPulsitVehicles();
       list.map(mapVehicle).forEach(p => {
@@ -174,30 +193,65 @@ router.get('/fleet-overview', requirePermission('FLEET', 'view'), async (req, re
         if (p.regNo) posByCode[p.regNo] = posByCode[p.regNo] || p;
       });
     } catch (e) {
+      pulsitError = e.message;
       console.error('[fleet-overview] tracking unavailable:', e.message);
     }
+    const findPos = (code) => {
+      if (!code) return null;
+      if (posByCode[code]) return posByCode[code];
+      const reg = vehicleByCode.get(code)?.vh_registration;
+      return reg ? (posByCode[reg] || null) : null;
+    };
 
     const result = (horses || []).map(h => {
       const load = loadMap[h.vh_code];
       const isActive = !!load && ACTIVE_LOAD_STATUSES.includes(load.m_status);
-      const pos = posByCode[h.vh_code] || posByCode[h.vh_registration] || null;
+      const pos = findPos(h.vh_code) || (h.vh_registration ? posByCode[h.vh_registration] : null);
+
+      // Trailers — always from the truck's last known load, resolved to
+      // canonical vh_code (handles historic code-padding mismatches), and
+      // cross-checked against Pulsit if that trailer reports its own
+      // position. A trailer with no GPS unit fitted shows as "not tracked"
+      // rather than being treated as a mismatch.
+      const trailerCodes = load ? [load.m_trailer1, load.m_trailer2].filter(Boolean) : [];
+      const trailers = trailerCodes.map(rawCode => {
+        const code = codeKeyMap.get(normalizeVehicleKey(rawCode)) || rawCode;
+        const trailerPos = findPos(code);
+        let confirmed = null; // null = can't confirm (no GPS on trailer or horse)
+        let distance_km = null;
+        if (trailerPos && pos && pos.lat != null && pos.lng != null) {
+          distance_km = distanceKm(pos.lat, pos.lng, trailerPos.lat, trailerPos.lng);
+          confirmed = distance_km != null && distance_km <= TRAILER_CONFIRM_RADIUS_KM;
+        }
+        return { code, tracked: !!trailerPos, confirmed, distance_km: distance_km != null ? Number(distance_km.toFixed(2)) : null };
+      });
+
+      // Friendly location name — nearest configured address (any type)
+      // within its radius; falls back to Pulsit's raw reverse-geocoded
+      // string if nothing matches.
+      const matchedAddress = pos ? matchAddress(pos.lat, pos.lng, addresses) : null;
+      const homeBase = pos ? matchAddress(pos.lat, pos.lng, homeBaseAddresses) : null;
 
       return {
-        vh_code:     h.vh_code,
-        vh_make:     h.vh_make,
-        vh_model:    h.vh_model,
-        trailers:    isActive ? [load.m_trailer1, load.m_trailer2].filter(Boolean) : [],
-        load_no:     isActive ? load.m_load_no : null,
-        load_status: isActive ? load.m_status : null,
-        ignition:    pos ? pos.ignition : null,    // 1 = on, 0 = off, null = unknown
-        location:    pos ? pos.location : null,
-        lat:         pos ? pos.lat : null,
-        lng:         pos ? pos.lng : null,
-        lastUpdate:  pos ? pos.lastUpdate : null,
+        vh_code:      h.vh_code,
+        vh_make:      h.vh_make,
+        vh_model:     h.vh_model,
+        trailers,
+        client:       load?.m_customer || null,
+        client_name:  load?.m_customer ? (customerMap.get(load.m_customer) || load.m_customer) : null,
+        load_no:      load?.m_load_no || null,
+        load_status:  load?.m_status || null,
+        is_active:    isActive,
+        ignition:     pos ? pos.ignition : null,    // 1 = on, 0 = off, null = unknown
+        location:     matchedAddress ? matchedAddress.a_name : (pos ? pos.location : null),
+        home_base:    homeBase ? homeBase.a_name : null,
+        lat:          pos ? pos.lat : null,
+        lng:          pos ? pos.lng : null,
+        lastUpdate:   pos ? pos.lastUpdate : null,
       };
     });
 
-    res.json(result);
+    res.json({ vehicles: result, pulsit_unavailable: !!pulsitError });
   } catch (e) {
     console.error('[vehicles/fleet-overview]', e.message);
     res.status(500).json({ error: e.message });

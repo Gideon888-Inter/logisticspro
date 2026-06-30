@@ -1,11 +1,154 @@
 const express = require('express');
 const supabase = require('../supabase');
 const { authMiddleware, loadUserPermissions, requirePermission } = require('../middleware/auth');
+const { getPulsitVehicles, mapVehicle } = require('../lib/pulsit');
+const { normalizeVehicleKey } = require('../lib/vehicleCode');
 const router = express.Router();
 router.use(authMiddleware);
 router.use(loadUserPermissions);
 
 const DEAD_KM_THRESHOLD = 500;
+
+// ── Shared: apply a closing KM value to a load (used by both the Pulsit-
+// driven auto-confirm endpoint and the manual fallback below) ──────────────
+async function applyClosingKm(loadNo, closing, loggedBy, source) {
+  const { data: load, error: loadErr } = await supabase
+    .from('lp_movement')
+    .select('*')
+    .eq('m_load_no', loadNo)
+    .single();
+
+  if (loadErr || !load) return { error: 'Load not found', status: 404 };
+
+  const opening = Number(load.m_opening_km || 0);
+
+  if (closing < opening) {
+    return {
+      status: 400,
+      error: `Closing KM (${closing.toLocaleString()}) cannot be less than opening KM (${opening.toLocaleString()})`,
+      code: 'CLOSING_LESS_THAN_OPENING',
+    };
+  }
+
+  const { data: rateRow } = await supabase
+    .from('lp_client_rates')
+    .select('rc_kms')
+    .eq('rc_client_code', load.m_customer)
+    .eq('rc_from', load.m_from)
+    .eq('rc_to', load.m_to)
+    .single();
+
+  const routeKm = rateRow?.rc_kms || 0;
+  const maxAllowed = opening + routeKm + DEAD_KM_THRESHOLD;
+
+  if (routeKm > 0 && closing > maxAllowed) {
+    return {
+      status: 400,
+      error: `Closing KM (${closing.toLocaleString()}) exceeds maximum allowed (${maxAllowed.toLocaleString()} = opening ${opening.toLocaleString()} + route ${routeKm.toLocaleString()} km + 500 km tolerance)`,
+      code: 'CLOSING_EXCEEDS_MAX',
+      max_allowed: maxAllowed,
+      route_km: routeKm,
+    };
+  }
+
+  const actual_km = closing - opening;
+
+  const { data: updated, error: updateErr } = await supabase
+    .from('lp_movement')
+    .update({
+      m_closing_km: closing,
+      m_actual_km: actual_km,
+      m_status: 'OFFLOADED',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('m_load_no', loadNo)
+    .select()
+    .single();
+
+  if (updateErr) return { status: 400, error: updateErr.message };
+
+  await supabase.from('lp_vehicles').update({ vh_odometer: closing }).eq('vh_code', load.m_truck);
+
+  const sourceTxt = source === 'pulsit' ? ' (auto-read from Pulsit GPS)' : '';
+  await supabase.from('lp_comments').insert([{
+    c_load: loadNo,
+    c_comment: `Load offloaded. Opening KM: ${opening.toLocaleString()} | Closing KM: ${closing.toLocaleString()}${sourceTxt} | Distance: ${actual_km.toLocaleString()} km`,
+    c_logged_by: loggedBy,
+  }]);
+
+  return { data: { ...updated, actual_km, route_km: routeKm } };
+}
+
+// GET live Pulsit odometer reading for a truck — used by the load-card
+// "Confirm Offload" flow to auto-fill the closing KM instead of manual
+// entry. Pulsit only exposes a CURRENT/live odometer snapshot (no
+// as-of-timestamp history endpoint is integrated), so this reflects the
+// truck's odometer at the moment it's called — accurate as long as the
+// operator confirms reasonably close to when the load actually finished,
+// same assumption the old manual-entry step relied on.
+router.get('/pulsit-reading/:truck', requirePermission('KM', 'view'), async (req, res) => {
+  const { truck } = req.params;
+  try {
+    const { data: veh } = await supabase
+      .from('lp_vehicles').select('vh_code, vh_registration').eq('vh_code', truck).single();
+
+    const list = await getPulsitVehicles();
+    const key = normalizeVehicleKey(truck);
+    const match = list.map(mapVehicle).find(p =>
+      (p.code && normalizeVehicleKey(p.code) === key) ||
+      (veh?.vh_registration && p.regNo && normalizeVehicleKey(p.regNo) === normalizeVehicleKey(veh.vh_registration))
+    );
+
+    if (!match || match.odometer == null) {
+      return res.status(404).json({ error: `No live Pulsit odometer reading found for ${truck}. Enter the closing KM manually instead.` });
+    }
+
+    res.json({ odometer: Math.round(Number(match.odometer)), lastUpdate: match.lastUpdate, source: 'pulsit' });
+  } catch (e) {
+    res.status(502).json({ error: `Pulsit tracking unavailable (${e.message}). Enter the closing KM manually instead.` });
+  }
+});
+
+// POST confirm offload using the live Pulsit odometer reading — the
+// primary closing-KM workflow. Re-fetches Pulsit server-side rather than
+// trusting a client-supplied number, for integrity.
+router.post('/closing-auto/:loadNo', requirePermission('KM', 'edit'), async (req, res) => {
+  const { loadNo } = req.params;
+
+  const { data: load, error: loadErr } = await supabase
+    .from('lp_movement').select('m_truck').eq('m_load_no', loadNo).single();
+  if (loadErr || !load) return res.status(404).json({ error: 'Load not found' });
+  if (!load.m_truck) return res.status(400).json({ error: 'This load has no truck assigned' });
+
+  const { data: veh } = await supabase
+    .from('lp_vehicles').select('vh_registration').eq('vh_code', load.m_truck).single();
+
+  let odometer;
+  try {
+    const list = await getPulsitVehicles();
+    const key = normalizeVehicleKey(load.m_truck);
+    const match = list.map(mapVehicle).find(p =>
+      (p.code && normalizeVehicleKey(p.code) === key) ||
+      (veh?.vh_registration && p.regNo && normalizeVehicleKey(p.regNo) === normalizeVehicleKey(veh.vh_registration))
+    );
+    if (!match || match.odometer == null) {
+      return res.status(404).json({
+        error: `No live Pulsit odometer reading found for ${load.m_truck}. Use manual entry instead.`,
+        code: 'PULSIT_NO_READING',
+      });
+    }
+    odometer = Math.round(Number(match.odometer));
+  } catch (e) {
+    return res.status(502).json({
+      error: `Pulsit tracking unavailable (${e.message}). Use manual entry instead.`,
+      code: 'PULSIT_UNAVAILABLE',
+    });
+  }
+
+  const result = await applyClosingKm(loadNo, odometer, req.user.username, 'pulsit');
+  if (result.error) return res.status(result.status || 400).json(result);
+  res.json(result.data);
+});
 
 // GET last closing KM for a truck
 router.get('/last-closing/:truck', requirePermission('KM', 'view'), async (req, res) => {
@@ -39,77 +182,19 @@ router.get('/last-closing/:truck', requirePermission('KM', 'view'), async (req, 
   });
 });
 
-// POST save closing KM when load is offloaded
+// POST save closing KM when load is offloaded — MANUAL FALLBACK ONLY.
+// The primary path is POST /closing-auto/:loadNo (Pulsit-driven, above);
+// this stays available for the rare case Pulsit has no reading for a
+// given truck (no tracker fitted, hardware fault, etc).
 router.post('/closing/:loadNo', requirePermission('KM', 'edit'), async (req, res) => {
   const { loadNo } = req.params;
   const { closing_km } = req.body;
-
-  const { data: load, error: loadErr } = await supabase
-    .from('lp_movement')
-    .select('*')
-    .eq('m_load_no', loadNo)
-    .single();
-
-  if (loadErr || !load) return res.status(404).json({ error: 'Load not found' });
-
-  const opening = Number(load.m_opening_km || 0);
   const closing = Number(closing_km);
+  if (!closing_km || isNaN(closing)) return res.status(400).json({ error: 'A valid closing KM is required' });
 
-  if (closing < opening) {
-    return res.status(400).json({
-      error: `Closing KM (${closing.toLocaleString()}) cannot be less than opening KM (${opening.toLocaleString()})`,
-      code: 'CLOSING_LESS_THAN_OPENING'
-    });
-  }
-
-  const { data: rateRow } = await supabase
-    .from('lp_client_rates')
-    .select('rc_kms')
-    .eq('rc_client_code', load.m_customer)
-    .eq('rc_from', load.m_from)
-    .eq('rc_to', load.m_to)
-    .single();
-
-  const routeKm = rateRow?.rc_kms || 0;
-  const maxAllowed = opening + routeKm + DEAD_KM_THRESHOLD;
-
-  if (routeKm > 0 && closing > maxAllowed) {
-    return res.status(400).json({
-      error: `Closing KM (${closing.toLocaleString()}) exceeds maximum allowed (${maxAllowed.toLocaleString()} = opening ${opening.toLocaleString()} + route ${routeKm.toLocaleString()} km + 500 km tolerance)`,
-      code: 'CLOSING_EXCEEDS_MAX',
-      max_allowed: maxAllowed,
-      route_km: routeKm
-    });
-  }
-
-  const actual_km = closing - opening;
-
-  const { data: updated, error: updateErr } = await supabase
-    .from('lp_movement')
-    .update({
-      m_closing_km: closing,
-      m_actual_km: actual_km,
-      m_status: 'OFFLOADED',
-      updated_at: new Date().toISOString()
-    })
-    .eq('m_load_no', loadNo)
-    .select()
-    .single();
-
-  if (updateErr) return res.status(400).json({ error: updateErr.message });
-
-  await supabase
-    .from('lp_vehicles')
-    .update({ vh_odometer: closing })
-    .eq('vh_code', load.m_truck);
-
-  await supabase.from('lp_comments').insert([{
-    c_load: loadNo,
-    c_comment: `Load offloaded. Opening KM: ${opening.toLocaleString()} | Closing KM: ${closing.toLocaleString()} | Distance: ${actual_km.toLocaleString()} km`,
-    c_logged_by: req.user.username
-  }]);
-
-  res.json({ ...updated, actual_km, route_km: routeKm });
+  const result = await applyClosingKm(loadNo, closing, req.user.username, 'manual');
+  if (result.error) return res.status(result.status || 400).json(result);
+  res.json(result.data);
 });
 
 // POST validate opening KM on new load

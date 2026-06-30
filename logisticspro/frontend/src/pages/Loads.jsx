@@ -713,22 +713,93 @@ function AddCostModal({ loadId, onClose, onSaved }) {
   );
 }
 
+// ── Add Extra Stop Modal ──────────────────────────────────────
+function AddStopModal({ loadId, onClose, onSaved }) {
+  const [address, setAddress] = useState('');
+  const [amount, setAmount] = useState('');
+  const [showPicker, setShowPicker] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    if (!address.trim()) return alert('Please choose or enter a dropoff location');
+    if (amount && isNaN(Number(amount))) return alert('Please enter a valid amount');
+    setSaving(true);
+    try {
+      await api.addStop({
+        s_load: loadId,
+        s_address: address.trim(),
+        s_amount: Number(amount) || 0,
+      });
+      onSaved();
+    } catch (e) { alert(e.message); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ width: 420 }}>
+        <div className="modal-header">
+          <h3>Add Extra Stop — {loadId}</h3>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', fontSize: 18 }}>✕</button>
+        </div>
+        <div className="modal-body">
+          <div className="form-group">
+            <label>Dropoff Location *</label>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input value={address} onChange={e => setAddress(e.target.value)}
+                placeholder="Type an address or pin on map…"
+                style={{ flex: 1, padding: '8px 10px', fontSize: 13, border: '1px solid #ddd', borderRadius: 4, fontFamily: 'inherit' }} />
+              <button type="button" onClick={() => setShowPicker(true)} title="Pin on map"
+                style={{ padding: '0 12px', border: '1px solid #ddd', borderRadius: 4, background: '#f8f9fa', cursor: 'pointer', fontSize: 16 }}>
+                📍
+              </button>
+            </div>
+          </div>
+          <div className="form-group">
+            <label>Cost for this stop (R) <span style={{ color: '#aaa', fontWeight: 400 }}>(optional)</span></label>
+            <input type="number" value={amount} onChange={e => setAmount(e.target.value)}
+              placeholder="0.00"
+              style={{ width: '100%', padding: '8px 10px', fontSize: 13, border: '1px solid #ddd', borderRadius: 4, fontFamily: 'inherit' }} />
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Add Stop'}</button>
+        </div>
+      </div>
+      {showPicker && (
+        <MapPicker label="Extra Stop" value={address}
+          onChange={addr => setAddress(addr)} onClose={() => setShowPicker(false)} />
+      )}
+    </div>
+  );
+}
+
 // ── Expanded Load Row ─────────────────────────────────────────
 function ExpandedRow({ load, onRefresh, onCostUpdate, asCard = false }) {
   const { user } = useAuth();
   const [comments, setComments] = useState([]);
   const [costs, setCosts] = useState([]);
+  const [stops, setStops] = useState([]);
   const [newComment, setNewComment] = useState('');
   const [showCostModal, setShowCostModal] = useState(false);
+  const [showStopModal, setShowStopModal] = useState(false);
   const [deleteReason, setDeleteReason] = useState('');
   const [deletingCost, setDeletingCost] = useState(null);
   const [deleteSaving, setDeleteSaving] = useState(false);
+  const [deletingStop, setDeletingStop] = useState(null);
+  const [stopDeleteReason, setStopDeleteReason] = useState('');
+  const [stopDeleteSaving, setStopDeleteSaving] = useState(false);
   const [orderNoEdit, setOrderNoEdit] = useState(false);
   const [orderNoVal, setOrderNoVal] = useState(load.m_order_no || '');
   const [orderNoSaving, setOrderNoSaving] = useState(false);
   const [orderNoMsg, setOrderNoMsg] = useState('');
   const [showClosingKm, setShowClosingKm] = useState(false);
-  const [closingKm, setClosingKm] = useState('');
+  const [pulsitFetching, setPulsitFetching] = useState(false);
+  const [pulsitReading, setPulsitReading] = useState(null);   // { odometer, lastUpdate }
+  const [pulsitErrorMsg, setPulsitErrorMsg] = useState('');
+  const [useManualEntry, setUseManualEntry] = useState(false);
+  const [manualKm, setManualKm] = useState('');
   const [kmError, setKmError] = useState('');
   const [kmSaving, setKmSaving] = useState(false);
   const [kmMaxAllowed, setKmMaxAllowed] = useState(0);
@@ -797,14 +868,19 @@ function ExpandedRow({ load, onRefresh, onCostUpdate, asCard = false }) {
 
   const loadDetails = async () => {
     try {
-      const [c, co] = await Promise.all([
+      const [c, co, st] = await Promise.all([
         api.getComments(load.m_load_no),
         req(`/costs?load=${encodeURIComponent(load.m_load_no)}`).catch(e => { console.error(e); return []; }),
+        api.getStops(load.m_load_no).catch(e => { console.error(e); return []; }),
       ]);
       setComments(Array.isArray(c) ? c : []);
       const costsArr = Array.isArray(co) ? co : [];
+      const stopsArr = Array.isArray(st) ? st : [];
       setCosts(costsArr);
-      const extraTotal = costsArr.reduce((s, c) => s + Number(c.c_amount || 0), 0);
+      setStops(stopsArr);
+      const extraTotal =
+        costsArr.reduce((s, c) => s + Number(c.c_amount || 0), 0) +
+        stopsArr.filter(s => s.s_deleted !== 'Y').reduce((s, x) => s + Number(x.s_amount || 0), 0);
       if (onCostUpdate) onCostUpdate(load.m_load_no, extraTotal);
     } catch (e) { console.error(e); }
   };
@@ -851,21 +927,55 @@ function ExpandedRow({ load, onRefresh, onCostUpdate, asCard = false }) {
     catch (e) { alert(e.message); }
   };
 
-  const saveClosingKm = async () => {
-    const opening = Number(load.m_opening_km || 0);
-    const closing = Number(closingKm);
-    if (!closingKm) return setKmError('Please enter the closing odometer reading');
-    if (closing < opening) return setKmError(`Cannot be less than opening KM (${opening.toLocaleString()})`);
-    if (kmMaxAllowed > 0 && closing > kmMaxAllowed) return setKmError(`Cannot exceed ${kmMaxAllowed.toLocaleString()} km`);
+  // Opens the closing panel and immediately fetches the live Pulsit
+  // odometer reading for this load's truck — this is now the primary
+  // path for closing KM (replaces manual entry). Manual entry remains
+  // available as an explicit fallback if Pulsit has no reading.
+  const openClosingKm = async () => {
+    setShowClosingKm(true);
+    setUseManualEntry(false);
+    setKmError('');
+    setPulsitErrorMsg('');
+    setPulsitReading(null);
+    setPulsitFetching(true);
+    try {
+      const r = await api.getPulsitReading(load.m_truck);
+      setPulsitReading(r);
+    } catch (e) {
+      setPulsitErrorMsg(e.message || 'Could not reach Pulsit tracking');
+    } finally {
+      setPulsitFetching(false);
+    }
+  };
+
+  const confirmClosingAuto = async () => {
+    setKmError('');
     setKmSaving(true);
     try {
-      await req(`/km/closing/${encodeURIComponent(load.m_load_no)}`, {
-        method: 'POST', body: JSON.stringify({ closing_km: closing }),
-      });
+      await api.confirmClosingAuto(load.m_load_no);
       setShowClosingKm(false);
       onRefresh();
       loadDetails();
     } catch (e) { setKmError(e.message); }
+    finally { setKmSaving(false); }
+  };
+
+  const saveClosingKmManual = async () => {
+    const opening = Number(load.m_opening_km || 0);
+    const closing = Number(manualKm);
+    if (!manualKm) return setKmError('Please enter the closing odometer reading');
+    if (closing < opening) return setKmError(`Cannot be less than opening KM (${opening.toLocaleString()})`);
+    if (kmMaxAllowed > 0 && closing > kmMaxAllowed) return setKmError(`Cannot exceed ${kmMaxAllowed.toLocaleString()} km`);
+    setKmSaving(true);
+    try {
+      const result = await req(`/km/closing/${encodeURIComponent(load.m_load_no)}`, {
+        method: 'POST', body: JSON.stringify({ closing_km: closing }),
+      });
+      if (result?.error) { setKmError(result.error); return; }
+      setShowClosingKm(false);
+      onRefresh();
+      loadDetails();
+    } catch (e) { setKmError(e.message || 'Could not save closing KM'); }
     finally { setKmSaving(false); }
   };
 
@@ -892,7 +1002,8 @@ function ExpandedRow({ load, onRefresh, onCostUpdate, asCard = false }) {
   };
 
   const totalCosts = costs.reduce((s, c) => s + Number(c.c_amount || 0), 0);
-  const grandTotal = Number(load.m_rate || 0) + totalCosts;
+  const totalStops = stops.filter(s => s.s_deleted !== 'Y').reduce((s, x) => s + Number(x.s_amount || 0), 0);
+  const grandTotal = Number(load.m_rate || 0) + totalCosts + totalStops;
 
   // Work out what the current user can do based on their role and the load status
   const currentStatus = load.m_status;
@@ -1226,6 +1337,10 @@ function ExpandedRow({ load, onRefresh, onCostUpdate, asCard = false }) {
                 <div style={{ fontSize: 10, color: '#aaa', textTransform: 'uppercase' }}>Extra Costs</div>
                 <div style={{ fontFamily: 'monospace', fontWeight: 600, color: '#e53e3e' }}>{fmtR(totalCosts)}</div>
               </div>}
+              {totalStops > 0 && <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 10, color: '#aaa', textTransform: 'uppercase' }}>Stop Costs</div>
+                <div style={{ fontFamily: 'monospace', fontWeight: 600, color: '#e53e3e' }}>{fmtR(totalStops)}</div>
+              </div>}
               <div style={{ textAlign: 'right' }}>
                 <div style={{ fontSize: 10, color: '#aaa', textTransform: 'uppercase' }}>Total</div>
                 <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 15, color: '#005A8E' }}>{fmtR(grandTotal)}</div>
@@ -1233,7 +1348,77 @@ function ExpandedRow({ load, onRefresh, onCostUpdate, asCard = false }) {
             </div>
           </div>
 
-          {/* Status + Audit Trail side by side */}
+          {/* Extra Stops section */}
+          <div style={{ marginTop: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#005A8E', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Extra Stops</div>
+              {!['WAIT_APPROVAL','WAIT_RATE_CHECK','WAIT_INVOICE_NO','LOAD_INVOICED','REJECTED'].includes(currentStatus) && (
+                <button className="btn btn-sm btn-primary" onClick={() => setShowStopModal(true)}>+ Add Stop</button>
+              )}
+            </div>
+            {stops.filter(s => s.s_deleted !== 'Y').length === 0 ? (
+              <div style={{ fontSize: 12, color: '#aaa', padding: '8px 0' }}>No extra stops</div>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: 8 }}>
+                <thead>
+                  <tr style={{ background: '#e8f4fd' }}>
+                    <th style={{ padding: '6px 10px', textAlign: 'left', fontSize: 11, color: '#005A8E' }}>#</th>
+                    <th style={{ padding: '6px 10px', textAlign: 'left', fontSize: 11, color: '#005A8E' }}>Dropoff Location</th>
+                    <th style={{ padding: '6px 10px', textAlign: 'right', fontSize: 11, color: '#005A8E' }}>Cost</th>
+                    <th style={{ padding: '6px 10px', textAlign: 'right', fontSize: 11, color: '#005A8E' }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stops.filter(s => s.s_deleted !== 'Y').map((s, idx) => (
+                    <React.Fragment key={s.stop_no}>
+                      <tr style={{ borderBottom: '1px solid #e8f4fd', background: s.s_delete_requested === 'Y' ? '#fef9e7' : undefined }}>
+                        <td style={{ padding: '6px 10px', color: '#888' }}>{idx + 1}</td>
+                        <td style={{ padding: '6px 10px', color: '#555' }}>{s.s_address}</td>
+                        <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{s.s_amount > 0 ? fmtR(s.s_amount) : '—'}</td>
+                        <td style={{ padding: '6px 10px', textAlign: 'right' }}>
+                          {s.s_delete_requested === 'Y' ? (
+                            <span style={{ fontSize: 11, color: '#d97706', fontWeight: 600 }}>⏳ Pending approval</span>
+                          ) : (
+                            <button onClick={() => setDeletingStop(deletingStop === s.stop_no ? null : s.stop_no)}
+                              style={{ background: 'none', border: '1px solid #fca5a5', borderRadius: 4, color: '#e53e3e', fontSize: 11, cursor: 'pointer', padding: '2px 8px' }}>
+                              🗑 Remove
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                      {deletingStop === s.stop_no && (
+                        <tr key={'del-stop-' + s.stop_no}>
+                          <td colSpan={4} style={{ padding: '8px 10px', background: '#fff5f5', borderBottom: '1px solid #fecaca' }}>
+                            <div style={{ fontSize: 12, color: '#e53e3e', marginBottom: 6, fontWeight: 600 }}>Request removal — {s.s_address}</div>
+                            <div style={{ display: 'flex', gap: 6 }}>
+                              <input value={stopDeleteReason} onChange={e => setStopDeleteReason(e.target.value)}
+                                placeholder="Reason for removal (required)…"
+                                style={{ flex: 1, padding: '5px 8px', fontSize: 12, border: '1px solid #fca5a5', borderRadius: 4, fontFamily: 'inherit' }} />
+                              <button disabled={stopDeleteSaving || !stopDeleteReason.trim()}
+                                onClick={async () => {
+                                  if (!stopDeleteReason.trim()) return;
+                                  setStopDeleteSaving(true);
+                                  try {
+                                    await api.requestDeleteStop(s.stop_no, stopDeleteReason);
+                                    setDeletingStop(null); setStopDeleteReason(''); loadDetails();
+                                  } catch (e) { alert(e.message); }
+                                  finally { setStopDeleteSaving(false); }
+                                }}
+                                style={{ background: '#e53e3e', color: 'white', border: 'none', borderRadius: 4, padding: '5px 12px', fontSize: 12, cursor: 'pointer' }}>
+                                {stopDeleteSaving ? 'Sending…' : 'Submit Request'}
+                              </button>
+                              <button onClick={() => { setDeletingStop(null); setStopDeleteReason(''); }}
+                                style={{ background: 'none', border: '1px solid #ddd', borderRadius: 4, padding: '5px 10px', fontSize: 12, cursor: 'pointer' }}>Cancel</button>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
           <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
 
             {/* ── STATUS WORKFLOW PANEL ── */}
@@ -1273,25 +1458,75 @@ function ExpandedRow({ load, onRefresh, onCostUpdate, asCard = false }) {
               {showClosingKm && (
                 <div style={{ marginBottom: 10, padding: 12, background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 6 }}>
                   <div style={{ fontSize: 11, color: '#059669', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
-                    Closing Odometer Reading
+                    Confirm Offload — Closing Odometer
                   </div>
-                  <div style={{ fontSize: 11, color: '#555', marginBottom: 6 }}>
+                  <div style={{ fontSize: 11, color: '#555', marginBottom: 8 }}>
                     Opening KM: <strong>{Number(load.m_opening_km || 0).toLocaleString()} km</strong>
                     {kmMaxAllowed > 0 && <span> · Max: <strong>{Number(kmMaxAllowed).toLocaleString()} km</strong></span>}
                   </div>
-                  <input type="number" value={closingKm}
-                    onChange={e => { setClosingKm(e.target.value); setKmError(''); }}
-                    placeholder="Enter closing odometer reading"
-                    style={{ width: '100%', padding: '7px 10px', fontSize: 13, border: `1px solid ${kmError ? '#e53e3e' : '#86efac'}`, borderRadius: 4, fontFamily: 'inherit', marginBottom: 4 }}
-                  />
-                  {kmError && <div style={{ color: '#e53e3e', fontSize: 12, marginBottom: 6 }}>⚠ {kmError}</div>}
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <button className="btn btn-primary btn-sm" style={{ flex: 1, background: '#059669', borderColor: '#059669' }}
-                      onClick={saveClosingKm} disabled={kmSaving}>
-                      {kmSaving ? 'Saving…' : '✓ Confirm Offload & Save KM'}
-                    </button>
-                    <button className="btn btn-sm" onClick={() => setShowClosingKm(false)}>Cancel</button>
-                  </div>
+
+                  {!useManualEntry && (
+                    <>
+                      {pulsitFetching && (
+                        <div style={{ fontSize: 12, color: '#555', padding: '8px 0' }}>📡 Reading live odometer from Pulsit GPS…</div>
+                      )}
+                      {!pulsitFetching && pulsitReading && (
+                        <div style={{ background: 'white', border: '1px solid #86efac', borderRadius: 4, padding: '8px 10px', marginBottom: 8 }}>
+                          <div style={{ fontSize: 11, color: '#888', textTransform: 'uppercase' }}>Live Pulsit Reading</div>
+                          <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 18, color: '#059669' }}>
+                            {Number(pulsitReading.odometer).toLocaleString()} km
+                          </div>
+                          <div style={{ fontSize: 11, color: '#888' }}>
+                            Accrued this load: <strong>{(Number(pulsitReading.odometer) - Number(load.m_opening_km || 0)).toLocaleString()} km</strong>
+                          </div>
+                        </div>
+                      )}
+                      {!pulsitFetching && pulsitErrorMsg && (
+                        <div style={{ fontSize: 12, color: '#c05621', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 4, padding: '8px 10px', marginBottom: 8 }}>
+                          ⚠️ {pulsitErrorMsg}
+                        </div>
+                      )}
+                      {kmError && <div style={{ color: '#e53e3e', fontSize: 12, marginBottom: 6 }}>⚠ {kmError}</div>}
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button className="btn btn-primary btn-sm" style={{ flex: 1, background: '#059669', borderColor: '#059669' }}
+                          onClick={confirmClosingAuto} disabled={kmSaving || pulsitFetching || !pulsitReading}>
+                          {kmSaving ? 'Saving…' : '✓ Confirm Offload'}
+                        </button>
+                        {!pulsitFetching && (
+                          <button className="btn btn-sm" onClick={openClosingKm} title="Re-read from Pulsit">↻</button>
+                        )}
+                        <button className="btn btn-sm" onClick={() => setShowClosingKm(false)}>Cancel</button>
+                      </div>
+                      {!pulsitFetching && (
+                        <div style={{ marginTop: 8, textAlign: 'center' }}>
+                          <button onClick={() => { setUseManualEntry(true); setKmError(''); }}
+                            style={{ background: 'none', border: 'none', color: '#888', fontSize: 11, textDecoration: 'underline', cursor: 'pointer' }}>
+                            Pulsit unavailable for this truck? Enter manually
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {useManualEntry && (
+                    <>
+                      <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Manual fallback — only use if Pulsit has no reading for this truck.</div>
+                      <input type="number" value={manualKm}
+                        onChange={e => { setManualKm(e.target.value); setKmError(''); }}
+                        placeholder="Enter closing odometer reading"
+                        style={{ width: '100%', padding: '7px 10px', fontSize: 13, border: `1px solid ${kmError ? '#e53e3e' : '#86efac'}`, borderRadius: 4, fontFamily: 'inherit', marginBottom: 4 }}
+                      />
+                      {kmError && <div style={{ color: '#e53e3e', fontSize: 12, marginBottom: 6 }}>⚠ {kmError}</div>}
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button className="btn btn-primary btn-sm" style={{ flex: 1, background: '#059669', borderColor: '#059669' }}
+                          onClick={saveClosingKmManual} disabled={kmSaving}>
+                          {kmSaving ? 'Saving…' : '✓ Confirm Offload & Save KM'}
+                        </button>
+                        <button className="btn btn-sm" onClick={() => { setUseManualEntry(false); setKmError(''); }}>← Back to Pulsit</button>
+                        <button className="btn btn-sm" onClick={() => setShowClosingKm(false)}>Cancel</button>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 
@@ -1300,8 +1535,8 @@ function ExpandedRow({ load, onRefresh, onCostUpdate, asCard = false }) {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {canAdvance && nextStatus === 'OFFLOADED' ? (
                     // EN_ROUTE → OFFLOADED requires closing KM first
-                    <button className="btn btn-primary btn-sm" onClick={() => setShowClosingKm(true)} disabled={statusSaving}>
-                      ✓ Enter Closing KM & Offload
+                    <button className="btn btn-primary btn-sm" onClick={openClosingKm} disabled={statusSaving}>
+                      ✓ Confirm Offload
                     </button>
                   ) : canAdvance ? (
                     <button className="btn btn-primary btn-sm"
@@ -1458,6 +1693,10 @@ function ExpandedRow({ load, onRefresh, onCostUpdate, asCard = false }) {
           <AddCostModal loadId={load.m_load_no} onClose={() => setShowCostModal(false)}
             onSaved={() => { setShowCostModal(false); loadDetails(); onRefresh(); }} />
         )}
+        {showStopModal && (
+          <AddStopModal loadId={load.m_load_no} onClose={() => setShowStopModal(false)}
+            onSaved={() => { setShowStopModal(false); loadDetails(); onRefresh(); }} />
+        )}
       </div>
     );
   }
@@ -1469,6 +1708,10 @@ function ExpandedRow({ load, onRefresh, onCostUpdate, asCard = false }) {
         {showCostModal && (
           <AddCostModal loadId={load.m_load_no} onClose={() => setShowCostModal(false)}
             onSaved={() => { setShowCostModal(false); loadDetails(); onRefresh(); }} />
+        )}
+        {showStopModal && (
+          <AddStopModal loadId={load.m_load_no} onClose={() => setShowStopModal(false)}
+            onSaved={() => { setShowStopModal(false); loadDetails(); onRefresh(); }} />
         )}
       </td>
     </tr>

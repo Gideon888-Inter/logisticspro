@@ -187,6 +187,25 @@ export const api = {
   createInvoice:       (body)        => request('/invoices', { method: 'POST', body: JSON.stringify(body) }),
   approveInvoice:      (id, body)    => request(`/invoices/${id}/approve`, { method: 'POST', body: JSON.stringify(body) }),
   createCreditNote:    (id, body)    => request(`/invoices/${id}/credit-note`, { method: 'POST', body: JSON.stringify(body) }),
+
+  // ── Fleet overview (Dashboard Fleet tab) ───────────────────────
+  getFleetOverview:    ()            => request('/vehicles/fleet-overview'),
+
+  // ── Addresses (Clients → Addresses tab; Fleet dashboard naming) ─
+  getAddresses:        (params = {}) => request('/addresses?' + new URLSearchParams(params)),
+  createAddress:       (body)        => request('/addresses', { method: 'POST', body: JSON.stringify(body) }),
+  updateAddress:       (id, body)    => request(`/addresses/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  deactivateAddress:   (id)          => request(`/addresses/${id}`, { method: 'DELETE' }),
+
+  // ── Extra Stops (load cards) ────────────────────────────────────
+  getStops:            (loadNo)      => request('/stops?' + new URLSearchParams({ load: loadNo })),
+  addStop:             (body)        => request('/stops', { method: 'POST', body: JSON.stringify(body) }),
+  requestDeleteStop:   (id, reason)  => request(`/stops/${id}/request-delete`, { method: 'PATCH', body: JSON.stringify({ reason }) }),
+  approveDeleteStop:   (id, body)    => request(`/stops/${id}/approve-delete`, { method: 'PATCH', body: JSON.stringify(body) }),
+
+  // ── KM (Pulsit-driven closing odometer) ─────────────────────────
+  getPulsitReading:    (truck)       => request(`/km/pulsit-reading/${encodeURIComponent(truck)}`),
+  confirmClosingAuto:  (loadNo)      => request(`/km/closing-auto/${encodeURIComponent(loadNo)}`, { method: 'POST' }),
 };
 
 

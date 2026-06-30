@@ -18,6 +18,8 @@ const stockRouter    = require('./routes/inventory');    // LP2.0 Inventory & PO
 const rolesRouter    = require('./routes/roles_admin');  // LP2.0 Role Manager
 const financeRouter  = require('./routes/finance');       // LP2.0 Financial Module
 const trackingRouter = require('./routes/tracking');      // LP2.0 Pulsit GPS tracking integration
+const addressesRouter = require('./routes/addresses');     // LP2.0 Named addresses / home bases
+const stopsRouter     = require('./routes/stops');         // LP2.0 Load card extra stops
 
 const app = express();
 app.set('trust proxy', 1);
@@ -65,6 +67,8 @@ app.use('/api/km',          kmRouter);
 app.use('/api/service',     serviceRouter);
 app.use('/api/pods',        podsRouter);
 app.use('/api/invoices',    invoicesRouter);
+app.use('/api/addresses',   addressesRouter);
+app.use('/api/stops',       stopsRouter);
 
 // ── Health check ──────────────────────────────────────────────
 app.get('/health', (_, res) => res.json({ status: 'ok', timestamp: new Date().toISOString() }));

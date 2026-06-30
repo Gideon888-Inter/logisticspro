@@ -468,16 +468,63 @@ function ServiceTile({ vehicles, onNavigate }) {
   );
 }
 
+function exportFleetCSV(rows) {
+  const headers = ['Horse', 'Trailers', 'Client', 'Load No', 'Ignition', 'Home Base', 'Last Location', 'Last Update'];
+  const csvRows = rows.map(v => [
+    v.vh_code,
+    v.trailers.map(t => t.code + (t.confirmed === true ? ' (confirmed)' : t.confirmed === false ? ' (unconfirmed — check pairing)' : t.tracked ? '' : ' (not GPS-tracked)')).join('; '),
+    v.client_name || v.client || '',
+    v.load_no || '',
+    v.ignition === 1 ? 'ON' : v.ignition === 0 ? 'OFF' : '',
+    v.home_base || '',
+    v.location || (v.lat != null ? `${v.lat}, ${v.lng}` : ''),
+    v.lastUpdate || '',
+  ]);
+  const csv = [headers, ...csvRows]
+    .map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))
+    .join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `fleet_overview_${new Date().toISOString().split('T')[0]}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function TrailerBadge({ trailer }) {
+  const { code, tracked, confirmed } = trailer;
+  let icon = null, title = '';
+  if (confirmed === true)      { icon = '✓'; title = 'Confirmed — trailer GPS position matches horse location'; }
+  else if (confirmed === false) { icon = '⚠'; title = 'Unconfirmed — trailer GPS position does not match horse location, check pairing'; }
+  else if (!tracked)            { title = 'Not GPS-tracked — confirmation unavailable'; }
+  return (
+    <span title={title} style={{ marginRight: 6, whiteSpace: 'nowrap' }}>
+      {code}
+      {icon && <span style={{ marginLeft: 3, color: confirmed ? '#059669' : '#d97706', fontWeight: 700 }}>{icon}</span>}
+    </span>
+  );
+}
+
 function FleetTab() {
   const [data, setData] = useState([]);
+  const [homeBases, setHomeBases] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [pulsitWarning, setPulsitWarning] = useState(false);
+  const [ignitionFilter, setIgnitionFilter] = useState('all'); // all | on | off
+  const [homeBaseFilter, setHomeBaseFilter] = useState('all'); // all | <home base name>
 
   const load = async () => {
     try {
-      const r = await req('/vehicles/fleet-overview');
-      if (Array.isArray(r)) {
-        setData(r);
+      const [r, addr] = await Promise.all([
+        req('/vehicles/fleet-overview'),
+        req('/addresses?type=HOME_BASE').catch(() => []),
+      ]);
+      setHomeBases(Array.isArray(addr) ? addr : []);
+      if (r && Array.isArray(r.vehicles)) {
+        setData(r.vehicles);
+        setPulsitWarning(!!r.pulsit_unavailable);
         setError('');
       } else {
         setData([]);
@@ -508,6 +555,13 @@ function FleetTab() {
     return new Date(iso).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short' });
   };
 
+  const filtered = data.filter(v => {
+    if (ignitionFilter === 'on'  && v.ignition !== 1) return false;
+    if (ignitionFilter === 'off' && v.ignition !== 0) return false;
+    if (homeBaseFilter !== 'all' && v.home_base !== homeBaseFilter) return false;
+    return true;
+  });
+
   if (loading) return <div className="loading">Loading fleet status…</div>;
   if (error) return (
     <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'40vh', gap:12 }}>
@@ -519,29 +573,56 @@ function FleetTab() {
 
   return (
     <div>
+      {pulsitWarning && (
+        <div style={{ background:'#fff7ed', border:'1px solid #fed7aa', color:'#c05621', borderRadius:6, padding:'8px 12px', fontSize:12, marginBottom:10 }}>
+          ⚠️ Live GPS tracking (Pulsit) is currently unreachable — ignition, location, and trailer-link confirmation may be unavailable until it recovers.
+        </div>
+      )}
+
+      <div className="filter-bar">
+        <select value={ignitionFilter} onChange={e => setIgnitionFilter(e.target.value)}>
+          <option value="all">All ignition states</option>
+          <option value="on">🟢 Ignition ON</option>
+          <option value="off">⚫ Ignition OFF</option>
+        </select>
+        <select value={homeBaseFilter} onChange={e => setHomeBaseFilter(e.target.value)}>
+          <option value="all">All home bases</option>
+          {homeBases.map(hb => <option key={hb.address_id} value={hb.a_name}>{hb.a_name}</option>)}
+          <option value="">Away from any home base</option>
+        </select>
+        <button className="btn btn-sm" onClick={() => exportFleetCSV(filtered)}>⬇ Export CSV</button>
+      </div>
+
       {/* Desktop table */}
       <div className="desktop-table">
         <div className="table-wrap" style={{ overflowX: 'auto' }}>
-          <table style={{ minWidth: 900 }}>
+          <table style={{ minWidth: 1000 }}>
             <thead>
               <tr>
                 <th>Horse</th>
                 <th>Trailers</th>
+                <th>Client</th>
+                <th>Load No</th>
                 <th>Ignition</th>
                 <th>Last Location</th>
-                <th>Load No</th>
               </tr>
             </thead>
             <tbody>
-              {data.length === 0 && (
-                <tr><td colSpan={5} style={{ textAlign: 'center', color: '#aaa', fontSize: 13, padding: 24 }}>
-                  No active horses found.
+              {filtered.length === 0 && (
+                <tr><td colSpan={6} style={{ textAlign: 'center', color: '#aaa', fontSize: 13, padding: 24 }}>
+                  No vehicles match the current filters.
                 </td></tr>
               )}
-              {data.map(v => (
+              {filtered.map(v => (
                 <tr key={v.vh_code}>
                   <td style={{ fontFamily:'monospace', fontWeight:700 }}>{v.vh_code}</td>
-                  <td style={{ fontSize:12 }}>{v.trailers.length > 0 ? v.trailers.join(', ') : '—'}</td>
+                  <td style={{ fontSize:12 }}>
+                    {v.trailers.length > 0 ? v.trailers.map(t => <TrailerBadge key={t.code} trailer={t} />) : '—'}
+                  </td>
+                  <td style={{ fontSize:12 }}>{v.client_name || '—'}</td>
+                  <td style={{ fontFamily:'monospace', fontWeight:600, color: v.load_no ? '#005A8E' : '#bbb' }}>
+                    {v.load_no || 'None'}
+                  </td>
                   <td>
                     {v.ignition === 1 && <span style={{ color:'#059669', fontWeight:600, fontSize:12 }}>🟢 ON</span>}
                     {v.ignition === 0 && <span style={{ color:'#888', fontWeight:600, fontSize:12 }}>⚫ OFF</span>}
@@ -550,9 +631,6 @@ function FleetTab() {
                   <td style={{ fontSize:12, maxWidth:280 }}>
                     {v.location || (v.lat != null ? `${v.lat.toFixed(4)}, ${v.lng.toFixed(4)}` : '—')}
                     {v.lastUpdate && <div style={{ color:'#aaa', fontSize:11 }}>{fmtAgo(v.lastUpdate)}</div>}
-                  </td>
-                  <td style={{ fontFamily:'monospace', fontWeight:600, color: v.load_no ? '#005A8E' : '#bbb' }}>
-                    {v.load_no || 'None'}
                   </td>
                 </tr>
               ))}
@@ -563,7 +641,7 @@ function FleetTab() {
 
       {/* Mobile card list */}
       <div className="mobile-card-list">
-        {data.map(v => (
+        {filtered.map(v => (
           <div key={v.vh_code} className="load-card" style={{ marginBottom: 10 }}>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
               <span style={{ fontFamily:'monospace', fontWeight:700, fontSize:14 }}>{v.vh_code}</span>
@@ -572,7 +650,10 @@ function FleetTab() {
               {v.ignition == null && <span style={{ color:'#ccc', fontSize:12 }}>—</span>}
             </div>
             <div style={{ fontSize:12, color:'#666', marginBottom:4 }}>
-              Trailers: {v.trailers.length > 0 ? v.trailers.join(', ') : '—'}
+              Trailers: {v.trailers.length > 0 ? v.trailers.map(t => <TrailerBadge key={t.code} trailer={t} />) : '—'}
+            </div>
+            <div style={{ fontSize:12, color:'#666', marginBottom:4 }}>
+              Client: {v.client_name || '—'}
             </div>
             <div style={{ fontSize:12, color:'#666', marginBottom:4 }}>
               {v.location || (v.lat != null ? `${v.lat.toFixed(4)}, ${v.lng.toFixed(4)}` : 'Location unavailable')}
@@ -583,7 +664,7 @@ function FleetTab() {
             </div>
           </div>
         ))}
-        {data.length === 0 && <div style={{ color:'#aaa', fontSize:13, textAlign:'center', padding:20 }}>No active horses found.</div>}
+        {filtered.length === 0 && <div style={{ color:'#aaa', fontSize:13, textAlign:'center', padding:20 }}>No vehicles match the current filters.</div>}
       </div>
     </div>
   );
