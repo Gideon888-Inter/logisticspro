@@ -1,10 +1,11 @@
 const express = require('express');
 const supabase = require('../supabase');
-const { authMiddleware, requireRole } = require('../middleware/auth');
+const { authMiddleware, requireRole, loadUserPermissions, requirePermission } = require('../middleware/auth');
 
 // ── DRIVERS ──────────────────────────────────────────────────
 const driversRouter = express.Router();
 driversRouter.use(authMiddleware);
+driversRouter.use(loadUserPermissions);
 
 driversRouter.get('/', async (req, res) => {
   const { bus_unit, active } = req.query;
@@ -22,13 +23,13 @@ driversRouter.get('/:id', async (req, res) => {
   res.json(data);
 });
 
-driversRouter.post('/', requireRole('ADMIN', 'MANAGER'), async (req, res) => {
+driversRouter.post('/', requirePermission('DRIVERS', 'edit'), async (req, res) => {
   const { data, error } = await supabase.from('lp_drivers').insert([req.body]).select().single();
   if (error) return res.status(400).json({ error: error.message });
   res.status(201).json(data);
 });
 
-driversRouter.patch('/:id', requireRole('ADMIN', 'MANAGER'), async (req, res) => {
+driversRouter.patch('/:id', requirePermission('DRIVERS', 'edit'), async (req, res) => {
   const { data, error } = await supabase.from('lp_drivers').update(req.body).eq('d_id', req.params.id).select().single();
   if (error) return res.status(400).json({ error: error.message });
   res.json(data);
@@ -37,6 +38,7 @@ driversRouter.patch('/:id', requireRole('ADMIN', 'MANAGER'), async (req, res) =>
 // ── CUSTOMERS ─────────────────────────────────────────────────
 const customersRouter = express.Router();
 customersRouter.use(authMiddleware);
+customersRouter.use(loadUserPermissions);
 
 customersRouter.get('/', async (req, res) => {
   const { data, error } = await supabase
@@ -58,7 +60,7 @@ customersRouter.get('/:code', async (req, res) => {
   res.json(data);
 });
 
-customersRouter.post('/', requireRole('ADMIN', 'MANAGER'), async (req, res) => {
+customersRouter.post('/', requirePermission('CLIENTS', 'edit'), async (req, res) => {
   const { contacts, ...customer } = req.body;
   const { data, error } = await supabase.from('lp_customers').insert([customer]).select().single();
   if (error) return res.status(400).json({ error: error.message });
@@ -68,7 +70,7 @@ customersRouter.post('/', requireRole('ADMIN', 'MANAGER'), async (req, res) => {
   res.status(201).json(data);
 });
 
-customersRouter.patch('/:code', requireRole('ADMIN', 'MANAGER'), async (req, res) => {
+customersRouter.patch('/:code', requirePermission('CLIENTS', 'edit'), async (req, res) => {
   const { data, error } = await supabase.from('lp_customers').update(req.body).eq('c_code', req.params.code).select().single();
   if (error) return res.status(400).json({ error: error.message });
   res.json(data);
@@ -107,6 +109,7 @@ maintenanceRouter.patch('/:id', async (req, res) => {
 // ── ROUTES (freight routes) ───────────────────────────────────
 const routesRouter = express.Router();
 routesRouter.use(authMiddleware);
+routesRouter.use(loadUserPermissions);
 
 routesRouter.get('/', async (req, res) => {
   const { data, error } = await supabase.from('lp_route').select('*').order('rc_code');
@@ -114,13 +117,13 @@ routesRouter.get('/', async (req, res) => {
   res.json(data);
 });
 
-routesRouter.post('/', requireRole('ADMIN', 'MANAGER'), async (req, res) => {
+routesRouter.post('/', requirePermission('ROUTES', 'edit'), async (req, res) => {
   const { data, error } = await supabase.from('lp_route').insert([req.body]).select().single();
   if (error) return res.status(400).json({ error: error.message });
   res.status(201).json(data);
 });
 
-routesRouter.patch('/:id', requireRole('ADMIN', 'MANAGER'), async (req, res) => {
+routesRouter.patch('/:id', requirePermission('ROUTES', 'edit'), async (req, res) => {
   const { data, error } = await supabase.from('lp_route').update(req.body).eq('rc_no', req.params.id).select().single();
   if (error) return res.status(400).json({ error: error.message });
   res.json(data);
