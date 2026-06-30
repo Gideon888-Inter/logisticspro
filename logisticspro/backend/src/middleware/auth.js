@@ -133,6 +133,11 @@ const BUILTIN_PERMISSION_MAP = {
   ROLES:           { view: CAN_MANAGE_ROLES, edit: CAN_MANAGE_ROLES,          delete: CAN_MANAGE_ROLES, approve: [] },
   REPORTS:         { view: CAN_VIEW_LOADS,   edit: [ROLES.ADMIN],             delete: [ROLES.ADMIN], approve: [] },
   KM:              { view: CAN_VIEW_LOADS,   edit: CAN_APPROVE_KM,             delete: [ROLES.ADMIN], approve: [...CAN_APPROVE_KM, ROLES.MANAGER] },
+  // Admin-only by default — exposes raw Pulsit API responses, not something
+  // any role should see day-to-day. Kept as a normal DB-driven permission
+  // (rather than a hardcoded role check) so it can be granted to another
+  // role later purely via User Roles, with no code/deploy needed.
+  TRACKING_DEBUG:  { view: [ROLES.ADMIN],    edit: [ROLES.ADMIN],              delete: [], approve: [] },
 };
 
 // ─────────────────────────────────────────────────────────────
