@@ -14,6 +14,21 @@ async function getPermissionsForRole(role) {
   return permReq.permissions || {};
 }
 
+// PO approval tier — mirrors getPOApprovalTier() in routes/inventory.js.
+// ADMIN is hardcoded to tier 4 regardless of DB state (lockout safeguard).
+async function getPOApprovalTier(role) {
+  if (role === ROLES.ADMIN) return { po_approval_tier: 4, can_use_capital_po: true };
+  const { data } = await supabase
+    .from('lp_po_approval_tiers')
+    .select('tier, can_use_capital_po')
+    .eq('role_key', role)
+    .single();
+  return {
+    po_approval_tier: data?.tier ?? 0,
+    can_use_capital_po: data?.can_use_capital_po ?? false,
+  };
+}
+
 const router = express.Router();
 
 // ============================================================
@@ -51,6 +66,7 @@ router.post('/login', async (req, res) => {
   );
 
   const permissions = await getPermissionsForRole(user.u_role);
+  const poTier = await getPOApprovalTier(user.u_role);
 
   res.json({
     token,
@@ -62,6 +78,7 @@ router.post('/login', async (req, res) => {
       region:      user.u_region,
       first_login: user.u_first_login === 'Y',
       permissions,
+      ...poTier,
     },
   });
 });
@@ -400,8 +417,9 @@ router.get('/me', authMiddleware, async (req, res) => {
   if (!user) return res.status(404).json({ error: 'User not found' });
 
   const permissions = await getPermissionsForRole(user.u_role);
+  const poTier = await getPOApprovalTier(user.u_role);
 
-  res.json({ ...user, first_login: user.u_first_login === 'Y', permissions });
+  res.json({ ...user, first_login: user.u_first_login === 'Y', permissions, ...poTier });
 });
 
 
