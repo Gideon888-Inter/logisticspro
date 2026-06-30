@@ -78,6 +78,7 @@ export const api = {
   getLoads:            (params = {}) => request('/loads?' + new URLSearchParams(params)),
   getLoad:             (id)          => request(`/loads/${id}`),
   getLoadStats:        (params = {}) => request('/loads/stats/summary?' + new URLSearchParams(params)),
+  getInvoiceLink:      (loadNo)      => request(`/loads/${encodeURIComponent(loadNo)}/invoice-link`),
   getPendingOrderNos:  ()            => request('/loads/pending-order-nos'),
   getPendingOpsActions:()            => request('/loads/pending-ops-actions'),
   createLoad:          (body)        => request('/loads', { method: 'POST', body: JSON.stringify(body) }),
