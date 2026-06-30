@@ -1,6 +1,7 @@
 const express = require('express');
 const supabase = require('../supabase');
 const { authMiddleware, loadUserPermissions, requirePermission } = require('../middleware/auth');
+const { getPulsitVehicles, mapVehicle } = require('../lib/pulsit');
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -98,6 +99,81 @@ router.get('/', async (req, res) => {
   });
 
   res.json(enriched);
+});
+
+// ── GET /api/vehicles/fleet-overview ──────────────────────────────────────────
+// Dashboard "Fleet" tab: per-horse live status combining vehicle master data,
+// the truck's current/latest load (for trailer + load-number context), and
+// live Pulsit tracking (ignition + last known location).
+// MUST be registered before /:code or Express treats "fleet-overview" as a
+// vehicle code parameter.
+const ACTIVE_LOAD_STATUSES = ['PRELOAD', 'EN_ROUTE']; // before/at OFFLOADED = no longer "active"
+
+router.get('/fleet-overview', requirePermission('FLEET', 'view'), async (req, res) => {
+  try {
+    const { data: horses, error: vErr } = await supabase
+      .from('lp_vehicles')
+      .select('vh_code, vh_make, vh_model, vh_registration')
+      .eq('vh_type', 'Horse')
+      .eq('vh_active', 'Y')
+      .order('vh_code');
+    if (vErr) throw vErr;
+
+    const codes = (horses || []).map(h => h.vh_code);
+
+    // Latest non-deleted load per horse, to determine "active" + trailers
+    let loadMap = {};
+    if (codes.length > 0) {
+      const { data: loads, error: lErr } = await supabase
+        .from('lp_movement')
+        .select('m_truck, m_load_no, m_status, m_trailer1, m_trailer2, m_date, created_at')
+        .in('m_truck', codes)
+        .neq('m_status', 'DELETED')
+        .order('m_date', { ascending: false })
+        .order('created_at', { ascending: false });
+      if (lErr) throw lErr;
+      (loads || []).forEach(l => {
+        if (!loadMap[l.m_truck]) loadMap[l.m_truck] = l;
+      });
+    }
+
+    // Live tracking — non-fatal if Pulsit is unreachable; fleet data still useful without it
+    let posByCode = {};
+    try {
+      const list = await getPulsitVehicles();
+      list.map(mapVehicle).forEach(p => {
+        if (p.code) posByCode[p.code] = p;
+        if (p.regNo) posByCode[p.regNo] = posByCode[p.regNo] || p;
+      });
+    } catch (e) {
+      console.error('[fleet-overview] tracking unavailable:', e.message);
+    }
+
+    const result = (horses || []).map(h => {
+      const load = loadMap[h.vh_code];
+      const isActive = !!load && ACTIVE_LOAD_STATUSES.includes(load.m_status);
+      const pos = posByCode[h.vh_code] || posByCode[h.vh_registration] || null;
+
+      return {
+        vh_code:     h.vh_code,
+        vh_make:     h.vh_make,
+        vh_model:    h.vh_model,
+        trailers:    isActive ? [load.m_trailer1, load.m_trailer2].filter(Boolean) : [],
+        load_no:     isActive ? load.m_load_no : null,
+        load_status: isActive ? load.m_status : null,
+        ignition:    pos ? pos.ignition : null,    // 1 = on, 0 = off, null = unknown
+        location:    pos ? pos.location : null,
+        lat:         pos ? pos.lat : null,
+        lng:         pos ? pos.lng : null,
+        lastUpdate:  pos ? pos.lastUpdate : null,
+      };
+    });
+
+    res.json(result);
+  } catch (e) {
+    console.error('[vehicles/fleet-overview]', e.message);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ── GET /api/vehicles/:code ───────────────────────────────────────────────────
