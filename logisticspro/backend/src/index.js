@@ -82,14 +82,18 @@ const server = app.listen(PORT, () => console.log(`LogisticsPro API running on p
 // ── Render free-tier keepalive ────────────────────────────────
 // Render spins down free instances after 15 min of inactivity.
 // Self-ping every 10 min keeps the server awake during business hours.
-const SELF_URL = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
-setInterval(() => {
-  const https = SELF_URL.startsWith('https') ? require('https') : require('http');
-  https.get(`${SELF_URL}/health`, (res) => {
-    console.log(`[keepalive] /health → ${res.statusCode}`);
-  }).on('error', (e) => {
-    console.warn('[keepalive] ping failed:', e.message);
-  });
-}, 10 * 60 * 1000); // every 10 minutes
+// Only runs when actually deployed on Render (RENDER_EXTERNAL_URL is set
+// by Render itself) — pointless and noisy in local development.
+if (process.env.RENDER_EXTERNAL_URL) {
+  const SELF_URL = process.env.RENDER_EXTERNAL_URL;
+  setInterval(() => {
+    const https = SELF_URL.startsWith('https') ? require('https') : require('http');
+    https.get(`${SELF_URL}/health`, (res) => {
+      console.log(`[keepalive] /health → ${res.statusCode}`);
+    }).on('error', (e) => {
+      console.warn('[keepalive] ping failed:', e.message);
+    });
+  }, 10 * 60 * 1000); // every 10 minutes
+}
 
 
