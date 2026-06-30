@@ -91,6 +91,10 @@ export const api = {
 
   // ── Vehicles ────────────────────────────────────────────────
   getVehicles:         (params = {}) => request('/vehicles?' + new URLSearchParams(params)),
+
+  // ── Tracking (Pulsit GPS) ─────────────────────────────────────────
+  getTrackingPositions: () => request('/tracking/positions'),
+  getTrackingDebug:     () => request('/tracking/debug'),
   getVehicle:          (code)        => request(`/vehicles/${code}`),
   getVehicleAudit:     (code)        => request(`/vehicles/${code}/audit`),
   getVehicleMaintenance:(code)       => request(`/vehicles/${code}/maintenance`),
