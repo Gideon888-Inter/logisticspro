@@ -2,7 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const supabase = require('../supabase');
-const { authMiddleware, requireRole, ROLES, CAN_MANAGE_USERS, loadUserPermissions } = require('../middleware/auth');
+const { authMiddleware, requireRole, ROLES, CAN_MANAGE_USERS, loadUserPermissions, isStrongPassword } = require('../middleware/auth');
 
 // Compute a user's permission map without needing a live HTTP request/response
 // (reuses the exact same logic that route-level loadUserPermissions middleware uses).
@@ -53,6 +53,26 @@ router.post('/login', async (req, res) => {
   if (!valid)
     return res.status(401).json({ error: 'Invalid username or password' });
 
+  // Admin-mediated reset hardening: a temp password set via /forgot-password
+  // carries an expiry. Previously nothing actually checked it — the temp
+  // password worked as a normal password indefinitely. Now, if it's expired
+  // and was never used to complete a login, reject it outright rather than
+  // letting a stale temp password sit valid forever.
+  if (user.u_reset_token && user.u_reset_token_expiry && !user.u_reset_used) {
+    if (new Date(user.u_reset_token_expiry) < new Date()) {
+      return res.status(401).json({
+        error: 'This temporary password has expired. Please contact your Administrator or Manager for a new one.',
+      });
+    }
+    // First successful login on a still-valid temp password — clear it so
+    // it can't be read back out (e.g. via a future admin-facing retrieval
+    // view) and treated as still current once the user has actually used it.
+    await supabase
+      .from('lp_users')
+      .update({ u_reset_used: true, u_reset_token: null, u_reset_token_expiry: null })
+      .eq('u_id', user.u_id);
+  }
+
   const token = jwt.sign(
     {
       id:       user.u_id,
@@ -101,8 +121,11 @@ router.post('/register', authMiddleware, requireRole(...CAN_MANAGE_USERS), async
   if (!u_username?.trim())
     return res.status(400).json({ error: 'Username is required' });
 
-  if (!u_password || u_password.length < 8)
-    return res.status(400).json({ error: 'Password must be at least 8 characters' });
+  if (!u_password) {
+    return res.status(400).json({ error: 'Password is required' });
+  }
+  const pwCheck = isStrongPassword(u_password);
+  if (!pwCheck.valid) return res.status(400).json({ error: pwCheck.error });
 
   // Manager cannot create Admin or Finance users (Finance is Admin-only)
   if (req.user.role === ROLES.MANAGER && u_role === ROLES.ADMIN)
@@ -324,37 +347,51 @@ router.patch('/pending-users/:id', authMiddleware, async (req, res) => {
 
 // ============================================================
 // POST /api/auth/change-password
+// Admin/Manager only. Per policy, no other role can change a password
+// themselves — everyone else has theirs set via
+// POST /api/users/:id/reset-password (by an Admin/Manager) or the
+// admin-mediated /forgot-password flow.
 // ============================================================
-router.post('/change-password', authMiddleware, async (req, res) => {
+router.post('/change-password', authMiddleware, requireRole(ROLES.ADMIN, ROLES.MANAGER), async (req, res) => {
   const { current_password, new_password } = req.body;
 
-  if (!new_password || new_password.length < 8)
-    return res.status(400).json({ error: 'New password must be at least 8 characters' });
+  const check = isStrongPassword(new_password);
+  if (!check.valid) return res.status(400).json({ error: check.error });
 
   const { data: user } = await supabase
     .from('lp_users')
-    .select('u_password')
+    .select('u_id, u_password')
     .eq('u_username', req.user.username)
     .single();
 
   if (!user) return res.status(404).json({ error: 'User not found' });
 
-  if (current_password) {
-    const valid = await bcrypt.compare(current_password, user.u_password);
-    if (!valid) return res.status(401).json({ error: 'Current password is incorrect' });
-  }
+  if (!current_password)
+    return res.status(400).json({ error: 'Current password is required' });
+  const valid = await bcrypt.compare(current_password, user.u_password);
+  if (!valid) return res.status(401).json({ error: 'Current password is incorrect' });
 
   const hashed = await bcrypt.hash(new_password, 10);
 
   await supabase
     .from('lp_users')
     .update({
-      u_password:          hashed,
-      u_first_login:       'N',
-      u_reset_token:       null,
+      u_password:           hashed,
+      u_first_login:        'N',
+      u_reset_token:        null,
       u_reset_token_expiry: null,
+      u_reset_used:         false,
+      u_password_set_by:    req.user.username,
+      u_password_set_at:    new Date().toISOString(),
     })
     .eq('u_username', req.user.username);
+
+  await supabase.from('lp_user_audit').insert([{
+    aud_username: req.user.username,
+    aud_action:   'PASSWORD_CHANGED',
+    aud_detail:   'Self-service change',
+    aud_operator: req.user.username,
+  }]).catch(() => {});
 
   res.json({ success: true, message: 'Password changed successfully' });
 });
@@ -362,8 +399,15 @@ router.post('/change-password', authMiddleware, async (req, res) => {
 
 // ============================================================
 // POST /api/auth/forgot-password
+// Admin/Manager only — generates a temporary password for a user who's
+// locked out. This was previously a public, unauthenticated endpoint
+// (anyone could trigger a reset for any active username); since the
+// reset channel is admin-mediated by design, the real-world flow is
+// "user contacts their Admin/Manager directly", who then triggers this
+// (or sets a password of their choosing via POST /users/:id/reset-password)
+// from inside the app. Removing the public path closes that surface.
 // ============================================================
-router.post('/forgot-password', async (req, res) => {
+router.post('/forgot-password', authMiddleware, requireRole(ROLES.ADMIN, ROLES.MANAGER), async (req, res) => {
   const { username } = req.body;
   if (!username) return res.status(400).json({ error: 'Username required' });
 
@@ -375,12 +419,19 @@ router.post('/forgot-password', async (req, res) => {
     .single();
 
   if (!user)
-    return res.json({ success: true, message: 'If the username exists, a new password has been sent' });
+    return res.status(404).json({ error: 'No active user found with that username' });
 
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#';
-  let tempPassword = '';
-  for (let i = 0; i < 10; i++)
-    tempPassword += chars[Math.floor(Math.random() * chars.length)];
+  // Build the temp password by guaranteeing one char from each required
+  // class first, then filling the rest randomly and shuffling — a plain
+  // random draw from a mixed pool can't guarantee policy compliance.
+  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const lower = 'abcdefghjkmnpqrstuvwxyz';
+  const digits = '23456789';
+  const special = '!@#$%';
+  const all = upper + lower + digits + special;
+  const required = [upper, lower, digits, special].map(set => set[Math.floor(Math.random() * set.length)]);
+  const rest = Array.from({ length: 6 }, () => all[Math.floor(Math.random() * all.length)]);
+  const tempPassword = [...required, ...rest].sort(() => Math.random() - 0.5).join('');
 
   const hashed = await bcrypt.hash(tempPassword, 10);
   const expiry = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
@@ -392,13 +443,24 @@ router.post('/forgot-password', async (req, res) => {
       u_first_login:        'Y',
       u_reset_token:        tempPassword,
       u_reset_token_expiry: expiry,
+      u_reset_used:         false,
+      u_password_set_by:    req.user.username,
+      u_password_set_at:    new Date().toISOString(),
     })
     .eq('u_username', username);
 
+  await supabase.from('lp_user_audit').insert([{
+    aud_username: username,
+    aud_action:   'PASSWORD_RESET_GENERATED',
+    aud_detail:   `Temporary password generated by ${req.user.username}, expires ${expiry}`,
+    aud_operator: req.user.username,
+  }]).catch(() => {});
 
   res.json({
-    success: true,
-    message: 'A temporary password has been set. Please contact your administrator to retrieve it.',
+    success:        true,
+    temp_password:  tempPassword,
+    expires_at:      expiry,
+    message:        `Temporary password generated for ${username}. Relay it to them directly — it expires in 24 hours and stops working as soon as they log in with it.`,
   });
 
 });
