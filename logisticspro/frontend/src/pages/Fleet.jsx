@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../lib/AuthContext';
 import { api } from '../lib/api';
+import Loads from './Loads';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 const SERVICE_WARN_KM = 5000;
@@ -216,7 +217,7 @@ function ServiceHistoryChecklist({ serviceNo }) {
   );
 }
 
-export default function Fleet({ focusServiceDue }) {
+function FleetList({ focusServiceDue }) {
   const { user } = useAuth();
   const [data, setData]       = useState([]);
   const [loading, setLoading] = useState(true);
@@ -900,3 +901,140 @@ export default function Fleet({ focusServiceDue }) {
   );
 }
 
+
+// ════════════════════════════════════════════════════════════════════════════
+// Live Location tab — vehicle list (Horse/Trailer) + map placeholder.
+// Wire in the tracking-company API feed here once available: poll/subscribe
+// for {vh_code -> {lat, lng, heading, speed, last_update}} and plot markers.
+// ════════════════════════════════════════════════════════════════════════════
+function LiveLocation() {
+  const [vehicles, setVehicles] = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [typeFilter, setTypeFilter] = useState('all'); // all | Horse | Trailer
+  const [search, setSearch]     = useState('');
+  const [selected, setSelected] = useState(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const r = await api.getVehicles({ active: 'all' });
+      setVehicles(Array.isArray(r) ? r : []);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const filtered = vehicles.filter(v => {
+    const matchesType = typeFilter === 'all' || v.vh_type === typeFilter;
+    const s = search.trim().toLowerCase();
+    const matchesSearch = !s ||
+      v.vh_code?.toLowerCase().includes(s) ||
+      v.vh_make?.toLowerCase().includes(s) ||
+      v.vh_model?.toLowerCase().includes(s);
+    return matchesType && matchesSearch;
+  });
+
+  return (
+    <div style={{ display: 'flex', gap: 16, alignItems: 'stretch' }} className="live-location-layout">
+      {/* ── Vehicle list ── */}
+      <div style={{ width: 300, flexShrink: 0, background: 'white', border: '1px solid #e8edf2',
+        borderRadius: 8, display: 'flex', flexDirection: 'column', maxHeight: 640 }}>
+        <div style={{ padding: 10, borderBottom: '1px solid #e8edf2' }}>
+          <input placeholder="Search vehicles…" value={search} onChange={e => setSearch(e.target.value)}
+            style={{ width: '100%', padding: '7px 10px', fontSize: 13, border: '1px solid #ddd',
+              borderRadius: 6, outline: 'none', marginBottom: 8 }} />
+          <div style={{ display: 'flex', gap: 6 }}>
+            {[['all', 'All'], ['Horse', 'Horses'], ['Trailer', 'Trailers']].map(([key, label]) => (
+              <button key={key} onClick={() => setTypeFilter(key)} style={{
+                flex: 1, padding: '6px 4px', fontSize: 11, fontWeight: typeFilter === key ? 700 : 400,
+                border: '1px solid #ddd', borderRadius: 6, cursor: 'pointer',
+                background: typeFilter === key ? '#005A8E' : 'white',
+                color: typeFilter === key ? 'white' : '#555',
+              }}>{label}</button>
+            ))}
+          </div>
+        </div>
+        <div style={{ overflowY: 'auto', flex: 1 }}>
+          {loading && <div style={{ padding: 16, fontSize: 13, color: '#888' }}>Loading vehicles…</div>}
+          {!loading && filtered.length === 0 && (
+            <div style={{ padding: 16, fontSize: 13, color: '#888' }}>No vehicles match.</div>
+          )}
+          {filtered.map(v => (
+            <div key={v.vh_code} onClick={() => setSelected(v)} style={{
+              padding: '10px 12px', borderBottom: '1px solid #f0f2f5', cursor: 'pointer',
+              background: selected?.vh_code === v.vh_code ? '#eef6fb' : 'white',
+            }}>
+              <div style={{ fontWeight: 700, fontSize: 13, fontFamily: 'monospace' }}>{v.vh_code}</div>
+              <div style={{ fontSize: 11, color: '#888' }}>
+                {v.vh_type} · {[v.vh_make, v.vh_model].filter(Boolean).join(' ') || '—'}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Map placeholder ── */}
+      <div style={{ flex: 1, background: '#eef1f4', border: '1px solid #e8edf2', borderRadius: 8,
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        minHeight: 400, padding: 24, textAlign: 'center' }}>
+        <div style={{ fontSize: 40, marginBottom: 12 }}>🛰️</div>
+        <div style={{ fontSize: 15, fontWeight: 700, color: '#444', marginBottom: 6 }}>
+          Live tracking not yet connected
+        </div>
+        <div style={{ fontSize: 13, color: '#888', maxWidth: 360, marginBottom: 14 }}>
+          Once the tracking company's API is connected, vehicle positions will plot here in real time.
+        </div>
+        {selected && (
+          <div style={{ background: 'white', border: '1px solid #e8edf2', borderRadius: 8,
+            padding: '10px 16px', fontSize: 13 }}>
+            <div style={{ fontWeight: 700, fontFamily: 'monospace' }}>{selected.vh_code}</div>
+            <div style={{ color: '#888' }}>{selected.vh_type} · {[selected.vh_make, selected.vh_model].filter(Boolean).join(' ') || '—'}</div>
+            <div style={{ color: '#aaa', marginTop: 4 }}>Position: awaiting tracking integration</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Fleet — page-level tabs: Live Location / Movement / Fleet List.
+// Movement reuses the actual Loads page component directly (same data,
+// same actions — refresh, new load, offload stops, approvals, etc.) so
+// there is no separate/duplicated logic to keep in sync.
+// ════════════════════════════════════════════════════════════════════════════
+export default function Fleet({ focusServiceDue }) {
+  const [pageTab, setPageTab] = useState(focusServiceDue ? 'list' : 'movement');
+
+  const pageTabs = [
+    { key: 'live',     label: 'Live Location' },
+    { key: 'movement', label: 'Movement' },
+    { key: 'list',     label: 'Fleet List' },
+  ];
+
+  return (
+    <div>
+      <div style={{ display: 'flex', borderBottom: '2px solid #e8edf2', marginBottom: 16, background: 'white',
+        borderRadius: '8px 8px 0 0', overflow: 'hidden', border: '1px solid #e8edf2' }}>
+        {pageTabs.map(t => {
+          const active = pageTab === t.key;
+          return (
+            <button key={t.key} onClick={() => setPageTab(t.key)} style={{
+              flex: 1, padding: '12px 8px', fontSize: 13, fontWeight: active ? 700 : 400,
+              border: 'none', background: active ? 'white' : '#f8fafc',
+              borderBottom: active ? '3px solid #005A8E' : '3px solid transparent',
+              color: active ? '#005A8E' : '#888', cursor: 'pointer', transition: 'all 0.15s',
+            }}>
+              {t.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {pageTab === 'live'     && <LiveLocation />}
+      {pageTab === 'movement' && <Loads />}
+      {pageTab === 'list'     && <FleetList focusServiceDue={focusServiceDue} />}
+    </div>
+  );
+}
