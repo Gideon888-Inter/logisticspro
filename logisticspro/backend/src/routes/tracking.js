@@ -108,21 +108,57 @@ async function pulsitGet(path, retryOn401 = true) {
   return result.data;
 }
 
+// ── Vehicle (device id → registration) lookup ───────────────────────────────
+// Pulsit's gpsfeed only returns a device "id" — no registration number — so
+// we resolve it against GET /api/Vehicles, which carries both. Cached for
+// 10 minutes since the fleet roster doesn't change minute-to-minute.
+let vehicleMapCache = null;
+let vehicleMapExpiresAt = 0;
+
+function extractDeviceId(v) {
+  const val = v.id ?? v.Id ?? v.ID ?? v.unitId ?? v.deviceId ?? null;
+  return val != null ? String(val) : null;
+}
+function extractRegNo(v) {
+  return v.regNo ?? v.RegNo ?? v.registration ?? v.Registration ?? v.plate ?? v.Plate ?? null;
+}
+
+async function getVehicleMap(forceRefresh = false) {
+  if (!forceRefresh && vehicleMapCache && Date.now() < vehicleMapExpiresAt) return vehicleMapCache;
+  const data = await pulsitGet('/Vehicles');
+  const list = Array.isArray(data) ? data : (data?.items || data?.data || []);
+  const map = {};
+  list.forEach(v => {
+    const id = extractDeviceId(v);
+    const regNo = extractRegNo(v);
+    if (id && regNo) map[id] = regNo;
+  });
+  vehicleMapCache = map;
+  vehicleMapExpiresAt = Date.now() + 10 * 60 * 1000;
+  return map;
+}
+
 // ── GET /api/tracking/positions ─────────────────────────────────────────────
 // Returns current GPS positions in a normalised shape:
 // [{ regNo, lat, lng, heading, speed, lastUpdate }]
 router.get('/positions', requirePermission('FLEET', 'view'), async (req, res) => {
   try {
-    const feed = await pulsitGet('/Vehicles/gpsfeed');
+    const [feed, vehicleMap] = await Promise.all([
+      pulsitGet('/Vehicles/gpsfeed'),
+      getVehicleMap(),
+    ]);
     const list = Array.isArray(feed) ? feed : (feed?.items || feed?.data || []);
-    const positions = list.map(v => ({
-      regNo:      v.regNo ?? v.RegNo ?? v.registration ?? v.vehicleRegNo ?? null,
-      lat:        v.lat ?? v.latitude ?? v.Latitude ?? v.Lat ?? null,
-      lng:        v.lng ?? v.lon ?? v.longitude ?? v.Longitude ?? v.Lng ?? null,
-      heading:    v.heading ?? v.course ?? v.Heading ?? null,
-      speed:      v.speed ?? v.Speed ?? null,
-      lastUpdate: v.timestamp ?? v.lastUpdate ?? v.dateTime ?? v.DateTime ?? null,
-    })).filter(p => p.regNo && p.lat != null && p.lng != null);
+    const positions = list.map(v => {
+      const id = extractDeviceId(v);
+      return {
+        regNo:      id ? (vehicleMap[id] || null) : null,
+        lat:        v.gpsLat ?? v.lat ?? v.latitude ?? null,
+        lng:        v.gpsLong ?? v.lng ?? v.lon ?? v.longitude ?? null,
+        heading:    v.heading ?? v.course ?? null,
+        speed:      v.speed ?? null,
+        lastUpdate: v.gpsDate ?? v.timestamp ?? v.lastUpdate ?? null,
+      };
+    }).filter(p => p.regNo && p.lat != null && p.lng != null);
     res.json(positions);
   } catch (e) {
     console.error('[tracking/positions]', e.message, e.details || e.attempts || '');
@@ -131,26 +167,60 @@ router.get('/positions', requirePermission('FLEET', 'view'), async (req, res) =>
 });
 
 // ── GET /api/tracking/debug ──────────────────────────────────────────────────
-// Admin-only. Shows exactly what Pulsit sent back for login + gpsfeed so we
-// can fix field-name mismatches without redeploying blind.
+// Admin-only. Shows exactly what Pulsit sent back for login + gpsfeed + the
+// vehicle list, plus the final resolved positions, so field-name mismatches
+// can be diagnosed without redeploying blind.
 router.get('/debug', async (req, res) => {
   if (req.user?.role !== 'ADMIN') return res.status(403).json({ error: 'Admin only' });
   try {
     const loginResult = await loginPulsit();
-    let feedSample = null;
-    let feedError = null;
+
+    let feedSample = null, feedError = null;
     try {
       const feed = await pulsitGet('/Vehicles/gpsfeed');
       feedSample = Array.isArray(feed) ? feed.slice(0, 3) : feed;
     } catch (e) {
       feedError = { message: e.message, details: e.details };
     }
+
+    let vehiclesSample = null, vehiclesError = null, vehicleMapSize = 0;
+    try {
+      const vehicles = await pulsitGet('/Vehicles');
+      const list = Array.isArray(vehicles) ? vehicles : (vehicles?.items || vehicles?.data || []);
+      vehiclesSample = list.slice(0, 3);
+      const map = await getVehicleMap(true);
+      vehicleMapSize = Object.keys(map).length;
+    } catch (e) {
+      vehiclesError = { message: e.message, details: e.details };
+    }
+
+    let resolvedPositionsSample = null, positionsError = null;
+    try {
+      const [feed, vehicleMap] = await Promise.all([pulsitGet('/Vehicles/gpsfeed'), getVehicleMap()]);
+      const list = Array.isArray(feed) ? feed : (feed?.items || feed?.data || []);
+      resolvedPositionsSample = list.slice(0, 5).map(v => {
+        const id = extractDeviceId(v);
+        return {
+          deviceId: id,
+          resolvedRegNo: id ? (vehicleMap[id] || null) : null,
+          lat: v.gpsLat ?? v.lat ?? null,
+          lng: v.gpsLong ?? v.lng ?? null,
+          lastUpdate: v.gpsDate ?? v.timestamp ?? null,
+        };
+      });
+    } catch (e) {
+      positionsError = { message: e.message, details: e.details };
+    }
+
     res.json({
       loginSucceededWith: Object.keys(loginResult.bodyUsed),
-      loginRawResponse: loginResult.raw,
-      allLoginAttempts: loginResult.attempts,
       feedSample,
       feedError,
+      vehiclesSample,
+      vehiclesError,
+      vehicleMapSize,
+      resolvedPositionsSample,
+      positionsError,
     });
   } catch (e) {
     res.status(502).json({ error: e.message, attempts: e.attempts });
