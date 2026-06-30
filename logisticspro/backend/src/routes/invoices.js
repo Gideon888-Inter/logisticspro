@@ -1,12 +1,13 @@
 const express = require('express');
 const supabase = require('../supabase');
 const {
-  authMiddleware, requireRole,
+  authMiddleware, loadUserPermissions, requirePermission,
   CAN_MANAGE_INVOICES, CAN_CREATE_CREDIT_NOTE,
 } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(authMiddleware);
+router.use(loadUserPermissions);
 
 const VAT_RATE = 0.15;
 
@@ -37,7 +38,7 @@ async function genCreditNoteNo() {
 // Loads sitting in WAIT_INVOICE_NO — ready to be invoiced.
 // Also attaches any existing draft invoice so the UI can show it.
 // ============================================================
-router.get('/drafts', requireRole(...CAN_MANAGE_INVOICES), async (req, res) => {
+router.get('/drafts', requirePermission('INVOICES', 'view'), async (req, res) => {
   try {
     const { data: loads, error: loadErr } = await supabase
       .from('lp_movement')
@@ -86,7 +87,7 @@ router.get('/drafts', requireRole(...CAN_MANAGE_INVOICES), async (req, res) => {
 // GET /api/invoices
 // All invoices, optionally filtered by status.
 // ============================================================
-router.get('/', requireRole(...CAN_MANAGE_INVOICES), async (req, res) => {
+router.get('/', requirePermission('INVOICES', 'view'), async (req, res) => {
   try {
     const { status } = req.query;
     let q = supabase
@@ -124,7 +125,7 @@ router.get('/', requireRole(...CAN_MANAGE_INVOICES), async (req, res) => {
 // GET /api/invoices/:id
 // Single invoice by id.
 // ============================================================
-router.get('/:id', requireRole(...CAN_MANAGE_INVOICES), async (req, res) => {
+router.get('/:id', requirePermission('INVOICES', 'view'), async (req, res) => {
   try {
     const { data: inv, error } = await supabase
       .from('lp_invoices')
@@ -152,7 +153,7 @@ router.get('/:id', requireRole(...CAN_MANAGE_INVOICES), async (req, res) => {
 // POST /api/invoices
 // Create a draft invoice for a load in WAIT_INVOICE_NO.
 // ============================================================
-router.post('/', requireRole(...CAN_MANAGE_INVOICES), async (req, res) => {
+router.post('/', requirePermission('INVOICES', 'edit'), async (req, res) => {
   try {
     const { load_no } = req.body;
     if (!load_no) return res.status(400).json({ error: 'load_no is required' });
@@ -224,7 +225,7 @@ router.post('/', requireRole(...CAN_MANAGE_INVOICES), async (req, res) => {
 // POST /api/invoices/:id/approve
 // Finalise a draft invoice → sets load to LOAD_INVOICED.
 // ============================================================
-router.post('/:id/approve', requireRole(...CAN_MANAGE_INVOICES), async (req, res) => {
+router.post('/:id/approve', requirePermission('INVOICES', 'approve'), async (req, res) => {
   try {
     const { data: inv, error: fetchErr } = await supabase
       .from('lp_invoices').select('*').eq('id', req.params.id).single();
@@ -273,7 +274,7 @@ router.post('/:id/approve', requireRole(...CAN_MANAGE_INVOICES), async (req, res
 // POST /api/invoices/:id/credit-note
 // Raise a credit note against a FINAL invoice.
 // ============================================================
-router.post('/:id/credit-note', requireRole(...CAN_CREATE_CREDIT_NOTE), async (req, res) => {
+router.post('/:id/credit-note', requirePermission('INVOICES', 'edit'), async (req, res) => {
   try {
     const { reason, amount_excl } = req.body;
     if (!reason?.trim()) return res.status(400).json({ error: 'A reason is required for a credit note' });
