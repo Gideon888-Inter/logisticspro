@@ -23,21 +23,14 @@
 
 const express = require('express');
 const router  = express.Router();
-const { createClient } = require('@supabase/supabase-js');
+const supabase = require('../supabase');
 const {
   authMiddleware, requireRole, ROLES, BUILTIN_ROLES,
 } = require('../middleware/auth');
 
-let _supabase = null;
-function supabase() {
-  if (!_supabase) {
-    _supabase = createClient(
-      process.env.SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY
-    );
-  }
-  return _supabase;
-}
+// NOTE: previously instantiated its own separate Supabase client — now
+// using the shared backend/src/supabase.js client (see inventory.js for
+// the same cleanup). `supabase` is the client directly, no `()` call.
 
 router.use(authMiddleware);
 router.use(requireRole(ROLES.ADMIN));  // All role management is Admin-only
@@ -48,7 +41,7 @@ router.use(requireRole(ROLES.ADMIN));  // All role management is Admin-only
 
 // GET /roles/modules — list all modules with their groups
 router.get('/modules', async (req, res) => {
-  const { data, error } = await supabase()
+  const { data, error } = await supabase
     .from('lp_modules')
     .select('*')
     .eq('is_active', true)
@@ -63,7 +56,7 @@ router.get('/modules', async (req, res) => {
 
 // GET /roles — list all roles: built-in (from constant) + custom (from DB)
 router.get('/', async (req, res) => {
-  const { data: customRoles, error } = await supabase()
+  const { data: customRoles, error } = await supabase
     .from('lp_custom_roles')
     .select('*')
     .order('role_label');
@@ -100,7 +93,7 @@ router.get('/:key', async (req, res) => {
     // Return synthetic object for built-in roles
     roleData = { role_key: key, is_builtin: true, base_role: null };
   } else {
-    const { data, error } = await supabase()
+    const { data, error } = await supabase
       .from('lp_custom_roles')
       .select('*')
       .eq('role_key', key)
@@ -110,13 +103,13 @@ router.get('/:key', async (req, res) => {
   }
 
   // Get permission matrix — two separate queries (join shorthand unreliable)
-  const { data: perms } = await supabase()
+  const { data: perms } = await supabase
     .from('lp_role_permissions')
     .select('*')
     .eq('role_key', key);
 
   // Get all modules so we can show 0-permission rows too
-  const { data: allModules } = await supabase()
+  const { data: allModules } = await supabase
     .from('lp_modules')
     .select('*')
     .eq('is_active', true)
@@ -147,7 +140,7 @@ router.get('/:key', async (req, res) => {
   if (key === ROLES.ADMIN) {
     poTier = { tier: 4, can_use_capital_po: true };
   } else {
-    const { data: tierRow } = await supabase()
+    const { data: tierRow } = await supabase
       .from('lp_po_approval_tiers')
       .select('tier, can_use_capital_po')
       .eq('role_key', key)
@@ -164,7 +157,7 @@ router.get('/:key/po-approval-tier', async (req, res) => {
   if (key === ROLES.ADMIN) {
     return res.json({ role_key: key, tier: 4, can_use_capital_po: true });
   }
-  const { data } = await supabase()
+  const { data } = await supabase
     .from('lp_po_approval_tiers')
     .select('tier, can_use_capital_po')
     .eq('role_key', key)
@@ -185,7 +178,7 @@ router.patch('/:key/po-approval-tier', async (req, res) => {
     return res.status(400).json({ error: 'tier must be an integer between 0 and 4' });
   }
 
-  const { data, error } = await supabase()
+  const { data, error } = await supabase
     .from('lp_po_approval_tiers')
     .upsert({
       role_key:           key,
@@ -221,7 +214,7 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ error: `base_role must be a valid built-in role` });
 
   // Create role
-  const { data: newRole, error: roleErr } = await supabase()
+  const { data: newRole, error: roleErr } = await supabase
     .from('lp_custom_roles')
     .insert({
       role_key,
@@ -249,7 +242,7 @@ router.post('/', async (req, res) => {
       extra_flags: p.extra_flags || null,
       updated_by:  req.user.username,
     }));
-    const { error: permErr } = await supabase()
+    const { error: permErr } = await supabase
       .from('lp_role_permissions')
       .upsert(permRows, { onConflict: 'role_key,module_key' });
     if (permErr) return res.status(400).json({ error: permErr.message });
@@ -277,7 +270,7 @@ router.patch('/:key', async (req, res) => {
   allowed.forEach(k => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
   updates.updated_at = new Date().toISOString();
 
-  const { data, error } = await supabase()
+  const { data, error } = await supabase
     .from('lp_custom_roles')
     .update(updates)
     .eq('role_key', key)
@@ -295,7 +288,7 @@ router.delete('/:key', async (req, res) => {
     return res.status(403).json({ error: 'Built-in roles cannot be deleted' });
 
   // Check if any active users have this role
-  const { data: users } = await supabase()
+  const { data: users } = await supabase
     .from('lp_users')
     .select('u_id, u_username')
     .eq('u_role', key)
@@ -308,7 +301,7 @@ router.delete('/:key', async (req, res) => {
     });
   }
 
-  const { error } = await supabase()
+  const { error } = await supabase
     .from('lp_custom_roles')
     .update({ is_active: false, updated_at: new Date().toISOString() })
     .eq('role_key', key);
@@ -323,7 +316,7 @@ router.delete('/:key', async (req, res) => {
 
 // GET /roles/:key/permissions — get permission matrix
 router.get('/:key/permissions', async (req, res) => {
-  const { data, error } = await supabase()
+  const { data, error } = await supabase
     .from('lp_role_permissions')
     .select('*, lp_modules(module_label, module_group, sort_order)')
     .eq('role_key', req.params.key)
@@ -355,8 +348,8 @@ router.put('/:key/permissions', async (req, res) => {
   }));
 
   // Delete existing and reinsert
-  await supabase().from('lp_role_permissions').delete().eq('role_key', key);
-  const { data, error } = await supabase().from('lp_role_permissions').insert(rows).select();
+  await supabase.from('lp_role_permissions').delete().eq('role_key', key);
+  const { data, error } = await supabase.from('lp_role_permissions').insert(rows).select();
   if (error) return res.status(400).json({ error: error.message });
   res.json({ success: true, updated: data?.length });
 });
@@ -385,7 +378,7 @@ router.patch('/:key/permissions/:module', async (req, res) => {
   };
   if (extra_flags !== undefined) updates.extra_flags = extra_flags;
 
-  const { data, error } = await supabase()
+  const { data, error } = await supabase
     .from('lp_role_permissions')
     .upsert(updates, { onConflict: 'role_key,module_key' })
     .select()
@@ -400,7 +393,7 @@ router.patch('/:key/permissions/:module', async (req, res) => {
 router.post('/:key/generate-migration', async (req, res) => {
   const { key } = req.params;
 
-  const { data: customRoles } = await supabase()
+  const { data: customRoles } = await supabase
     .from('lp_custom_roles')
     .select('role_key')
     .eq('is_active', true);

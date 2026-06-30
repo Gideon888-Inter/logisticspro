@@ -303,7 +303,14 @@ function FleetList({ focusServiceDue }) {
   const save = async () => {
     setSaving(true);
     try {
-      await api.updateVehicle(editVehicle.vh_code, form);
+      // Trailer-link fields go through their own endpoint, which enforces
+      // server-side invariants (no self-link, both must be trailers, one
+      // rear per front). Everything else uses the generic vehicle PATCH.
+      const { vh_is_link, vh_link_pair, ...generalFields } = form;
+      await api.updateVehicle(editVehicle.vh_code, generalFields);
+      if (editVehicle.vh_type === 'Trailer') {
+        await api.updateVehicleLink(editVehicle.vh_code, { vh_is_link, vh_link_pair });
+      }
       setShowModal(false);
       load();
     } catch(e) { alert(e.message); }

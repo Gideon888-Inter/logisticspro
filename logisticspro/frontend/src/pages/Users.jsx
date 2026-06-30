@@ -379,7 +379,7 @@ export default function Users() {
     try {
       const [usersRes, approvalsRes, rolesRes] = await Promise.all([
         req('/users'),
-        req('/auth/pending-users').catch(() => []),
+        req('/auth/pending-users').catch(e => { console.error(e); return []; }),
         rolesReq('').catch(() => ({ builtin: [], custom: [] })),
       ]);
       setData(Array.isArray(usersRes) ? usersRes : usersRes.data || []);

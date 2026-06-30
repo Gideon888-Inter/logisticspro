@@ -344,7 +344,7 @@ function NewLoadModal({ onClose, onCreated }) {
       api.getDrivers({ active: 'Y' }),
       api.getCustomers(),
       req('/rates/client-rates'),
-      req('/users').catch(() => []),
+      req('/users').catch(e => { console.error(e); return []; }),
     ]).then(([v, d, c, r, u]) => {
       setVehicles(Array.isArray(v) ? v : []);
       setDrivers(Array.isArray(d) ? d : []);
@@ -799,7 +799,7 @@ function ExpandedRow({ load, onRefresh, onCostUpdate, asCard = false }) {
     try {
       const [c, co] = await Promise.all([
         api.getComments(load.m_load_no),
-        req(`/costs?load=${encodeURIComponent(load.m_load_no)}`).catch(() => []),
+        req(`/costs?load=${encodeURIComponent(load.m_load_no)}`).catch(e => { console.error(e); return []; }),
       ]);
       setComments(Array.isArray(c) ? c : []);
       const costsArr = Array.isArray(co) ? co : [];

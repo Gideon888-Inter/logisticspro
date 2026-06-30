@@ -42,7 +42,7 @@ function InlinePOEditor({ po, lines: existingLines, suppliers, vehicles, onSave,
   }, []);
 
   const refreshInvItems = async () => {
-    const data = await req('/stock/items').catch(() => []);
+    const data = await req('/stock/items').catch(e => { console.error(e); return []; });
     setInvItems(Array.isArray(data) ? data.filter(i => i.status === 'ACTIVE') : []);
   };
 
@@ -547,8 +547,8 @@ export default function PurchaseOrders() {
   const loadSupport = async () => {
     try {
       const [supRes, vehRes] = await Promise.all([
-        req('/fin/suppliers/workshop').catch(() => []),
-        fetch(API + '/vehicles', { headers: { Authorization: 'Bearer ' + token() } }).then(r => r.json()).catch(() => []),
+        req('/fin/suppliers/workshop').catch(e => { console.error(e); return []; }),
+        fetch(API + '/vehicles', { headers: { Authorization: 'Bearer ' + token() } }).then(r => r.json()).catch(e => { console.error(e); return []; }),
       ]);
       setSuppliers(Array.isArray(supRes) ? supRes : []);
       setVehicles(Array.isArray(vehRes) ? vehRes : vehRes.data || []);

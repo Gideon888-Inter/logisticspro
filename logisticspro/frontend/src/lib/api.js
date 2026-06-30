@@ -100,6 +100,7 @@ export const api = {
   getVehicleMaintenance:(code)       => request(`/vehicles/${code}/maintenance`),
   createVehicle:       (body)        => request('/vehicles', { method: 'POST', body: JSON.stringify(body) }),
   updateVehicle:       (code, body)  => request(`/vehicles/${code}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  updateVehicleLink:   (code, body)  => request(`/vehicles/${code}/link`, { method: 'PATCH', body: JSON.stringify(body) }),
 
   // ── Drivers ─────────────────────────────────────────────────
   getDrivers:          (params = {}) => request('/drivers?' + new URLSearchParams(params)),
