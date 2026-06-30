@@ -2,7 +2,17 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const supabase = require('../supabase');
-const { authMiddleware, requireRole, ROLES, CAN_MANAGE_USERS } = require('../middleware/auth');
+const { authMiddleware, requireRole, ROLES, CAN_MANAGE_USERS, loadUserPermissions } = require('../middleware/auth');
+
+// Compute a user's permission map without needing a live HTTP request/response
+// (reuses the exact same logic that route-level loadUserPermissions middleware uses).
+async function getPermissionsForRole(role) {
+  const permReq = { user: { role } };
+  await new Promise((resolve) => {
+    loadUserPermissions(permReq, { status: () => ({ json: () => {} }) }, () => resolve());
+  });
+  return permReq.permissions || {};
+}
 
 const router = express.Router();
 
@@ -40,6 +50,8 @@ router.post('/login', async (req, res) => {
     { expiresIn: '12h' }
   );
 
+  const permissions = await getPermissionsForRole(user.u_role);
+
   res.json({
     token,
     user: {
@@ -49,6 +61,7 @@ router.post('/login', async (req, res) => {
       role:        user.u_role,
       region:      user.u_region,
       first_login: user.u_first_login === 'Y',
+      permissions,
     },
   });
 });
@@ -386,7 +399,9 @@ router.get('/me', authMiddleware, async (req, res) => {
 
   if (!user) return res.status(404).json({ error: 'User not found' });
 
-  res.json({ ...user, first_login: user.u_first_login === 'Y' });
+  const permissions = await getPermissionsForRole(user.u_role);
+
+  res.json({ ...user, first_login: user.u_first_login === 'Y', permissions });
 });
 
 
