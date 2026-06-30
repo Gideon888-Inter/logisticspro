@@ -1000,7 +1000,20 @@ function FleetList({ focusServiceDue }) {
                       </div>
                     </div>
 
-                    {editVehicle.vh_type === 'Trailer' && (
+                    {editVehicle.vh_type === 'Trailer' && (() => {
+                      // A pairing only has ONE row that actually stores it: the
+                      // "front" trailer has vh_is_link='Y' + vh_link_pair pointing
+                      // at the "rear" one. The rear trailer's own columns show
+                      // vh_is_link='N' / vh_link_pair=null — there's nothing wrong
+                      // with its data, but opening ITS card and seeing "No —
+                      // standalone trailer" is misleading since it's very much
+                      // linked, just from the other side. Surface that instead of
+                      // letting it look unlinked.
+                      const linkedFromOther = data.find(v =>
+                        v.vh_type === 'Trailer' && v.vh_code !== editVehicle.vh_code &&
+                        v.vh_is_link === 'Y' && v.vh_link_pair === editVehicle.vh_code
+                      );
+                      return (
                       <div style={{ marginTop: 14 }}>
                         <div style={{ fontSize: 10, fontWeight: 700, color: '#7c3aed',
                           letterSpacing: '0.08em', textTransform: 'uppercase',
@@ -1011,6 +1024,15 @@ function FleetList({ focusServiceDue }) {
                             — linked trailers auto-pair on 18m load cards
                           </span>
                         </div>
+                        {linkedFromOther ? (
+                          <div style={{ fontSize: 13, color: '#7c3aed', background: '#f5f3ff',
+                            border: '1px solid #ddd6fe', borderRadius: 6, padding: '10px 12px' }}>
+                            🔗 Paired with <strong>{linkedFromOther.vh_code}</strong>
+                            {linkedFromOther.vh_make ? ` — ${linkedFromOther.vh_make} ${linkedFromOther.vh_model || ''}` : ''}.
+                            This pairing is configured on {linkedFromOther.vh_code}'s own record —
+                            edit it there to change or remove the link.
+                          </div>
+                        ) : (
                         <div className="form-row">
                           <div className="form-group">
                             <label>Is Link Trailer?</label>
@@ -1051,8 +1073,10 @@ function FleetList({ focusServiceDue }) {
                             )}
                           </div>
                         </div>
+                        )}
                       </div>
-                    )}
+                      );
+                    })()}
                   </div>
                 </>
               )}
