@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useRef, Fragment } from 'react';
 import { useAuth } from '../lib/AuthContext';
 import { api } from '../lib/api';
 import { loadGoogleMaps, resetGoogleMapsLoader } from '../lib/googleMaps';
-import Loads from './Loads';
 import { canDebugTracking } from '../lib/roles';
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -129,6 +128,22 @@ function ROField({ label, value }) {
   );
 }
 
+// Clickable header for a collapsible Vehicle Details section. The chevron
+// only actually hides/shows content on mobile (see .vehicle-section-body
+// in index.css) — on desktop these sections always render in full, this
+// header is just along for the ride.
+function SectionHeader({ icon, label, color, collapsed, onToggle }) {
+  return (
+    <div onClick={onToggle} className="vehicle-section-toggle" style={{
+      fontSize: 10, fontWeight: 700, color, letterSpacing: '0.08em', marginBottom: 10,
+      textTransform: 'uppercase', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    }}>
+      <span>{icon} {label}</span>
+      <span className="vehicle-section-chevron" style={{ fontSize: 12, transform: collapsed ? 'rotate(-90deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
+    </div>
+  );
+}
+
 // ── Export CSV ─────────────────────────────────────────────────────────────────
 function exportCSV(data) {
   const headers = ['Code','Type','Year','Make','Model','Registration','VIN',
@@ -243,6 +258,21 @@ function FleetList({ focusServiceDue }) {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [openServiceCard, setOpenServiceCard] = useState(null);
 
+  // Vehicle Details sections (Read-Only Identity / Auto-Calculated / Editable)
+  // collapse on mobile only — see the .vehicle-section-body CSS rule in
+  // index.css, which only applies `display:none` under the mobile
+  // breakpoint, so this same collapsed state is harmless (and ignored) on
+  // desktop. Read-Only and Auto-Calculated start collapsed, Editable starts
+  // expanded — that's the one section you actually need to touch.
+  const [sectionCollapsed, setSectionCollapsed] = useState({ identity: true, auto: true, editable: false });
+  const toggleSection = (key) => setSectionCollapsed(s => ({ ...s, [key]: !s[key] }));
+
+  // Audit Trail entries — each starts collapsed, showing only the
+  // date/action/operator summary line; expanding reveals the field-level
+  // change breakdown.
+  const [expandedAudit, setExpandedAudit] = useState({});
+  const toggleAuditEntry = (i) => setExpandedAudit(s => ({ ...s, [i]: !s[i] }));
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -304,6 +334,8 @@ function FleetList({ focusServiceDue }) {
     });
     setActiveTab('details');
     setAuditLog([]);
+    setSectionCollapsed({ identity: true, auto: true, editable: false });
+    setExpandedAudit({});
     setShowModal(true);
 
     // Load audit trail
@@ -895,9 +927,9 @@ function FleetList({ focusServiceDue }) {
                 <>
                   {/* Read-only identity fields */}
                   <div style={{ background: '#f0f8ff', borderRadius: 6, padding: '12px 14px', marginBottom: 16, border: '1px solid #bee3f8' }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: '#005A8E', letterSpacing: '0.08em', marginBottom: 10, textTransform: 'uppercase' }}>
-                      🔒 Read-Only — Vehicle Identity
-                    </div>
+                    <SectionHeader icon="🔒" label="Read-Only — Vehicle Identity" color="#005A8E"
+                      collapsed={sectionCollapsed.identity} onToggle={() => toggleSection('identity')} />
+                    <div className={`vehicle-section-body${sectionCollapsed.identity ? ' collapsed' : ''}`}>
                     <div className="form-row">
                       <ROField label="Vehicle Code" value={editVehicle.vh_code} />
                       <ROField label="Type" value={editVehicle.vh_type} />
@@ -913,13 +945,14 @@ function FleetList({ focusServiceDue }) {
                     <div className="form-row">
                       <ROField label="VIN Number" value={editVehicle.vh_vin} />
                     </div>
+                    </div>
                   </div>
 
                   {/* Read-only live values */}
                   <div style={{ background: '#f0fdf4', borderRadius: 6, padding: '12px 14px', marginBottom: 16, border: '1px solid #bbf7d0' }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: '#059669', letterSpacing: '0.08em', marginBottom: 10, textTransform: 'uppercase' }}>
-                      🔄 Auto-Calculated from Load Cards
-                    </div>
+                    <SectionHeader icon="🔄" label="Auto-Calculated from Load Cards" color="#059669"
+                      collapsed={sectionCollapsed.auto} onToggle={() => toggleSection('auto')} />
+                    <div className={`vehicle-section-body${sectionCollapsed.auto ? ' collapsed' : ''}`}>
                     <div className="form-row">
                       <ROField label="Current Odometer" value={editVehicle.vh_odometer ? Number(editVehicle.vh_odometer).toLocaleString() + ' km' : '—'} />
                       <ROField label="Status (from last load)" value={editVehicle.vh_status || 'AVAILABLE'} />
@@ -960,13 +993,14 @@ function FleetList({ focusServiceDue }) {
                         </div>
                       </div>
                     </div>
+                    </div>
                   </div>
 
                   {/* Editable fields */}
                   <div style={{ background: 'white', borderRadius: 6, padding: '12px 14px', border: '1px solid #e8edf2' }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: '#005A8E', letterSpacing: '0.08em', marginBottom: 10, textTransform: 'uppercase' }}>
-                      ✏️ Editable Fields
-                    </div>
+                    <SectionHeader icon="✏️" label="Editable Fields" color="#005A8E"
+                      collapsed={sectionCollapsed.editable} onToggle={() => toggleSection('editable')} />
+                    <div className={`vehicle-section-body${sectionCollapsed.editable ? ' collapsed' : ''}`}>
                     <div className="form-row">
                       <div className="form-group">
                         <label>COF Date</label>
@@ -1077,6 +1111,7 @@ function FleetList({ focusServiceDue }) {
                       </div>
                       );
                     })()}
+                    </div>
                   </div>
                 </>
               )}
@@ -1132,36 +1167,40 @@ function FleetList({ focusServiceDue }) {
                     <div className="empty-state" style={{ padding: 40 }}>No audit entries yet</div>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-                      {auditLog.map((entry, i) => (
-                        <div key={i} style={{
-                          padding: '10px 0', borderBottom: '1px solid #f0f0f0',
-                          display: 'grid', gridTemplateColumns: '160px 80px 1fr',
-                          gap: 12, alignItems: 'start', fontSize: 12,
-                        }}>
-                          <div style={{ color: '#888' }}>{fmtDateTime(entry.created_at)}</div>
-                          <div style={{ fontWeight: 700, color: entry.va_action === 'CREATED' ? '#059669' : '#005A8E' }}>
-                            {entry.va_action}
+                      {auditLog.map((entry, i) => {
+                        const isOpen = !!expandedAudit[i];
+                        let fields = null;
+                        if (entry.va_fields) {
+                          try { fields = JSON.parse(entry.va_fields); } catch { fields = null; }
+                        }
+                        return (
+                          <div key={i} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                            <div onClick={() => fields && toggleAuditEntry(i)} style={{
+                              padding: '10px 0', display: 'grid', gridTemplateColumns: '160px 80px 1fr 20px',
+                              gap: 12, alignItems: 'start', fontSize: 12, cursor: fields ? 'pointer' : 'default',
+                            }}>
+                              <div style={{ color: '#888' }}>{fmtDateTime(entry.created_at)}</div>
+                              <div style={{ fontWeight: 700, color: entry.va_action === 'CREATED' ? '#059669' : '#005A8E' }}>
+                                {entry.va_action}
+                              </div>
+                              <div style={{ fontWeight: 600, color: '#333' }}>{entry.va_operator}</div>
+                              {fields && (
+                                <span style={{ fontSize: 12, color: '#aaa', transform: isOpen ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.15s' }}>▾</span>
+                              )}
+                            </div>
+                            {fields && isOpen && (
+                              <div style={{ color: '#666', fontSize: 11, padding: '0 0 10px 0' }}>
+                                {Object.entries(fields).map(([k, v]) => (
+                                  <span key={k} style={{ display: 'inline-block', margin: '1px 4px 1px 0',
+                                    padding: '1px 6px', background: '#f0f0f0', borderRadius: 4 }}>
+                                    {k.replace('vh_', '')}: <strong>{v || '—'}</strong>
+                                  </span>
+                                ))}
+                              </div>
+                            )}
                           </div>
-                          <div>
-                            <div style={{ fontWeight: 600, color: '#333', marginBottom: 2 }}>{entry.va_operator}</div>
-                            {entry.va_fields && (() => {
-                              try {
-                                const fields = JSON.parse(entry.va_fields);
-                                return (
-                                  <div style={{ color: '#666', fontSize: 11 }}>
-                                    {Object.entries(fields).map(([k, v]) => (
-                                      <span key={k} style={{ display: 'inline-block', margin: '1px 4px 1px 0',
-                                        padding: '1px 6px', background: '#f0f0f0', borderRadius: 4 }}>
-                                        {k.replace('vh_', '')}: <strong>{v || '—'}</strong>
-                                      </span>
-                                    ))}
-                                  </div>
-                                );
-                              } catch { return null; }
-                            })()}
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -1659,18 +1698,19 @@ function LiveLocation() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// Fleet — page-level tabs: Live Location / Movement / Fleet List.
-// Movement reuses the actual Loads page component directly (same data,
-// same actions — refresh, new load, offload stops, approvals, etc.) so
-// there is no separate/duplicated logic to keep in sync.
+// Fleet — page-level tabs: Live Location / Fleet List.
+// The old "Movement" tab (a fleet-ops column variant of the Loads page)
+// has been retired — its one genuinely unique piece of at-a-glance info,
+// KMs Confirmed (plus trailer info next to the truck), is now part of the
+// main Loads page's standard view, so there's no remaining gap to bounce
+// between two tabs for. Loads itself remains the single source of truth.
 // ════════════════════════════════════════════════════════════════════════════
 export default function Fleet({ focusServiceDue }) {
-  const [pageTab, setPageTab] = useState(focusServiceDue ? 'list' : 'movement');
+  const [pageTab, setPageTab] = useState('list');
 
   const pageTabs = [
-    { key: 'live',     label: 'Live Location' },
-    { key: 'movement', label: 'Movement' },
-    { key: 'list',     label: 'Fleet List' },
+    { key: 'live', label: 'Live Location' },
+    { key: 'list', label: 'Fleet List' },
   ];
 
   return (
@@ -1692,9 +1732,8 @@ export default function Fleet({ focusServiceDue }) {
         })}
       </div>
 
-      {pageTab === 'live'     && <LiveLocation />}
-      {pageTab === 'movement' && <Loads viewMode="movement" />}
-      {pageTab === 'list'     && <FleetList focusServiceDue={focusServiceDue} />}
+      {pageTab === 'live' && <LiveLocation />}
+      {pageTab === 'list' && <FleetList focusServiceDue={focusServiceDue} />}
     </div>
   );
 }
