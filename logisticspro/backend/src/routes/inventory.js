@@ -32,6 +32,9 @@ const fs        = require('fs');
 const { createClient } = require('@supabase/supabase-js');
 const { authMiddleware, requireRole, ROLES } = require('../middleware/auth');
 
+// PO approval stage order — index = tier ceiling for that stage
+const PO_STAGE_ORDER = ['PENDING_L1', 'PENDING_L2', 'PENDING_L3', 'PENDING_FINANCIAL'];
+
 // Lazy supabase client — avoids crash if env vars not loaded at require() time
 let _supabase = null;
 function supabase() {
@@ -106,18 +109,50 @@ async function logPOAction({ po_id, po_number, action, by, from_status, to_statu
 }
 
 /**
- * Determine approval level required based on creator role.
- * Returns the first status the PO should enter after submission.
+ * DB-driven PO approval tier for a role — replaces the old hardcoded
+ * role-name checks scattered through this file. ADMIN is hardcoded to
+ * tier 4 regardless of DB state (non-negotiable lockout safeguard,
+ * matching the same guarantee in middleware/auth.js loadUserPermissions).
+ * Any role with no row in lp_po_approval_tiers defaults to tier 0 / no
+ * capital-PO access — a safe default-deny, not a silent grant.
  */
-function firstApprovalStatus(creatorRole) {
-  // Workshop Manager's own POs skip L1/L2/L3 — straight to Finance
-  if (creatorRole === ROLES.WORKSHOP_MANAGER) return 'PENDING_FINANCIAL';
-  // Workshop Assistant's own POs skip L1/L2 — start at L3
-  if (creatorRole === ROLES.WORKSHOP_ASSISTANT) return 'PENDING_L3';
-  // Stock Controller's own POs skip L1 — start at L2
-  if (creatorRole === ROLES.STOCK_CONTROLLER) return 'PENDING_L2';
-  // Control Room, Finance start at L1
-  return 'PENDING_L1';
+async function getPOApprovalTier(role) {
+  if (role === ROLES.ADMIN) return { tier: 4, can_use_capital_po: true };
+  const { data } = await supabase()
+    .from('lp_po_approval_tiers')
+    .select('tier, can_use_capital_po')
+    .eq('role_key', role)
+    .single();
+  return data || { tier: 0, can_use_capital_po: false };
+}
+
+/**
+ * Determine approval level required based on creator role's tier.
+ * Returns the first status the PO should enter after submission.
+ * tier 0/no row → PENDING_L1 (full hierarchy applies)
+ * tier 1 → PENDING_L2 (skips the one stage this role itself approves)
+ * tier 2 → PENDING_L3
+ * tier 3 or 4 → PENDING_FINANCIAL
+ */
+async function firstApprovalStatus(creatorRole) {
+  const { tier } = await getPOApprovalTier(creatorRole);
+  return PO_STAGE_ORDER[Math.min(tier, 3)];
+}
+
+/**
+ * Express middleware: require the requesting user to have PO approval
+ * duties at all (tier > 0). Attaches the resolved tier info onto
+ * req.poApprovalTier so the route handler doesn't need to re-fetch it.
+ */
+function requirePOApprovalTier(minTier = 1) {
+  return async (req, res, next) => {
+    const tierInfo = await getPOApprovalTier(req.user?.role);
+    if (tierInfo.tier < minTier) {
+      return res.status(403).json({ error: 'Your role has no PO approval duties at this level' });
+    }
+    req.poApprovalTier = tierInfo;
+    next();
+  };
 }
 
 /**
@@ -383,8 +418,9 @@ router.post('/po',
       if (capConf['po_capital_enabled'] !== 'Y' && req.user.role !== ROLES.ADMIN) {
         return res.status(403).json({ error: 'Capital purchase option is not enabled. Contact Admin.' });
       }
-      if (![ROLES.WORKSHOP_MANAGER, ROLES.ADMIN].includes(req.user.role)) {
-        return res.status(403).json({ error: 'Only Workshop Manager or Admin can create capital POs' });
+      const { can_use_capital_po } = await getPOApprovalTier(req.user.role);
+      if (!can_use_capital_po) {
+        return res.status(403).json({ error: 'Your role is not permitted to create capital POs' });
       }
     }
 
@@ -445,17 +481,21 @@ router.post('/po',
 );
 
 // GET /inventory/po/pending-approval — POs awaiting my action
+// NOTE: previously this used a hardcoded roleStatusMap that did not match
+// the actual approval-hierarchy bypass logic in /po/:id/approve below — it
+// was MISSING FINANCE entirely (Finance users saw zero pending POs here
+// despite being able to approve them) and only gave ADMIN PENDING_FINANCIAL
+// (missing L1/L2/L3, which Admin can also approve via hierarchy bypass).
+// Now derived from the same tier system as the approve endpoint, so the
+// list always matches what a role can actually act on.
 router.get('/po/pending-approval',
-  requireRole(ROLES.ADMIN, ROLES.FINANCE, ROLES.STOCK_CONTROLLER,
-             ROLES.WORKSHOP_ASSISTANT, ROLES.WORKSHOP_MANAGER),
+  requirePOApprovalTier(1),
   async (req, res) => {
-    const roleStatusMap = {
-      [ROLES.STOCK_CONTROLLER]:   ['PENDING_L1'],
-      [ROLES.WORKSHOP_ASSISTANT]: ['PENDING_L2'],
-      [ROLES.WORKSHOP_MANAGER]:   ['PENDING_L3'],
-      [ROLES.ADMIN]:         ['PENDING_FINANCIAL'],
-    };
-    const myStatuses = roleStatusMap[req.user.role] || [];
+    const { tier } = req.poApprovalTier;
+    // Mirrors the approve-endpoint hierarchy: tier N can act on any stage at
+    // or below its own ceiling (capped at PENDING_L3 — PENDING_FINANCIAL is a
+    // holding state, not something re-actioned via this approval flow).
+    const myStatuses = PO_STAGE_ORDER.slice(0, Math.min(tier, 3));
     if (!myStatuses.length) return res.json([]);
 
     const { data, error } = await supabase()
@@ -716,7 +756,7 @@ router.post('/po/:id/submit',
       'workshop_manager_username', 'workshop_assistant_username'
     );
 
-    const newStatus = firstApprovalStatus(req.user.role);
+    const newStatus = await firstApprovalStatus(req.user.role);
     const now = new Date().toISOString();
 
     const { data, error } = await supabase()
@@ -764,8 +804,7 @@ router.post('/po/:id/submit',
 
 // POST /inventory/po/:id/approve — approve or reject a PO at current stage
 router.post('/po/:id/approve',
-  requireRole(ROLES.ADMIN, ROLES.FINANCE, ROLES.STOCK_CONTROLLER,
-             ROLES.WORKSHOP_ASSISTANT, ROLES.WORKSHOP_MANAGER),
+  requirePOApprovalTier(1),
   async (req, res) => {
     const { action, notes } = req.body; // action: 'APPROVE' | 'REJECT'
     if (!['APPROVE','REJECT'].includes(action)) {
@@ -783,12 +822,11 @@ router.post('/po/:id/approve',
 
     if (!po) return res.status(404).json({ error: 'PO not found' });
 
-    const role = req.user.role;
-    const now  = new Date().toISOString();
+    const myTier = req.poApprovalTier.tier;
+    const now    = new Date().toISOString();
 
-    // ── Approval hierarchy with bypass ──────────────────────────────────────
-    // Role hierarchy (highest first): ADMIN/FINANCE > WORKSHOP_MANAGER > WORKSHOP_ASSISTANT > STOCK_CONTROLLER
-    // A higher-level approver can approve from any pending stage, bypassing lower stages.
+    // ── Approval hierarchy with bypass, now DB-driven via lp_po_approval_tiers ──
+    // A higher tier can approve from any pending stage, bypassing lower stages.
     // Rejections always work at whatever stage the PO is currently at.
 
     const PENDING_STAGES = ['PENDING_L1','PENDING_L2','PENDING_L3','PENDING_FINANCIAL'];
@@ -796,26 +834,24 @@ router.post('/po/:id/approve',
       return res.status(400).json({ error: `PO is ${po.status} — not awaiting approval` });
     }
 
-    // Define which roles can approve at each stage (minimum level)
-    // A role can approve its own stage AND all stages below it
-    const STAGE_MIN_ROLE = {
-      'PENDING_L1':        [ROLES.STOCK_CONTROLLER, ROLES.WORKSHOP_ASSISTANT, ROLES.WORKSHOP_MANAGER, ROLES.FINANCE, ROLES.ADMIN],
-      'PENDING_L2':        [ROLES.WORKSHOP_ASSISTANT, ROLES.WORKSHOP_MANAGER, ROLES.FINANCE, ROLES.ADMIN],
-      'PENDING_L3':        [ROLES.WORKSHOP_MANAGER, ROLES.FINANCE, ROLES.ADMIN],
-      'PENDING_FINANCIAL': [ROLES.FINANCE, ROLES.ADMIN],
+    // Minimum tier required to act at each stage — a role can approve its
+    // own stage's tier and any stage below it.
+    const STAGE_MIN_TIER = {
+      'PENDING_L1':        1,
+      'PENDING_L2':        2,
+      'PENDING_L3':        3,
+      'PENDING_FINANCIAL': 4,
     };
 
-    const allowedRoles = STAGE_MIN_ROLE[po.status];
-    if (!allowedRoles.includes(role)) {
-      return res.status(403).json({ error: `Your role (${role}) cannot approve at this stage (${po.status})` });
+    if (myTier < STAGE_MIN_TIER[po.status]) {
+      return res.status(403).json({ error: `Your role cannot approve at this stage (${po.status})` });
     }
 
     // Determine the target status after this approval
-    // Higher-level approvers bypass lower stages and jump to APPROVED directly
-    // FINANCE/ADMIN always jump to APPROVED from any stage
-    // WORKSHOP_MANAGER jumps to PENDING_FINANCIAL (skips L1/L2 if approving from there)
-    // WORKSHOP_ASSISTANT only advances one step at a time (L1→L2→L3)
-    // STOCK_CONTROLLER only approves L1
+    // tier 4 (Financial) always lands at PENDING_FINANCIAL from any stage
+    // tier 3 jumps straight to PENDING_FINANCIAL (skips remaining lower stages)
+    // tier 2 advances one step at a time (L1→L2, L2→L3)
+    // tier 1 only ever approves from L1 → L2
     let newStatus;
     let logAction;
     const currentStage = po.status;
@@ -824,23 +860,19 @@ router.post('/po/:id/approve',
       newStatus = 'REJECTED';
       logAction = `${currentStage.replace('PENDING_','')}_REJECTED`;
     } else {
-      // Determine bypass based on approver role
-      if ([ROLES.FINANCE, ROLES.ADMIN].includes(role)) {
-        // Finance and Admin give financial approval — PO moves to PENDING_FINANCIAL
-        // It will move to APPROVED only once a supplier invoice is captured against it
+      if (myTier >= 4) {
+        // Financial approval — PO moves to PENDING_FINANCIAL. It will move to
+        // APPROVED only once a supplier invoice is captured against it.
         newStatus = 'PENDING_FINANCIAL';
         logAction = 'FINANCIAL_APPROVED';
-      } else if (role === ROLES.WORKSHOP_MANAGER) {
-        // Workshop Manager covers L1, L2, L3 — jumps to PENDING_FINANCIAL
+      } else if (myTier === 3) {
         newStatus = 'PENDING_FINANCIAL';
         logAction = 'L3_APPROVED';
-      } else if (role === ROLES.WORKSHOP_ASSISTANT) {
-        // Workshop Assistant covers L1, L2 — advances one step based on current stage
+      } else if (myTier === 2) {
         if (currentStage === 'PENDING_L1') { newStatus = 'PENDING_L2'; logAction = 'L1_APPROVED'; }
-        else if (currentStage === 'PENDING_L2') { newStatus = 'PENDING_L3'; logAction = 'L2_APPROVED'; }
-        else { newStatus = 'PENDING_L3'; logAction = 'L2_APPROVED'; } // fallback
+        else { newStatus = 'PENDING_L3'; logAction = 'L2_APPROVED'; } // currentStage === PENDING_L2
       } else {
-        // STOCK_CONTROLLER — only L1
+        // tier 1 — only reachable from PENDING_L1 per the gate above
         newStatus = 'PENDING_L2'; logAction = 'L1_APPROVED';
       }
     }
@@ -905,10 +937,14 @@ router.post('/po/:id/approve',
       });
     } else {
       // Notify next approver
+      // Notify-role routing is DB-config-driven (lp_config po_l2_role / po_l3_role /
+      // po_financial_role) — same config the /po/:id/submit notification uses,
+      // so changing it in one place keeps both consistent.
+      const notifyConfig = await getConfig('po_l2_role', 'po_l3_role', 'po_financial_role');
       const nextNotifyRoleMap = {
-        'PENDING_L2':        ROLES.WORKSHOP_ASSISTANT,
-        'PENDING_L3':        ROLES.WORKSHOP_MANAGER,
-        'PENDING_FINANCIAL': ROLES.FINANCE,  // notify Finance to capture supplier invoice
+        'PENDING_L2':        notifyConfig['po_l2_role']        || ROLES.WORKSHOP_ASSISTANT,
+        'PENDING_L3':        notifyConfig['po_l3_role']        || ROLES.WORKSHOP_MANAGER,
+        'PENDING_FINANCIAL': notifyConfig['po_financial_role'] || ROLES.FINANCE,
       };
       const nextRole = nextNotifyRoleMap[newStatus];
       if (nextRole) {
