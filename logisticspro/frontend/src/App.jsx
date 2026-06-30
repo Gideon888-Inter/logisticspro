@@ -90,10 +90,12 @@ function buildMenu(user) {
     return menu;
   }
   menu.push({ key: '', label: 'Home', icon: '🏠' });
-  if (canViewFleet(user))
-    menu.push({ key: 'vehicles', label: 'Fleet', icon: '🚚' });
   if (canViewLoads(user))
     menu.push({ key: 'movement', label: 'Loads', icon: '🚛' });
+  if (canViewFleet(user))
+    menu.push({ key: 'vehicles', label: 'Fleet', icon: '🚚' });
+  if (canViewApprovals(user))
+    menu.push({ key: 'approvals', label: 'Approvals', icon: '✅' });
   if (canViewWorkshop(user) || canViewInventory(user))
     menu.push({ key: 'workshop', label: 'Workshop', icon: '🔧',
       sub: [
@@ -103,8 +105,6 @@ function buildMenu(user) {
         ...(canViewInventory(user)  ? [{ key: 'workshop-inventory',   label: 'Inventory' }] : []),
       ]
     });
-  if (canViewApprovals(user))
-    menu.push({ key: 'approvals', label: 'Approvals', icon: '✅' });
   if (canManageDrivers(user))
     menu.push({ key: 'drivers', label: 'Drivers', icon: '👤',
       sub: [
@@ -113,14 +113,14 @@ function buildMenu(user) {
         { key: 'drivers-leave',      label: 'Leave' },
       ]
     });
+  if (canManageClients(user))
+    menu.push({ key: 'clients-list', label: 'Clients', icon: '🏢' });
   if (canViewRates(user))
     menu.push({ key: 'rates', label: 'Client Rates', icon: '💰',
       sub: [
         { key: 'rates-list',   label: 'Rate List' },
       ]
     });
-  if (canManageClients(user))
-    menu.push({ key: 'clients-list', label: 'Clients', icon: '🏢' });
   if (canViewFinance(user) || canManageInvoices(user))
     menu.push({ key: 'finance', label: 'Finance', icon: '💰',
       sub: [
@@ -167,12 +167,17 @@ const ReadOnlyHome = () => (
 export default function App() {
   const { user, logout } = useAuth();
   const [page, setPage] = useState('');
+  const [pendingLoadNo, setPendingLoadNo] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [expandedMenus, setExpandedMenus] = useState({});
   const MENU = user ? buildMenu(user) : [];
 
-  const navigate = (key) => {
+  // opts.loadNo lets callers (e.g. clicking a horse's active load on the
+  // Fleet page) deep-link straight into a specific load on the Loads page.
+  // Normal sidebar navigation calls this with no opts, which clears it.
+  const navigate = (key, opts = {}) => {
     setPage(key);
+    setPendingLoadNo(opts.loadNo || null);
     setSidebarOpen(false);
     MENU.forEach(item => {
       if (item.sub && item.sub.find(s => s.key === key)) {
@@ -183,7 +188,7 @@ export default function App() {
 
   useEffect(() => {
     const handler = (e) => {
-      if (e.detail?.page) navigate(e.detail.page);
+      if (e.detail?.page) navigate(e.detail.page, { loadNo: e.detail.loadNo });
     };
     window.addEventListener('lp-navigate', handler);
     return () => window.removeEventListener('lp-navigate', handler);
@@ -212,7 +217,7 @@ export default function App() {
   const renderPage = () => {
     switch (page) {
       case '':                    return user?.role === ROLES.READONLY ? <ReadOnlyHome /> : <Dashboard onNavigate={navigate} />;
-      case 'movement':            return canViewLoads(user) ? <Loads /> : <AccessDenied />;
+      case 'movement':            return canViewLoads(user) ? <Loads initialLoadNo={pendingLoadNo} /> : <AccessDenied />;
       case 'approvals':           return canViewApprovals(user) ? <Approvals /> : <AccessDenied />;
       case 'vehicles':            return canViewFleet(user) ? <Fleet /> : <AccessDenied />;
       case 'drivers-list':        return canManageDrivers(user) ? <Drivers /> : <AccessDenied />;
