@@ -197,6 +197,15 @@ export function canViewFleet(user) {
   ].includes(user?.role);
 }
 
+// Admin-only by default — see middleware/auth.js TRACKING_DEBUG. DB-driven
+// so it follows the same User Roles override path as every other module
+// instead of being a hardcoded role check baked into the component.
+export function canDebugTracking(user) {
+  const perm = hasPermission(user, 'TRACKING_DEBUG', 'view');
+  if (perm !== null) return perm;
+  return user?.role === ROLES.ADMIN;
+}
+
 // Finance cannot edit fleet records
 export function canEditFleet(user) {
   const perm = hasPermission(user, 'FLEET', 'edit');
