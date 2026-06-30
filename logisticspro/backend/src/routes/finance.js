@@ -38,12 +38,14 @@
 const express = require('express');
 const router  = express.Router();
 const supabase = require('../supabase');
-const { authMiddleware, requireRole, ROLES } = require('../middleware/auth');
+const { authMiddleware, requireRole, ROLES, loadUserPermissions, requirePermission } = require('../middleware/auth');
 
 router.use(authMiddleware);
+router.use(loadUserPermissions);
 
-// Only ADMIN and FINANCE can access financial module (unless otherwise specified)
-const requireFin = requireRole(ROLES.ADMIN, ROLES.FINANCE);
+// Only ADMIN and FINANCE can access financial module (unless otherwise specified) —
+// now DB-aware via requirePermission, so a custom role granted FINANCE.view works too.
+const requireFin = requirePermission('FINANCE', 'view');
 
 // ─────────────────────────────────────────────────────────────
 // CHART OF ACCOUNTS
@@ -160,7 +162,7 @@ router.patch('/periods/:id/lock', requireFin, async (req, res) => {
 });
 
 // PATCH /fin/periods/:id/unlock — unlock a period (Admin only)
-router.patch('/periods/:id/unlock', requireRole(ROLES.ADMIN), async (req, res) => {
+router.patch('/periods/:id/unlock', requirePermission('FINANCE', 'delete'), async (req, res) => {
   const { reason } = req.body;
   if (!reason?.trim()) return res.status(400).json({ error: 'Unlock reason is required' });
   const period_id = parseInt(req.params.id);
@@ -454,7 +456,7 @@ router.get('/vat-types', requireFin, async (req, res) => {
 });
 
 // POST /fin/vat-types — create a new VAT type (Admin/Finance only)
-router.post('/vat-types', requireRole(ROLES.ADMIN, ROLES.FINANCE), async (req, res) => {
+router.post('/vat-types', requireFin, async (req, res) => {
   const { vat_code, description, rate_pct, vat_direction, vat201_field, is_capital_goods } = req.body;
   if (!vat_code?.trim())    return res.status(400).json({ error: 'vat_code is required' });
   if (!description?.trim()) return res.status(400).json({ error: 'description is required' });
@@ -473,7 +475,7 @@ router.post('/vat-types', requireRole(ROLES.ADMIN, ROLES.FINANCE), async (req, r
 });
 
 // PATCH /fin/vat-types/:code — update VAT type (Admin/Finance only)
-router.patch('/vat-types/:code', requireRole(ROLES.ADMIN, ROLES.FINANCE), async (req, res) => {
+router.patch('/vat-types/:code', requireFin, async (req, res) => {
   const allowed = ['description','rate_pct','vat_direction','vat201_field','is_capital_goods','active'];
   const updates = {};
   allowed.forEach(k => { if (req.body[k] !== undefined) updates[k] = req.body[k]; });
@@ -2344,7 +2346,7 @@ router.patch('/supplier-categories/:id', requireFin, async (req, res) => {
 });
 
 // DELETE /fin/supplier-categories/:id
-router.delete('/supplier-categories/:id', requireRole(ROLES.ADMIN, ROLES.FINANCE), async (req, res) => {
+router.delete('/supplier-categories/:id', requirePermission('FINANCE', 'edit'), async (req, res) => {
   const { error } = await supabase
     .from('fin_supplier_categories')
     .delete()
