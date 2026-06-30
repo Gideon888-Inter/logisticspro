@@ -148,15 +148,16 @@ async function exportAllLoadsCSV(dateFrom, dateTo, status, search) {
 
   const headers = [
     'Load Number', 'Load Date', 'Client', 'Truck', 'Driver',
-    'From', 'To', 'Rate', 'Status', 'Opening KM', 'Closing KM',
-    'Trailer 1', 'Operator', 'Invoice No', 'Order No',
+    'From', 'Pickup Date', 'To', 'Offload Date', 'Rate', 'Status', 'Opening KM', 'Closing KM',
+    'Trailer 1', 'Trailer 2', 'Operator', 'Invoice No', 'Order No',
   ];
   const rows = allLoads.map(l => [
     l.m_load_no || '', l.m_date || '', l.m_customer || '',
-    l.m_truck || '', l.m_driver_id || '', l.m_from || '', l.m_to || '',
+    l.m_truck || '', l.m_driver_id || '', l.m_from || '', l.m_pickup_date || '',
+    l.m_to || '', l.m_offload_date || '',
     l.m_rate || 0, l.m_status || '',
     l.m_opening_km || 0, l.m_closing_km || 0,
-    l.m_trailer1 || '', l.m_responsible_operator || '',
+    l.m_trailer1 || '', l.m_trailer2 || '', l.m_responsible_operator || '',
     l.m_invoice || '', l.m_order_no || '',
   ]);
 
@@ -330,6 +331,7 @@ function NewLoadModal({ onClose, onCreated }) {
     m_truck: '', m_driver_id: '', m_customer: '',
     m_trailer_size: 'None', m_trailer1: '', m_trailer2: '',
     m_from: '', m_to: '', m_rate: 0,
+    m_pickup_date: new Date().toISOString().slice(0, 10), m_offload_date: '',
     m_opening_km: '', m_responsible_operator: '',
     m_loading_address: '', m_offloading_address: '',
   });
@@ -416,6 +418,8 @@ function NewLoadModal({ onClose, onCreated }) {
       const payload = {
         ...form,
         m_opening_km: Number(form.m_opening_km) || 0,
+        m_pickup_date: form.m_pickup_date || null,
+        m_offload_date: form.m_offload_date || null,
         m_operator: user?.username,
         m_status: status,
       };
@@ -579,6 +583,19 @@ function NewLoadModal({ onClose, onCreated }) {
                 <option value="">— Select destination —</option>
                 {toOptions.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
+            </div>
+          </div>
+          {/* Pickup / Offload dates — sit directly under From / To */}
+          <div className="form-row">
+            <div className="form-group">
+              <label style={labelStyle}>Pickup Date</label>
+              <input type="date" value={form.m_pickup_date}
+                onChange={e => set('m_pickup_date', e.target.value)} style={inputStyle} />
+            </div>
+            <div className="form-group">
+              <label style={labelStyle}>Offload Date {!form.m_pickup_date && <span style={{ color: '#aaa' }}>(optional — fill in once known)</span>}</label>
+              <input type="date" value={form.m_offload_date} min={form.m_pickup_date || undefined}
+                onChange={e => set('m_offload_date', e.target.value)} style={inputStyle} />
             </div>
           </div>
           <div className="form-row">
@@ -1076,19 +1093,30 @@ function ExpandedRow({ load, onRefresh, onCostUpdate, asCard = false }) {
     </div>
   );
 
+  // Same as cell(), with a smaller secondary line underneath — used for
+  // From/To with their pickup/offload dates, and Trailer with its 18m
+  // link partner.
+  const cellSub = (label, value, sub) => (
+    <div style={{ minWidth: 120 }}>
+      <div style={{ fontSize: 10, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>{label}</div>
+      <div style={{ fontSize: 13, fontWeight: 500 }}>{value || '—'}</div>
+      {sub && <div style={{ fontSize: 11, color: '#888', marginTop: 1 }}>{sub}</div>}
+    </div>
+  );
+
   const inner = (
         <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
 
           {/* Load detail fields */}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px 32px' }}>
             {cell('Load No', load.m_load_no)}
-            {cell('Date', fmtDate(load.m_date))}
+            {cell('Load Creation Date', fmtDate(load.m_date))}
             {cell('Truck', load.m_truck)}
+            {cellSub('Trailer', load.m_trailer1 || 'None', load.m_trailer2 ? `🔗 Linked: ${load.m_trailer2}` : null)}
             {cell('Driver', load.m_driver_id)}
             {cell('Customer', load.m_customer)}
-            {cell('From', load.m_from)}
-            {cell('To', load.m_to)}
-            {cell('Trailer', load.m_trailer1 || 'None')}
+            {cellSub('From', load.m_from, load.m_pickup_date ? `Pickup: ${fmtDate(load.m_pickup_date)}` : null)}
+            {cellSub('To', load.m_to, load.m_offload_date ? `Dropoff: ${fmtDate(load.m_offload_date)}` : null)}
             {cell('Rate', fmtR(load.m_rate))}
             <div style={{ minWidth: 180 }}>
               <div style={{ fontSize: 10, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>Order No</div>
@@ -1128,7 +1156,6 @@ function ExpandedRow({ load, onRefresh, onCostUpdate, asCard = false }) {
               )}
               {orderNoMsg && <div style={{ fontSize: 11, color: orderNoMsg.includes('⏳') ? '#d97706' : '#059669', marginTop: 2 }}>{orderNoMsg}</div>}
             </div>
-            {cell('Invoice', load.m_invoice)}
             {hasPodPassed && (
               <div style={{ minWidth: 120 }}>
                 <div style={{ fontSize: 10, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>POD</div>
@@ -1830,7 +1857,7 @@ function PaginationBar({ page, total, limit, setPage }) {
 // ── Main Loads Page ───────────────────────────────────────────
 // viewMode: 'standard' (default, full finance-oriented columns) or
 // 'movement' (fleet-ops oriented columns — used by Fleet > Movement tab).
-export default function Loads({ viewMode = 'standard' } = {}) {
+export default function Loads({ viewMode = 'standard', initialLoadNo = null } = {}) {
   const [loads, setLoads] = useState([]);
   const [stats, setStats] = useState({});
   const [loading, setLoading] = useState(true);
@@ -1871,6 +1898,26 @@ export default function Loads({ viewMode = 'standard' } = {}) {
     fetchLoads();
     fetchStats();
   }, [filters.status, page, dateFrom, dateTo, filters.search]);
+
+  // Click-through from Fleet (a horse's "View Load" link) — reuses the
+  // normal search path rather than fetching the load separately, since
+  // `search` already matches m_load_no server-side (see GET /api/loads).
+  // Clearing the date range avoids the default "this month" filter hiding
+  // an older load.
+  useEffect(() => {
+    if (!initialLoadNo) return;
+    setFilters(f => ({ ...f, search: initialLoadNo, status: '' }));
+    setDateFrom('');
+    setDateTo('');
+    setPage(1);
+  }, [initialLoadNo]);
+
+  // Once that fetch lands, auto-expand the load so it's not just sitting
+  // in the list unopened.
+  useEffect(() => {
+    if (!initialLoadNo || loading) return;
+    if (loads.some(l => l.m_load_no === initialLoadNo)) setExpandedRow(initialLoadNo);
+  }, [initialLoadNo, loads, loading]);
 
   const toggleRow = (id) => setExpandedRow(e => e === id ? null : id);
 
@@ -1948,7 +1995,9 @@ export default function Loads({ viewMode = 'standard' } = {}) {
                   <div>📦 <strong>{l.m_customer || '—'}</strong></div>
                   <div>🗺 <strong>{l.m_from} → {l.m_to}</strong></div>
                   {l.m_order_no && <div>PO: <strong>{l.m_order_no}</strong></div>}
-                  {l.m_trailer1 && <div>🚛 <strong>{l.m_trailer1}</strong></div>}
+                  {l.m_trailer1 && (
+                    <div>🚛 <strong>{l.m_trailer1}</strong>{l.m_trailer2 && <span style={{ color: '#888' }}> 🔗 {l.m_trailer2}</span>}</div>
+                  )}
                   {Number(l.m_opening_km || 0) > 0 && (
                     <div>🧭 Opening KM: <strong>{Number(l.m_opening_km).toLocaleString()} km</strong></div>
                   )}
