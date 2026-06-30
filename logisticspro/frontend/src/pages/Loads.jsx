@@ -73,6 +73,172 @@ function loadGoogleMaps(cb) {
   document.head.appendChild(script);
 }
 
+const token = () => localStorage.getItem('lp_token');
+const req = (path, opts = {}) =>
+  fetch(API + '/api' + path, {
+    ...opts,
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + token(),
+      ...(opts.headers || {}),
+    },
+  }).then(r => r.json());
+
+// ── Status definitions ────────────────────────────────────────
+const STATUS_BADGE = {
+  PRELOAD:               'badge-gray',
+  EN_ROUTE:              'badge-blue',
+  OFFLOADED:             'badge-green',
+  WAIT_ORDER_NO:         'badge-amber',
+  WAIT_POD_SCAN:         'badge-amber',
+  WAIT_APPROVAL:         'badge-blue',
+  WAIT_RATE_CHECK:       'badge-orange',
+  WAIT_INVOICE_NO:       'badge-orange',
+  LOAD_INVOICED:         'badge-green',
+  WAIT_PROCESSING:       'badge-gray',
+  REJECTED:              'badge-red',
+  PENDING_KM_APPROVAL:   'badge-orange',
+  KM_CORRECTION_NEEDED:  'badge-red',
+};
+
+// ── Movement view: short "current status" text + colour, derived from
+// the load's status + destination (no live GPS field exists yet) ──────────
+function movementStatusText(l) {
+  const to = l.m_to || '—';
+  switch (l.m_status) {
+    case 'PRELOAD':              return `Awaiting dispatch to ${to}`;
+    case 'EN_ROUTE':              return `En Route to ${to}`;
+    case 'OFFLOADED':             return `Arrived at ${to}`;
+    case 'WAIT_ORDER_NO':         return 'Awaiting Order Number';
+    case 'WAIT_POD_SCAN':         return 'Awaiting POD Scan';
+    case 'WAIT_APPROVAL':         return 'Awaiting Operator Approval';
+    case 'WAIT_RATE_CHECK':       return 'Awaiting Rate Check';
+    case 'WAIT_INVOICE_NO':       return 'Awaiting Invoice';
+    case 'LOAD_INVOICED':         return 'Invoiced';
+    case 'WAIT_PROCESSING':       return 'Processing';
+    case 'REJECTED':              return 'Rejected';
+    case 'PENDING_KM_APPROVAL':   return 'KM Pending Approval';
+    case 'KM_CORRECTION_NEEDED':  return 'KM Correction Needed';
+    default:                      return l.m_status?.replace(/_/g, ' ') || '—';
+  }
+}
+function movementStatusColor(l) {
+  const badgeClass = STATUS_BADGE[l.m_status] || 'badge-gray';
+  return {
+    'badge-gray':   '#374151',
+    'badge-blue':   '#1e40af',
+    'badge-green':  '#065f46',
+    'badge-amber':  '#92400e',
+    'badge-orange': '#9a3412',
+    'badge-red':    '#991b1b',
+  }[badgeClass] || '#374151';
+}
+
+// Statuses users can manually filter/view — KM system statuses are EXCLUDED
+// from the workflow buttons but INCLUDED in the filter dropdown
+const ALL_STATUSES = [
+  'PRELOAD', 'EN_ROUTE', 'OFFLOADED',
+  'WAIT_ORDER_NO', 'WAIT_POD_SCAN', 'WAIT_APPROVAL',
+  'WAIT_RATE_CHECK', 'WAIT_INVOICE_NO', 'LOAD_INVOICED', 'REJECTED',
+  'PENDING_KM_APPROVAL', 'KM_CORRECTION_NEEDED',
+];
+
+// The valid manual workflow sequence (no KM system statuses here)
+const WORKFLOW_STEPS = [
+  'PRELOAD', 'EN_ROUTE', 'OFFLOADED',
+  'WAIT_ORDER_NO', 'WAIT_POD_SCAN', 'WAIT_APPROVAL',
+  'WAIT_RATE_CHECK', 'WAIT_INVOICE_NO', 'LOAD_INVOICED',
+];
+
+// Who can manually advance each step
+const STEP_ROLES = {
+  PRELOAD:          ['OPERATOR', 'ADMIN'],
+  EN_ROUTE:         ['OPERATOR', 'ADMIN'],              // via KM offload
+  OFFLOADED:        ['OPERATOR', 'ADMIN'],              // → WAIT_ORDER_NO
+  WAIT_ORDER_NO:    ['OPERATOR', 'ADMIN'],              // → WAIT_POD_SCAN
+  WAIT_POD_SCAN:    [],                                 // system only (POD upload)
+  WAIT_APPROVAL:    ['OPERATOR', 'ADMIN'],              // Operator reviews POD → WAIT_RATE_CHECK
+  WAIT_RATE_CHECK:  ['MANAGER', 'ADMIN'],               // Admin/Manager confirms rate → WAIT_INVOICE_NO
+  WAIT_INVOICE_NO:  [],                                 // system only (invoice flow)
+};
+
+const COST_TYPES = ['Loadshift', 'Fine', 'Labour', 'Extra Stop', 'Other'];
+
+function fmtDate(d) {
+  return d
+    ? new Date(d).toLocaleDateString('en-ZA', {
+        day: '2-digit', month: 'short', year: 'numeric',
+      })
+    : '—';
+}
+
+function fmtDateTime(d) {
+  return d
+    ? new Date(d).toLocaleString('en-ZA', {
+        day: '2-digit', month: 'short', year: 'numeric',
+        hour: '2-digit', minute: '2-digit',
+      })
+    : '—';
+}
+
+function fmtR(n) {
+  return n || n === 0
+    ? 'R ' + Number(n).toLocaleString('en-ZA', { minimumFractionDigits: 0 })
+    : '—';
+}
+
+// ── Export CSV helper ─────────────────────────────────────────
+async function exportAllLoadsCSV(dateFrom, dateTo, status, search) {
+  const tkn = localStorage.getItem('lp_token');
+  const BASE = import.meta.env.VITE_API_URL || '';
+  let allLoads = [];
+  let currentPage = 1;
+  let hasMore = true;
+  const batchSize = 1000;
+
+  while (hasMore) {
+    const params = new URLSearchParams({ limit: batchSize, page: currentPage });
+    if (dateFrom) params.append('date_from', dateFrom);
+    if (dateTo)   params.append('date_to', dateTo);
+    if (status)   params.append('status', status);
+    if (search)   params.append('search', search);
+
+    const res = await fetch(`${BASE}/api/loads?${params}`, {
+      headers: { 'Authorization': 'Bearer ' + tkn },
+    });
+    const json = await res.json();
+    const batch = json.data || [];
+    allLoads = allLoads.concat(batch);
+    hasMore = batch.length === batchSize;
+    currentPage++;
+  }
+
+  const headers = [
+    'Load Number', 'Load Date', 'Client', 'Truck', 'Driver',
+    'From', 'To', 'Rate', 'Status', 'Opening KM', 'Closing KM',
+    'Trailer 1', 'Operator', 'Invoice No', 'Order No',
+  ];
+  const rows = allLoads.map(l => [
+    l.m_load_no || '', l.m_date || '', l.m_customer || '',
+    l.m_truck || '', l.m_driver_id || '', l.m_from || '', l.m_to || '',
+    l.m_rate || 0, l.m_status || '',
+    l.m_opening_km || 0, l.m_closing_km || 0,
+    l.m_trailer1 || '', l.m_responsible_operator || '',
+    l.m_invoice || '', l.m_order_no || '',
+  ]);
+
+  const csv = [headers, ...rows]
+    .map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))
+    .join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `loads_export_${dateFrom || 'all'}_to_${dateTo || 'today'}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 // ── Map Location Picker ───────────────────────────────────────
 // FIX: onChange is now called immediately when address changes,
 //      not only on "Confirm". All state goes through React, not
