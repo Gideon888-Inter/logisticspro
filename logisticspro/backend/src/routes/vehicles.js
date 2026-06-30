@@ -1,14 +1,39 @@
 const express = require('express');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+const XLSX = require('xlsx');
 const supabase = require('../supabase');
-const { authMiddleware, loadUserPermissions, requirePermission } = require('../middleware/auth');
+const { authMiddleware, loadUserPermissions, requirePermission, requireRole, ROLES } = require('../middleware/auth');
 const { getPulsitVehicles, mapVehicle } = require('../lib/pulsit');
-const { normalizeVehicleKey, buildVehicleKeyMap } = require('../lib/vehicleCode');
+const { normalizeVehicleKey, buildVehicleKeyMap, resolveVehicleCode } = require('../lib/vehicleCode');
 const { fetchChunked } = require('../lib/supabasePaging');
 const { distanceKm, matchAddress, nearestAddress } = require('../lib/geo');
 
 const router = express.Router();
 router.use(authMiddleware);
 router.use(loadUserPermissions);
+
+// ── Multer: temp disk storage for trip-report imports (mirrors the
+// attachment-upload pattern in routes/inventory.js) ─────────────────────────
+const TRIP_UPLOAD_DIR = path.join(__dirname, '../../temp_attachments');
+if (!fs.existsSync(TRIP_UPLOAD_DIR)) fs.mkdirSync(TRIP_UPLOAD_DIR, { recursive: true });
+
+const tripUpload = multer({
+  storage: multer.diskStorage({
+    destination: TRIP_UPLOAD_DIR,
+    filename: (req, file, cb) => {
+      const ts = Date.now();
+      const safe = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+      cb(null, `trip_${ts}_${safe}`);
+    },
+  }),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    cb(null, ['.xlsx', '.xls', '.csv'].includes(ext));
+  },
+});
 
 // Most recent non-deleted load per truck (one row per raw m_truck value).
 // Prefers a single indexed DISTINCT ON query computed in Postgres — see
@@ -293,6 +318,147 @@ router.get('/fleet-overview', requirePermission('FLEET', 'view'), async (req, re
   } catch (e) {
     console.error('[vehicles/fleet-overview]', e.message);
     res.status(500).json({ error: e.message });
+  }
+});
+
+// ============================================================
+// POST /api/vehicles/import-trips
+// Admin only. Accepts a Pulsit "Trip Report" export (.xlsx/.xls/.csv) and
+// loads it into lp_vehicle_trips — see migration_vehicle_trips.sql.
+//
+// Column matching is name-based and case/spacing-insensitive (Pulsit's
+// exact header text can vary slightly between report runs), matched
+// against the confirmed sample: Company, Fleet, Vehicle No, Description,
+// Driver, Start Time, Start Location, End Time, End Location,
+// Elapsed Time(Mins), Distance(Kms), Ave Speed, Max Speed, Cost.
+//
+// "Description" carries the actual fleet code (e.g. MH196) — "Vehicle No"
+// is Pulsit's own internal device ID and is kept only for traceability.
+// Vehicle codes are resolved the same way as everywhere else in the app
+// (lib/vehicleCode.js), so a Pulsit export reading "MH19" still matches
+// our "MH019". Rows whose vehicle code doesn't resolve to anything in
+// lp_vehicles are skipped (not inserted with a null vehicle), and listed
+// back in the response so they can be fixed and the same file re-uploaded
+// — already-imported rows are protected by the (vh_code, start_time,
+// end_time) unique constraint, so re-running an import is always safe.
+// ============================================================
+const TRIP_COLUMN_ALIASES = {
+  vehicleno:        'pulsit_vehicle_no',
+  description:      'pulsit_description',
+  driver:           'driver',
+  starttime:        'start_time',
+  startlocation:    'start_location',
+  endtime:          'end_time',
+  endlocation:      'end_location',
+  elapsedtimemins:  'elapsed_minutes',
+  distancekms:      'distance_km',
+  avespeed:         'avg_speed',
+  averagespeed:     'avg_speed',
+  maxspeed:         'max_speed',
+  cost:             'cost',
+};
+
+function normalizeHeader(h) {
+  return String(h || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+// xlsx.js returns Date objects where the UTC digits match exactly what's
+// displayed in the spreadsheet cell (e.g. cell shows 04:56:37 →
+// date.toISOString() also shows 04:56:37, regardless of what timezone
+// that wall-clock time actually represents). Pulsit's trip times are
+// South African local time (SAST, UTC+2 — South Africa doesn't observe
+// DST, so this offset is constant year-round), so naively trusting that
+// "UTC" label would store every trip 2 hours off from its true UTC time.
+// This corrects for that before storing.
+const SAST_OFFSET_MS = 2 * 60 * 60 * 1000;
+function sastCellToUtcIso(d) {
+  return new Date(new Date(d).getTime() - SAST_OFFSET_MS).toISOString();
+}
+
+router.post('/import-trips', requireRole(ROLES.ADMIN), tripUpload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded (expected .xlsx, .xls, or .csv)' });
+
+  try {
+    const wb = XLSX.readFile(req.file.path, { cellDates: true });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const rawRows = XLSX.utils.sheet_to_json(sheet, { defval: null });
+
+    if (rawRows.length === 0) {
+      return res.status(400).json({ error: 'No data rows found in the first sheet of this file' });
+    }
+
+    // Map whatever headers this export actually used to our column names
+    const headerMap = {};
+    for (const key of Object.keys(rawRows[0])) {
+      const norm = normalizeHeader(key);
+      if (TRIP_COLUMN_ALIASES[norm]) headerMap[key] = TRIP_COLUMN_ALIASES[norm];
+    }
+
+    const { data: vehicles } = await supabase.from('lp_vehicles').select('vh_code');
+    const keyMap = buildVehicleKeyMap(vehicles || []);
+
+    const unresolvedCodes = new Set();
+    const rows = [];
+    let skippedMissingFields = 0;
+
+    for (const raw of rawRows) {
+      const r = {};
+      for (const [origKey, mapped] of Object.entries(headerMap)) r[mapped] = raw[origKey];
+
+      if (!r.pulsit_description || !r.start_time || !r.end_time) { skippedMissingFields++; continue; }
+
+      const resolved = resolveVehicleCode(r.pulsit_description, keyMap);
+      const key = normalizeVehicleKey(resolved);
+      if (!keyMap.has(key)) { unresolvedCodes.add(String(r.pulsit_description)); continue; }
+
+      rows.push({
+        vh_code:            resolved,
+        pulsit_vehicle_no:  r.pulsit_vehicle_no != null ? String(r.pulsit_vehicle_no) : null,
+        pulsit_description: String(r.pulsit_description),
+        driver:             r.driver ? String(r.driver) : null,
+        start_time:         sastCellToUtcIso(r.start_time),
+        start_location:     r.start_location || null,
+        end_time:           sastCellToUtcIso(r.end_time),
+        end_location:       r.end_location || null,
+        elapsed_minutes:    r.elapsed_minutes != null ? Number(r.elapsed_minutes) : null,
+        distance_km:        Number(r.distance_km) || 0,
+        avg_speed:          r.avg_speed != null ? Number(r.avg_speed) : null,
+        max_speed:          r.max_speed != null ? Number(r.max_speed) : null,
+        cost:               Number(r.cost) || 0,
+        source_file:        req.file.originalname,
+        imported_by:        req.user.username,
+      });
+    }
+
+    let inserted = 0;
+    if (rows.length > 0) {
+      // Chunk the insert — a full historical export could be thousands of
+      // rows, well past a single request's comfortable payload size.
+      const CHUNK = 500;
+      for (let i = 0; i < rows.length; i += CHUNK) {
+        const { error, count } = await supabase
+          .from('lp_vehicle_trips')
+          .upsert(rows.slice(i, i + CHUNK), { onConflict: 'vh_code,start_time,end_time', ignoreDuplicates: true, count: 'exact' });
+        if (error) throw error;
+        inserted += rows.length; // upsert count isn't reliable with ignoreDuplicates across PostgREST versions — report attempted rows
+      }
+    }
+
+    res.json({
+      success:              true,
+      rows_in_file:         rawRows.length,
+      rows_processed:       rows.length,
+      rows_skipped_missing_fields: skippedMissingFields,
+      unresolved_vehicle_codes: [...unresolvedCodes],
+      note: unresolvedCodes.size > 0
+        ? 'Some vehicle codes in this file did not match any vehicle in Fleet — add/fix them and re-upload the same file; already-matched rows will not be duplicated.'
+        : undefined,
+    });
+  } catch (e) {
+    console.error('[vehicles/import-trips]', e.message);
+    res.status(500).json({ error: e.message });
+  } finally {
+    fs.unlink(req.file.path, () => {});
   }
 });
 
