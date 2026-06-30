@@ -1,9 +1,10 @@
 const express = require('express');
 const supabase = require('../supabase');
-const { authMiddleware, requireRole } = require('../middleware/auth');
+const { authMiddleware, loadUserPermissions, requirePermission } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(authMiddleware);
+router.use(loadUserPermissions);
 
 const SERVICE_INTERVAL = 40000; // km
 
@@ -129,7 +130,7 @@ router.get('/:code/maintenance', async (req, res) => {
 });
 
 // ── POST /api/vehicles ────────────────────────────────────────────────────────
-router.post('/', requireRole('ADMIN', 'MANAGER'), async (req, res) => {
+router.post('/', requirePermission('FLEET', 'approve'), async (req, res) => {
   const { data, error } = await supabase.from('lp_vehicles').insert([req.body]).select().single();
   if (error) return res.status(400).json({ error: error.message });
 
@@ -138,7 +139,7 @@ router.post('/', requireRole('ADMIN', 'MANAGER'), async (req, res) => {
 });
 
 // ── PATCH /api/vehicles/:code ─────────────────────────────────────────────────
-router.patch('/:code', requireRole('ADMIN', 'MANAGER'), async (req, res) => {
+router.patch('/:code', requirePermission('FLEET', 'approve'), async (req, res) => {
   // Strip any read-only fields the client may have sent
   const updates = { ...req.body };
   READ_ONLY.forEach(f => delete updates[f]);
