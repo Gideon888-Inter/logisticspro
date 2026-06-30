@@ -927,29 +927,35 @@ function TrackingMap({ vehicles, positions, selectedCode, onSelectVehicle }) {
   const mapRef = useRef(null);
   const markersRef = useRef({});
   const leafletRef = useRef(null);
+  const [mapError, setMapError] = useState(null);
 
   // Init map once
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const L = (await import('leaflet')).default;
-      await import('leaflet/dist/leaflet.css');
-      if (cancelled || mapRef.current) return;
-      leafletRef.current = L;
+      try {
+        const L = (await import('leaflet')).default;
+        await import('leaflet/dist/leaflet.css');
+        if (cancelled || mapRef.current) return;
+        leafletRef.current = L;
 
-      // South Africa bounding box (with a little padding) — fleet never
-      // leaves the country, so there's no reason to show the rest of the world.
-      const SA_BOUNDS = L.latLngBounds([-35.5, 15.0], [-21.5, 33.5]);
+        // South Africa bounding box (with a little padding) — fleet never
+        // leaves the country, so there's no reason to show the rest of the world.
+        const SA_BOUNDS = L.latLngBounds([-35.5, 15.0], [-21.5, 33.5]);
 
-      mapRef.current = L.map(mapElRef.current, {
-        maxBounds: SA_BOUNDS,
-        maxBoundsViscosity: 1.0,
-        minZoom: 5,
-      }).fitBounds(SA_BOUNDS);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap contributors',
-        maxZoom: 19,
-      }).addTo(mapRef.current);
+        mapRef.current = L.map(mapElRef.current, {
+          maxBounds: SA_BOUNDS,
+          maxBoundsViscosity: 1.0,
+          minZoom: 5,
+        }).fitBounds(SA_BOUNDS);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '&copy; OpenStreetMap contributors',
+          maxZoom: 19,
+        }).addTo(mapRef.current);
+      } catch (e) {
+        console.error('TrackingMap init failed:', e);
+        if (!cancelled) setMapError(e.message || 'Failed to load the map');
+      }
     })();
     return () => {
       cancelled = true;
@@ -964,53 +970,58 @@ function TrackingMap({ vehicles, positions, selectedCode, onSelectVehicle }) {
     const map = mapRef.current;
     if (!L || !map) return;
 
-    const seen = new Set();
-    let firstFit = !markersRef.current.__fitted;
+    try {
+      const seen = new Set();
+      let firstFit = !markersRef.current.__fitted;
 
-    positions.forEach(p => {
-      if (p.lat == null || p.lng == null) return;
-      const vehicle = vehicles.find(v => v.vh_code === p.code || v.vh_registration === p.regNo);
-      const code = vehicle?.vh_code || p.code || p.regNo;
-      seen.add(code);
-      const isSelected = code === selectedCode;
+      positions.forEach(p => {
+        if (p.lat == null || p.lng == null) return;
+        const vehicle = vehicles.find(v => v.vh_code === p.code || v.vh_registration === p.regNo);
+        const code = vehicle?.vh_code || p.code || p.regNo;
+        seen.add(code);
+        const isSelected = code === selectedCode;
 
-      const icon = L.divIcon({
-        className: '',
-        html: `<div style="
-          background:${isSelected ? '#005A8E' : '#0ea5e9'}; color:white;
-          padding:4px 9px; border-radius:6px; font-size:11px; font-weight:700;
-          white-space:nowrap; box-shadow:0 2px 6px rgba(0,0,0,0.35);
-          transform: translate(-50%, -120%); font-family: monospace;
-        ">${code}</div>`,
-        iconSize: [0, 0],
+        const icon = L.divIcon({
+          className: '',
+          html: `<div style="
+            background:${isSelected ? '#005A8E' : '#0ea5e9'}; color:white;
+            padding:4px 9px; border-radius:6px; font-size:11px; font-weight:700;
+            white-space:nowrap; box-shadow:0 2px 6px rgba(0,0,0,0.35);
+            transform: translate(-50%, -120%); font-family: monospace;
+          ">${code}</div>`,
+          iconSize: [0, 0],
+        });
+
+        if (markersRef.current[code]) {
+          markersRef.current[code].setLatLng([p.lat, p.lng]);
+          markersRef.current[code].setIcon(icon);
+        } else {
+          const marker = L.marker([p.lat, p.lng], { icon }).addTo(map);
+          marker.on('click', () => onSelectVehicle?.(vehicle || { vh_code: code }));
+          markersRef.current[code] = marker;
+        }
       });
 
-      if (markersRef.current[code]) {
-        markersRef.current[code].setLatLng([p.lat, p.lng]);
-        markersRef.current[code].setIcon(icon);
-      } else {
-        const marker = L.marker([p.lat, p.lng], { icon }).addTo(map);
-        marker.on('click', () => onSelectVehicle?.(vehicle || { vh_code: code }));
-        markersRef.current[code] = marker;
-      }
-    });
+      // Drop markers for vehicles no longer in the feed
+      Object.keys(markersRef.current).forEach(code => {
+        if (code === '__fitted') return;
+        if (!seen.has(code)) {
+          map.removeLayer(markersRef.current[code]);
+          delete markersRef.current[code];
+        }
+      });
 
-    // Drop markers for vehicles no longer in the feed
-    Object.keys(markersRef.current).forEach(code => {
-      if (code === '__fitted') return;
-      if (!seen.has(code)) {
-        map.removeLayer(markersRef.current[code]);
-        delete markersRef.current[code];
+      // Fit bounds once, on first data load
+      if (firstFit && positions.length > 0) {
+        const pts = positions.filter(p => p.lat != null && p.lng != null).map(p => [p.lat, p.lng]);
+        if (pts.length > 0) {
+          map.fitBounds(pts, { padding: [40, 40], maxZoom: 12 });
+          markersRef.current.__fitted = true;
+        }
       }
-    });
-
-    // Fit bounds once, on first data load
-    if (firstFit && positions.length > 0) {
-      const pts = positions.filter(p => p.lat != null && p.lng != null).map(p => [p.lat, p.lng]);
-      if (pts.length > 0) {
-        map.fitBounds(pts, { padding: [40, 40], maxZoom: 12 });
-        markersRef.current.__fitted = true;
-      }
+    } catch (e) {
+      console.error('TrackingMap marker update failed:', e);
+      setMapError(e.message || 'Failed to plot vehicle positions');
     }
   }, [positions, vehicles, selectedCode, onSelectVehicle]);
 
@@ -1018,9 +1029,24 @@ function TrackingMap({ vehicles, positions, selectedCode, onSelectVehicle }) {
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !selectedCode) return;
-    const marker = markersRef.current[selectedCode];
-    if (marker) map.panTo(marker.getLatLng());
+    try {
+      const marker = markersRef.current[selectedCode];
+      if (marker) map.panTo(marker.getLatLng());
+    } catch (e) {
+      console.error('TrackingMap pan failed:', e);
+    }
   }, [selectedCode]);
+
+  if (mapError) {
+    return (
+      <div style={{ width: '100%', height: '100%', minHeight: 400, display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 24 }}>
+        <div style={{ fontSize: 36, marginBottom: 10 }}>⚠️</div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: '#c05621', marginBottom: 6 }}>Map failed to load</div>
+        <div style={{ fontSize: 12, color: '#888', maxWidth: 360 }}>{mapError}</div>
+      </div>
+    );
+  }
 
   return <div ref={mapElRef} style={{ width: '100%', height: '100%', minHeight: 400, borderRadius: 8 }} />;
 }
