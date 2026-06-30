@@ -24,15 +24,11 @@ function sharepointLink(loadNo) {
 //       Express treating "pending" as a loadNo parameter.
 // ============================================================
 router.get('/pending', requirePermission('PODS', 'view'), async (req, res) => {
-  const { bus_unit } = req.query;
-
   let q = supabase
     .from('lp_movement')
     .select('m_load_no, m_date, m_customer, m_truck, m_from, m_to, m_rate, m_order_no')
     .eq('m_status', 'WAIT_POD_SCAN')
     .order('m_date', { ascending: false });
-
-  // bus_unit filter removed — column dropped
 
   const { data, error } = await q;
   if (error) return res.status(500).json({ error: error.message });
@@ -52,7 +48,7 @@ router.get('/pending', requirePermission('PODS', 'view'), async (req, res) => {
 // NOTE: Must be registered BEFORE /:loadNo routes.
 // ============================================================
 router.get('/received', requirePermission('PODS', 'view'), async (req, res) => {
-  const { bus_unit, search } = req.query;
+  const { search } = req.query;
 
   // This dataset only grows (every load that ever gets a POD stays on this
   // list forever, per the no-hard-deletion principle) and supports search
@@ -66,7 +62,6 @@ router.get('/received', requirePermission('PODS', 'view'), async (req, res) => {
       .neq('m_status', 'DELETED')
       .order('m_date', { ascending: false })
       .order('m_load_no', { ascending: false });
-    // bus_unit filter removed — column dropped
     if (search) q = q.or(`m_load_no.ilike.%${search}%,m_customer.ilike.%${search}%,m_truck.ilike.%${search}%`);
     return q;
   };

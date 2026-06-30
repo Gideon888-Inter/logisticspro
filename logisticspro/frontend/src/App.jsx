@@ -116,7 +116,6 @@ function buildMenu(user) {
     menu.push({ key: 'rates', label: 'Client Rates', icon: '💰',
       sub: [
         { key: 'rates-list',   label: 'Rate List' },
-        { key: 'rates-routes', label: 'Routes' },
       ]
     });
   if (canManageClients(user))
@@ -146,7 +145,7 @@ const PAGE_TITLES = {
   'clients-list': 'Customers',
   'workshop-service': 'Service Cards', 'workshop-maintenance': 'Maintenance',
   'workshop-inventory': 'Inventory', 'workshop-pos': 'Purchase Orders',
-  approvals: 'Approvals', 'rates-list': 'Client Rates', 'rates-routes': 'Routes',
+  approvals: 'Approvals', 'rates-list': 'Client Rates',
   users: 'Users',
   'finance-gl':'GL / Chart of Accounts',
   'finance-cashbook':'Cash Book','finance-ar':'Accounts Receivable','finance-ap':'Accounts Payable',
@@ -230,9 +229,8 @@ export default function App() {
       case 'finance-assets':  return canViewFinance(user) ? <FinanceAssets /> : <AccessDenied />;
       case 'finance-vat':     return canViewFinance(user) ? <FinanceVAT /> : <AccessDenied />;
       case 'finance-periods': return canViewFinance(user) ? <FinancePeriods user={user} /> : <AccessDenied />;
-      case 'drivers-leave':
-      case 'rates-routes': {
-        const labels = { 'drivers-leave': 'Driver Leave', 'rates-routes': 'Routes' };
+      case 'drivers-leave': {
+        const labels = { 'drivers-leave': 'Driver Leave' };
         return (
           <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'50vh', gap:12 }}>
             <div style={{ fontSize:48 }}>🚧</div>

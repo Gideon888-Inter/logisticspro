@@ -74,7 +74,7 @@ const ORDER_NO_LOCKED_STATUSES = [
 // ============================================================
 router.get('/', requirePermission('LOADS', 'view'), async (req, res) => {
   const {
-    status, bus_unit, customer, truck,
+    status, customer, truck,
     date_from, date_to, search,
     page = 1, limit = 100,
   } = req.query;
@@ -102,7 +102,6 @@ router.get('/', requirePermission('LOADS', 'view'), async (req, res) => {
       .order('m_load_no', { ascending: false });
 
     if (status)    q = q.eq('m_status', status);
-    // bus_unit filter removed — column dropped in cleanup
     if (customer)  q = q.eq('m_customer', customer);
     if (truck)     q = q.eq('m_truck', truck);
     if (date_from) q = q.gte('m_date', date_from);
@@ -131,9 +130,6 @@ router.get('/', requirePermission('LOADS', 'view'), async (req, res) => {
 // GET /api/loads/stats/summary
 // ============================================================
 router.get('/stats/summary', requirePermission('LOADS', 'view'), async (req, res) => {
-  const { bus_unit } = req.query;
-  // bus_unit filter removed — column dropped in cleanup
-
   const buildQuery = () => supabase
     .from('lp_movement')
     .select('m_status, m_load_total, m_rate', { count: 'exact' })

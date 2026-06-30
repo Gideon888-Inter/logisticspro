@@ -8,9 +8,8 @@ driversRouter.use(authMiddleware);
 driversRouter.use(loadUserPermissions);
 
 driversRouter.get('/', async (req, res) => {
-  const { bus_unit, active } = req.query;
+  const { active } = req.query;
   let q = supabase.from('lp_drivers').select('*').order('d_nickname');
-  // bus_unit filter removed — column dropped
   if (active !== undefined) q = q.eq('d_active', active);
   const { data, error } = await q;
   if (error) return res.status(500).json({ error: error.message });
@@ -106,29 +105,6 @@ maintenanceRouter.patch('/:id', async (req, res) => {
   res.json(data);
 });
 
-// ── ROUTES (freight routes) ───────────────────────────────────
-const routesRouter = express.Router();
-routesRouter.use(authMiddleware);
-routesRouter.use(loadUserPermissions);
-
-routesRouter.get('/', async (req, res) => {
-  const { data, error } = await supabase.from('lp_route').select('*').order('rc_code');
-  if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
-});
-
-routesRouter.post('/', requirePermission('ROUTES', 'edit'), async (req, res) => {
-  const { data, error } = await supabase.from('lp_route').insert([req.body]).select().single();
-  if (error) return res.status(400).json({ error: error.message });
-  res.status(201).json(data);
-});
-
-routesRouter.patch('/:id', requirePermission('ROUTES', 'edit'), async (req, res) => {
-  const { data, error } = await supabase.from('lp_route').update(req.body).eq('rc_no', req.params.id).select().single();
-  if (error) return res.status(400).json({ error: error.message });
-  res.json(data);
-});
-
-module.exports = { driversRouter, customersRouter, maintenanceRouter, routesRouter };
+module.exports = { driversRouter, customersRouter, maintenanceRouter };
 
 

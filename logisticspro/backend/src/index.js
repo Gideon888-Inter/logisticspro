@@ -6,7 +6,7 @@ const rateLimit = require('express-rate-limit');
 const authRoutes = require('./routes/auth');
 const loadsRoutes = require('./routes/loads');
 const vehiclesRoutes = require('./routes/vehicles');
-const { driversRouter, customersRouter, maintenanceRouter, routesRouter } = require('./routes/entities');
+const { driversRouter, customersRouter, maintenanceRouter } = require('./routes/entities');
 const clientRatesRouter = require('./routes/clientRates');
 const usersRouter = require('./routes/users');
 const costsRouter = require('./routes/costs');
@@ -59,7 +59,6 @@ app.use('/api/stock',       stockRouter);       // LP2.0 Inventory & Purchase Or
 app.use('/api/roles',       rolesRouter);       // LP2.0 Role Manager (Admin only)
 app.use('/api/fin',         financeRouter);    // LP2.0 Financial Module
 app.use('/api/tracking',    trackingRouter);    // LP2.0 Pulsit GPS tracking integration
-app.use('/api/routes',      routesRouter);
 app.use('/api/rates',       clientRatesRouter);
 app.use('/api/users',       usersRouter);
 app.use('/api/costs',       costsRouter);

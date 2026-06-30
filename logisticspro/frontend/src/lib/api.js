@@ -123,11 +123,6 @@ export const api = {
   // Full inventory & PO management is handled via /api/stock in inventory.js
   // (Inventory.jsx and PurchaseOrders.jsx call /api/stock/... directly)
 
-  // ── Routes ──────────────────────────────────────────────────
-  getRoutes:           ()            => request('/routes'),
-  createRoute:         (body)        => request('/routes', { method: 'POST', body: JSON.stringify(body) }),
-  updateRoute:         (id, body)    => request(`/routes/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
-
   // ── Client Rates ────────────────────────────────────────────
   getRates:            (params = {}) => request('/rates?' + new URLSearchParams(params)),
   createRate:          (body)        => request('/rates', { method: 'POST', body: JSON.stringify(body) }),
