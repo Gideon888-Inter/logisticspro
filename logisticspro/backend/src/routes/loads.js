@@ -142,10 +142,18 @@ router.get('/stats/summary', requirePermission('LOADS', 'view'), async (req, res
     // same chunked-fetch workaround as GET / for Supabase's project-level
     // max-rows cap — see fetchChunked for why a plain unranged select
     // silently truncates once the table grows past that cap.
+    //
+    // NOTE: `total` here is every non-DELETED load ever recorded (full
+    // historic retention — easily tens of thousands for an established
+    // operation). It is NOT "active loads" — the frontend's "Active Loads"
+    // tile previously displayed this raw historic count by mistake. `active`
+    // below is the correct figure: anything still in the pipeline (not yet
+    // LOAD_INVOICED or REJECTED).
     const { rows: data } = await fetchChunked(buildQuery, 0, Number.MAX_SAFE_INTEGER);
 
     res.json({
       total:         data.length,
+      active:        data.filter(r => !['LOAD_INVOICED', 'REJECTED'].includes(r.m_status)).length,
       en_route:      data.filter(r => r.m_status === 'EN_ROUTE').length,
       wait_approval: data.filter(r => r.m_status === 'WAIT_APPROVAL').length,
       invoiced:      data.filter(r => r.m_status === 'LOAD_INVOICED').length,

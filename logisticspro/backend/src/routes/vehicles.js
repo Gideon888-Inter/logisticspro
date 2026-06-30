@@ -4,11 +4,48 @@ const { authMiddleware, loadUserPermissions, requirePermission } = require('../m
 const { getPulsitVehicles, mapVehicle } = require('../lib/pulsit');
 const { normalizeVehicleKey, buildVehicleKeyMap } = require('../lib/vehicleCode');
 const { fetchChunked } = require('../lib/supabasePaging');
-const { distanceKm, matchAddress } = require('../lib/geo');
+const { distanceKm, matchAddress, nearestAddress } = require('../lib/geo');
 
 const router = express.Router();
 router.use(authMiddleware);
 router.use(loadUserPermissions);
+
+// Most recent non-deleted load per truck (one row per raw m_truck value).
+// Prefers a single indexed DISTINCT ON query computed in Postgres — see
+// migration_latest_load_per_truck_perf.sql. Falls back to the old full
+// chunked table scan only if that migration hasn't been run yet, so this
+// degrades gracefully rather than breaking during rollout. The RPC path
+// is the fix for the Fleet dashboard's intermittent timeouts: lp_movement
+// has ~31k historic rows, and pulling all of them on every 20-second poll
+// (the old behaviour) was the actual cause, not a real "crash".
+async function getLatestLoadPerTruck() {
+  try {
+    const { data, error } = await supabase.rpc('get_latest_load_per_truck');
+    if (error) throw error;
+    return data || [];
+  } catch (e) {
+    console.error(
+      '[getLatestLoadPerTruck] RPC unavailable, falling back to full table scan — ' +
+      'run database/migration_latest_load_per_truck_perf.sql to fix this:', e.message
+    );
+    const buildLoadsQuery = () => supabase
+      .from('lp_movement')
+      .select('*')
+      .not('m_truck', 'is', null)
+      .neq('m_status', 'DELETED')
+      .order('m_date', { ascending: false })
+      .order('m_load_no', { ascending: false });
+    const { rows } = await fetchChunked(buildLoadsQuery, 0, Number.MAX_SAFE_INTEGER);
+    const seen = new Set();
+    const result = [];
+    for (const r of rows) {
+      if (seen.has(r.m_truck)) continue;
+      seen.add(r.m_truck);
+      result.push(r);
+    }
+    return result;
+  }
+}
 
 const SERVICE_INTERVAL = 40000; // km
 
@@ -59,15 +96,7 @@ router.get('/', async (req, res) => {
   const codeKeyMap = buildVehicleKeyMap(data); // normalizedKey -> vh_code
   let loadMap = {};
   if (codes.length > 0) {
-    const buildLoadsQuery = () => supabase
-      .from('lp_movement')
-      .select('m_truck, m_closing_km, m_opening_km, m_status, m_date, m_load_no')
-      .not('m_truck', 'is', null)
-      .neq('m_status', 'DELETED')
-      .order('m_date', { ascending: false })
-      .order('m_load_no', { ascending: false });
-    const { rows: loads } = await fetchChunked(buildLoadsQuery, 0, Number.MAX_SAFE_INTEGER);
-
+    const loads = await getLatestLoadPerTruck();
     // Keep only the most recent load per truck, resolved to the
     // canonical vh_code via normalized key.
     (loads || []).forEach(l => {
@@ -160,14 +189,7 @@ router.get('/fleet-overview', requirePermission('FLEET', 'view'), async (req, re
     // and chunk-fetched (lib/supabasePaging) — see GET / above for why.
     let loadMap = {};
     if (codes.length > 0) {
-      const buildLoadsQuery = () => supabase
-        .from('lp_movement')
-        .select('m_truck, m_load_no, m_status, m_trailer1, m_trailer2, m_customer, m_date')
-        .not('m_truck', 'is', null)
-        .neq('m_status', 'DELETED')
-        .order('m_date', { ascending: false })
-        .order('m_load_no', { ascending: false });
-      const { rows: loads } = await fetchChunked(buildLoadsQuery, 0, Number.MAX_SAFE_INTEGER);
+      const loads = await getLatestLoadPerTruck();
       (loads || []).forEach(l => {
         const canonical = codeKeyMap.get(normalizeVehicleKey(l.m_truck));
         if (canonical && !loadMap[canonical]) loadMap[canonical] = l;
@@ -231,6 +253,11 @@ router.get('/fleet-overview', requirePermission('FLEET', 'view'), async (req, re
       // string if nothing matches.
       const matchedAddress = pos ? matchAddress(pos.lat, pos.lng, addresses) : null;
       const homeBase = pos ? matchAddress(pos.lat, pos.lng, homeBaseAddresses) : null;
+      // Diagnostic only — populated when a position exists but didn't match
+      // any home base geofence, so we can tell from the UI whether it's a
+      // too-tight radius (small distance) or a wrong geofence pin (large
+      // distance) instead of guessing blind.
+      const homeBaseNearest = (pos && !homeBase) ? nearestAddress(pos.lat, pos.lng, homeBaseAddresses) : null;
 
       return {
         vh_code:      h.vh_code,
@@ -245,6 +272,7 @@ router.get('/fleet-overview', requirePermission('FLEET', 'view'), async (req, re
         ignition:     pos ? pos.ignition : null,    // 1 = on, 0 = off, null = unknown
         location:     matchedAddress ? matchedAddress.a_name : (pos ? pos.location : null),
         home_base:    homeBase ? homeBase.a_name : null,
+        home_base_nearest: homeBaseNearest ? { name: homeBaseNearest.a_name, distance_km: homeBaseNearest.distance_km } : null,
         lat:          pos ? pos.lat : null,
         lng:          pos ? pos.lng : null,
         lastUpdate:   pos ? pos.lastUpdate : null,

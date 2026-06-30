@@ -40,4 +40,24 @@ function matchAddress(lat, lng, addresses) {
   return best ? { ...best, distance_km: Number(bestDist.toFixed(2)) } : null;
 }
 
-module.exports = { distanceKm, matchAddress };
+// Like matchAddress, but ignores the radius cutoff entirely — always
+// returns the single closest address plus its distance. Used to diagnose
+// "this vehicle should be Home Base X but isn't matching" cases: if the
+// returned distance is small, the radius is too tight; if it's large
+// (tens of km), the geofence's lat/lng itself is wrong, not the radius.
+function nearestAddress(lat, lng, addresses) {
+  if (lat == null || lng == null || !addresses?.length) return null;
+  let best = null;
+  let bestDist = Infinity;
+  for (const a of addresses) {
+    const d = distanceKm(lat, lng, a.a_latitude, a.a_longitude);
+    if (d == null) continue;
+    if (d < bestDist) {
+      best = a;
+      bestDist = d;
+    }
+  }
+  return best ? { ...best, distance_km: Number(bestDist.toFixed(2)) } : null;
+}
+
+module.exports = { distanceKm, matchAddress, nearestAddress };

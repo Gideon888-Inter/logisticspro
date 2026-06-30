@@ -1,5 +1,5 @@
 // v2.1.0
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 const API = import.meta.env.VITE_API_URL || '';
 const token = () => localStorage.getItem('lp_token');
@@ -511,9 +511,11 @@ function FleetTab() {
   const [homeBases, setHomeBases] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [staleWarning, setStaleWarning] = useState('');
   const [pulsitWarning, setPulsitWarning] = useState(false);
   const [ignitionFilter, setIgnitionFilter] = useState('all'); // all | on | off
   const [homeBaseFilter, setHomeBaseFilter] = useState('all'); // all | <home base name>
+  const hasLoadedRef = useRef(false);
 
   const load = async () => {
     try {
@@ -526,13 +528,27 @@ function FleetTab() {
         setData(r.vehicles);
         setPulsitWarning(!!r.pulsit_unavailable);
         setError('');
+        setStaleWarning('');
+        hasLoadedRef.current = true;
       } else {
-        setData([]);
-        setError(r?.error || 'Unexpected response from the server — see console for details.');
+        // Bad response shape. If we already have good data on screen from a
+        // previous successful poll, don't tear it down for a transient
+        // hiccup — just flag it. Only show the full error screen if this is
+        // the very first load (nothing to fall back to).
         console.error('[FleetTab] unexpected response:', r);
+        if (hasLoadedRef.current) {
+          setStaleWarning('Could not refresh fleet data — showing the last known status.');
+        } else {
+          setData([]);
+          setError(r?.error || 'Unexpected response from the server — see console for details.');
+        }
       }
     } catch (e) {
-      setError('Could not load fleet data — server may be starting up.');
+      if (hasLoadedRef.current) {
+        setStaleWarning('Could not refresh fleet data — showing the last known status.');
+      } else {
+        setError('Could not load fleet data — server may be starting up.');
+      }
     } finally {
       setLoading(false);
     }
@@ -581,6 +597,11 @@ function FleetTab() {
 
   return (
     <div>
+      {staleWarning && (
+        <div style={{ background:'#fef9e7', border:'1px solid #fde68a', color:'#92400e', borderRadius:6, padding:'8px 12px', fontSize:12, marginBottom:10 }}>
+          ⚠️ {staleWarning}
+        </div>
+      )}
       {pulsitWarning && (
         <div style={{ background:'#fff7ed', border:'1px solid #fed7aa', color:'#c05621', borderRadius:6, padding:'8px 12px', fontSize:12, marginBottom:10 }}>
           ⚠️ Live GPS tracking (Pulsit) is currently unreachable — ignition, location, and trailer-link confirmation may be unavailable until it recovers.
@@ -639,6 +660,11 @@ function FleetTab() {
                   </td>
                   <td style={{ fontSize:12, maxWidth:280 }}>
                     {v.location || (v.lat != null ? `${v.lat.toFixed(4)}, ${v.lng.toFixed(4)}` : '—')}
+                    {v.home_base_nearest && (
+                      <div style={{ color:'#aaa', fontSize:10 }}>
+                        Nearest home base: {v.home_base_nearest.name} ({v.home_base_nearest.distance_km} km away)
+                      </div>
+                    )}
                   </td>
                   <td style={{ fontSize:12, whiteSpace:'nowrap' }}>
                     {v.lastUpdate ? (
@@ -673,6 +699,11 @@ function FleetTab() {
             </div>
             <div style={{ fontSize:12, color:'#666', marginBottom:4 }}>
               {v.location || (v.lat != null ? `${v.lat.toFixed(4)}, ${v.lng.toFixed(4)}` : 'Location unavailable')}
+              {v.home_base_nearest && (
+                <div style={{ color:'#aaa', fontSize:10 }}>
+                  Nearest home base: {v.home_base_nearest.name} ({v.home_base_nearest.distance_km} km away)
+                </div>
+              )}
             </div>
             {v.lastUpdate && (
               <div style={{ fontSize:11, color:'#aaa', marginBottom:4 }}>

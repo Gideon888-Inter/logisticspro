@@ -798,6 +798,8 @@ function ExpandedRow({ load, onRefresh, onCostUpdate, asCard = false }) {
   const [pulsitFetching, setPulsitFetching] = useState(false);
   const [pulsitReading, setPulsitReading] = useState(null);   // { odometer, lastUpdate }
   const [pulsitErrorMsg, setPulsitErrorMsg] = useState('');
+  const [liveOdo, setLiveOdo] = useState(null);        // always-on odometer display, independent of the closing flow above
+  const [liveOdoError, setLiveOdoError] = useState('');
   const [useManualEntry, setUseManualEntry] = useState(false);
   const [manualKm, setManualKm] = useState('');
   const [kmError, setKmError] = useState('');
@@ -886,6 +888,21 @@ function ExpandedRow({ load, onRefresh, onCostUpdate, asCard = false }) {
   };
 
   useEffect(() => { loadDetails(); }, [load.m_load_no]);
+
+  // Live odometer — always shown when the card is expanded and a truck is
+  // assigned, regardless of load status or whether the closing-KM flow has
+  // been opened. This is read-only/display-only (doesn't touch the load);
+  // the actual closing KM capture still goes through openClosingKm() below.
+  useEffect(() => {
+    if (!load.m_truck || Number(load.m_closing_km || 0) > 0) return; // already confirmed — no need for a live reading
+    let cancelled = false;
+    setLiveOdo(null);
+    setLiveOdoError('');
+    api.getPulsitReading(load.m_truck)
+      .then(r => { if (!cancelled) setLiveOdo(r); })
+      .catch(e => { if (!cancelled) setLiveOdoError(e.message || 'Pulsit reading unavailable'); });
+    return () => { cancelled = true; };
+  }, [load.m_truck]);
 
   // Auto-check SharePoint for POD when load is in WAIT_POD_SCAN
   useEffect(() => {
@@ -1454,6 +1471,36 @@ function ExpandedRow({ load, onRefresh, onCostUpdate, asCard = false }) {
                 </div>
               )}
 
+              {/* Odometer / KMs — always visible, independent of the closing-KM flow below */}
+              {load.m_truck && (
+                <div style={{ marginBottom: 10, padding: 10, background: '#f9fafb', border: '1px solid #e2e8f0', borderRadius: 6 }}>
+                  <div style={{ fontSize: 11, color: '#005A8E', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
+                    Odometer
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, fontSize: 12, color: '#555' }}>
+                    <div>Opening KM: <strong>{Number(load.m_opening_km || 0).toLocaleString()} km</strong></div>
+                    {Number(load.m_closing_km || 0) > 0 ? (
+                      <>
+                        <div>Closing KM: <strong>{Number(load.m_closing_km).toLocaleString()} km</strong></div>
+                        <div style={{ color: '#059669' }}>✅ KMs Confirmed: <strong>{(Number(load.m_closing_km) - Number(load.m_opening_km || 0)).toLocaleString()} km</strong></div>
+                      </>
+                    ) : (
+                      <>
+                        {liveOdo && (
+                          <>
+                            <div>📡 Live Odometer (Pulsit): <strong>{Number(liveOdo.odometer).toLocaleString()} km</strong></div>
+                            <div style={{ color: '#888' }}>Accrued so far: <strong>{(Number(liveOdo.odometer) - Number(load.m_opening_km || 0)).toLocaleString()} km</strong></div>
+                          </>
+                        )}
+                        {!liveOdo && liveOdoError && <div style={{ color: '#c05621' }}>⚠️ {liveOdoError}</div>}
+                        {!liveOdo && !liveOdoError && <div style={{ color: '#aaa' }}>📡 Reading live odometer…</div>}
+                        <div style={{ color: '#aaa' }}>⏳ Not yet confirmed</div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Closing KM section (shows when EN_ROUTE and user clicks advance) */}
               {showClosingKm && (
                 <div style={{ marginBottom: 10, padding: 12, background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 6 }}>
@@ -1808,7 +1855,7 @@ export default function Loads({ viewMode = 'standard' } = {}) {
   return (
     <div>
       <div className="stats-grid">
-        <div className="stat-card"><div className="stat-label">Active Loads</div><div className="stat-value">{stats.total ?? '—'}</div></div>
+        <div className="stat-card"><div className="stat-label">Active Loads</div><div className="stat-value">{stats.active ?? '—'}</div></div>
         <div className="stat-card"><div className="stat-label">En Route</div><div className="stat-value" style={{ color: '#00AEEF' }}>{stats.en_route ?? '—'}</div></div>
         <div className="stat-card"><div className="stat-label">Awaiting Approval</div><div className="stat-value" style={{ color: '#d97706' }}>{stats.wait_approval ?? '—'}</div></div>
         <div className="stat-card"><div className="stat-label">Invoiced Value</div><div className="stat-value" style={{ fontSize: 18 }}>{fmtR(stats.total_value)}</div></div>
@@ -1880,6 +1927,14 @@ export default function Loads({ viewMode = 'standard' } = {}) {
                   <div>🗺 <strong>{l.m_from} → {l.m_to}</strong></div>
                   {l.m_order_no && <div>PO: <strong>{l.m_order_no}</strong></div>}
                   {l.m_trailer1 && <div>🚛 <strong>{l.m_trailer1}</strong></div>}
+                  {Number(l.m_opening_km || 0) > 0 && (
+                    <div>🧭 Opening KM: <strong>{Number(l.m_opening_km).toLocaleString()} km</strong></div>
+                  )}
+                  {Number(l.m_closing_km || 0) > 0 ? (
+                    <div>✅ KMs Confirmed: <strong>{(Number(l.m_closing_km) - Number(l.m_opening_km || 0)).toLocaleString()} km</strong></div>
+                  ) : (
+                    Number(l.m_opening_km || 0) > 0 && <div style={{ color: '#aaa' }}>⏳ KMs not yet confirmed</div>
+                  )}
                 </div>
                 <div className="load-card-footer">
                   <div className="load-card-total">{fmtR(tot)}</div>
@@ -1904,7 +1959,7 @@ export default function Loads({ viewMode = 'standard' } = {}) {
               <tr>
                 <th style={{ width: 32 }}></th>
                 <th>Vehicle</th><th>Client</th><th>#</th><th>Date</th>
-                <th>From</th><th>To</th><th>Status</th>
+                <th>From</th><th>To</th><th>KMs Confirmed</th><th>Status</th>
               </tr>
             ) : (
               <tr>
@@ -1916,8 +1971,8 @@ export default function Loads({ viewMode = 'standard' } = {}) {
             )}
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={viewMode === 'movement' ? 8 : 13}><div className="loading">Loading…</div></td></tr>}
-            {!loading && loads.length === 0 && <tr><td colSpan={viewMode === 'movement' ? 8 : 13}><div className="empty-state">No loads found</div></td></tr>}
+            {loading && <tr><td colSpan={viewMode === 'movement' ? 9 : 13}><div className="loading">Loading…</div></td></tr>}
+            {!loading && loads.length === 0 && <tr><td colSpan={viewMode === 'movement' ? 9 : 13}><div className="empty-state">No loads found</div></td></tr>}
             {!loading && loads.map(l => {
               const extra = Number(loadCosts[l.m_load_no] || 0);
               const tot = Number(l.m_rate || 0) + extra;
@@ -1939,6 +1994,11 @@ export default function Loads({ viewMode = 'standard' } = {}) {
                       <td>{fmtDate(l.m_date)}</td>
                       <td>{l.m_from}</td>
                       <td>{l.m_to}</td>
+                      <td className="mono" style={{ fontSize: 12 }}>
+                        {Number(l.m_closing_km || 0) > 0
+                          ? <span style={{ color: '#059669', fontWeight: 600 }}>{(Number(l.m_closing_km) - Number(l.m_opening_km || 0)).toLocaleString()} km</span>
+                          : <span style={{ color: '#bbb' }}>—</span>}
+                      </td>
                       <td style={{ fontSize: 12, color: movementStatusColor(l), fontWeight: 600 }}>
                         {movementStatusText(l)}
                       </td>
