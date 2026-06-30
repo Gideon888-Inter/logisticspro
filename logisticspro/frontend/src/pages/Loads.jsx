@@ -12,6 +12,10 @@ let mapsLoading = false;
 const mapsCallbacks = [];
 function loadGoogleMaps(cb) {
   if (mapsLoaded) return cb();
+  if (!MAPS_KEY) {
+    console.warn('Google Maps key missing (VITE_MAPS_KEY) — map picker disabled.');
+    return;
+  }
   mapsCallbacks.push(cb);
   if (mapsLoading) return;
   mapsLoading = true;
