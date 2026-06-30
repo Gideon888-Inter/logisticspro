@@ -138,8 +138,8 @@ export const api = {
   getPendingCostDeletions: ()        => request('/costs/pending-deletions'),
   addCost:             (body)        => request('/costs', { method: 'POST', body: JSON.stringify(body) }),
   deleteCost:          (id)          => request(`/costs/${id}`, { method: 'DELETE' }),
-  requestCostDeletion: (id)          => request(`/costs/${id}/request-delete`, { method: 'PATCH' }),
-  approveCostDeletion: (id)          => request(`/costs/${id}/approve-delete`, { method: 'PATCH' }),
+  requestCostDeletion: (id, body)    => request(`/costs/${id}/request-delete`, { method: 'PATCH', body: JSON.stringify(body) }),
+  approveCostDeletion: (id, body)    => request(`/costs/${id}/approve-delete`, { method: 'PATCH', body: JSON.stringify(body) }),
 
   // ── KM ──────────────────────────────────────────────────────
   getLastClosingKm:    (truck)       => request(`/km/last-closing/${truck}`),
