@@ -1082,7 +1082,8 @@ function LiveLocation() {
   const { user } = useAuth();
   const [vehicles, setVehicles] = useState([]);
   const [loading, setLoading]   = useState(true);
-  const [typeFilter, setTypeFilter] = useState('all'); // all | Horse | Trailer
+  const [horses, setHorses] = useState([]);          // fleet-overview rows — horses only, trailers nested per row
+  const [horsesLoading, setHorsesLoading] = useState(true);
   const [search, setSearch]     = useState('');
   const [selected, setSelected] = useState(null);
   const [positions, setPositions] = useState([]);
@@ -1091,6 +1092,12 @@ function LiveLocation() {
   const [debugOpen, setDebugOpen] = useState(false);
   const [debugData, setDebugData] = useState(null);
   const [debugLoading, setDebugLoading] = useState(false);
+  // Collapsed by default on narrow screens (map-only) since a fixed-width
+  // sidebar leaves almost no room for the map on a phone; expanded by
+  // default on desktop, matching the previous always-on behaviour there.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => typeof window !== 'undefined' && window.innerWidth <= 768
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1099,6 +1106,18 @@ function LiveLocation() {
       setVehicles(Array.isArray(r) ? r : []);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
+  }, []);
+
+  // Horses with their currently-linked trailer(s) (from the horse's most
+  // recent load assignment) and confirmation status against live GPS —
+  // same source as the Fleet dashboard tab, so trailer pairing here always
+  // matches what's shown there.
+  const loadHorses = useCallback(async () => {
+    try {
+      const r = await api.getFleetOverview();
+      setHorses(Array.isArray(r?.vehicles) ? r.vehicles : []);
+    } catch (e) { console.error(e); }
+    finally { setHorsesLoading(false); }
   }, []);
 
   const loadPositions = useCallback(async () => {
@@ -1114,6 +1133,12 @@ function LiveLocation() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    loadHorses();
+    const id = setInterval(loadHorses, POSITION_POLL_MS);
+    return () => clearInterval(id);
+  }, [loadHorses]);
 
   useEffect(() => {
     loadPositions();
@@ -1134,18 +1159,27 @@ function LiveLocation() {
     }
   };
 
-  const filtered = vehicles.filter(v => {
-    const matchesType = typeFilter === 'all' || v.vh_type === typeFilter;
+  const filtered = horses.filter(v => {
     const s = search.trim().toLowerCase();
-    const matchesSearch = !s ||
-      v.vh_code?.toLowerCase().includes(s) ||
+    if (!s) return true;
+    return v.vh_code?.toLowerCase().includes(s) ||
       v.vh_make?.toLowerCase().includes(s) ||
-      v.vh_model?.toLowerCase().includes(s);
-    return matchesType && matchesSearch;
+      v.vh_model?.toLowerCase().includes(s) ||
+      v.client_name?.toLowerCase().includes(s) ||
+      v.trailers?.some(t => t.code?.toLowerCase().includes(s));
   });
 
   const positionFor = (v) => positions.find(p => p.code === v?.vh_code || p.regNo === v?.vh_registration);
   const selectedPosition = positionFor(selected);
+
+  // The sidebar list works off fleet-overview rows (horses + nested
+  // trailers), but the map/info-panel below expect a full vehicle record
+  // (vh_type/vh_registration etc.) — resolve to that on selection so
+  // clicking a trailer marker on the map still works exactly as before.
+  const selectHorse = (row) => {
+    const full = vehicles.find(x => x.vh_code === row.vh_code);
+    setSelected(full || { vh_code: row.vh_code, vh_type: 'Horse', vh_make: row.vh_make, vh_model: row.vh_model });
+  };
 
   return (
     <div>
@@ -1186,56 +1220,80 @@ function LiveLocation() {
       )}
 
       <div style={{ display: 'flex', gap: 16, alignItems: 'stretch' }} className="live-location-layout">
-        {/* ── Vehicle list ── */}
-        <div style={{ width: 300, flexShrink: 0, background: 'white', border: '1px solid #e8edf2',
-          borderRadius: 8, display: 'flex', flexDirection: 'column', maxHeight: 640 }}>
-          <div style={{ padding: 10, borderBottom: '1px solid #e8edf2' }}>
-            <input placeholder="Search vehicles…" value={search} onChange={e => setSearch(e.target.value)}
-              style={{ width: '100%', padding: '7px 10px', fontSize: 13, border: '1px solid #ddd',
-                borderRadius: 6, outline: 'none', marginBottom: 8 }} />
-            <div style={{ display: 'flex', gap: 6 }}>
-              {[['all', 'All'], ['Horse', 'Horses'], ['Trailer', 'Trailers']].map(([key, label]) => (
-                <button key={key} onClick={() => setTypeFilter(key)} style={{
-                  flex: 1, padding: '6px 4px', fontSize: 11, fontWeight: typeFilter === key ? 700 : 400,
-                  border: '1px solid #ddd', borderRadius: 6, cursor: 'pointer',
-                  background: typeFilter === key ? '#005A8E' : 'white',
-                  color: typeFilter === key ? 'white' : '#555',
-                }}>{label}</button>
-              ))}
+        {!sidebarCollapsed && (
+          <>
+            <div className="live-location-backdrop" onClick={() => setSidebarCollapsed(true)} />
+            <div className="live-location-sidebar" style={{ width: 300, flexShrink: 0, background: 'white', border: '1px solid #e8edf2',
+              borderRadius: 8, display: 'flex', flexDirection: 'column', maxHeight: 640 }}>
+              <div style={{ padding: 10, borderBottom: '1px solid #e8edf2', display: 'flex', gap: 6, alignItems: 'center' }}>
+                <input placeholder="Search horse, trailer, client…" value={search} onChange={e => setSearch(e.target.value)}
+                  style={{ flex: 1, padding: '7px 10px', fontSize: 13, border: '1px solid #ddd',
+                    borderRadius: 6, outline: 'none' }} />
+                <button onClick={() => setSidebarCollapsed(true)} title="Hide list — map only" style={{
+                  flexShrink: 0, width: 32, height: 32, border: '1px solid #ddd', borderRadius: 6,
+                  background: 'white', cursor: 'pointer', color: '#888', fontSize: 14,
+                }}>✕</button>
+              </div>
+              <div style={{ overflowY: 'auto', flex: 1 }}>
+                {(loading || horsesLoading) && <div style={{ padding: 16, fontSize: 13, color: '#888' }}>Loading vehicles…</div>}
+                {!horsesLoading && filtered.length === 0 && (
+                  <div style={{ padding: 16, fontSize: 13, color: '#888' }}>No horses match.</div>
+                )}
+                {!horsesLoading && filtered.map(v => {
+                  const isTracked = v.lat != null;
+                  return (
+                    <div key={v.vh_code} onClick={() => selectHorse(v)} style={{
+                      padding: '10px 12px', borderBottom: '1px solid #f0f2f5', cursor: 'pointer',
+                      background: selected?.vh_code === v.vh_code ? '#eef6fb' : 'white',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
+                          background: isTracked ? '#10b981' : '#d1d5db' }} />
+                        <div style={{ fontWeight: 700, fontSize: 13, fontFamily: 'monospace' }}>{v.vh_code}</div>
+                        {v.load_no && <span style={{ fontSize: 10, color: '#005A8E', fontFamily: 'monospace' }}>#{v.load_no}</span>}
+                      </div>
+                      <div style={{ fontSize: 11, color: '#888', marginLeft: 13 }}>
+                        {[v.vh_make, v.vh_model].filter(Boolean).join(' ') || '—'}{v.client_name ? ` · ${v.client_name}` : ''}
+                      </div>
+                      {v.trailers?.length > 0 && (
+                        <div style={{ marginLeft: 13, marginTop: 4, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                          {v.trailers.map(t => (
+                            <span key={t.code} title={
+                              t.confirmed === true ? 'Confirmed — near horse' :
+                              t.confirmed === false ? 'Unconfirmed — check pairing' :
+                              t.tracked ? '' : 'Not GPS-tracked'
+                            } style={{
+                              fontSize: 10, fontFamily: 'monospace', padding: '1px 6px', borderRadius: 4,
+                              background: t.confirmed === true ? '#d1fae5' : t.confirmed === false ? '#fef3c7' : '#f1f5f9',
+                              color: t.confirmed === true ? '#065f46' : t.confirmed === false ? '#92400e' : '#64748b',
+                            }}>
+                              🚛 {t.code}{t.confirmed === true ? ' ✓' : t.confirmed === false ? ' ⚠' : ''}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {v.lastUpdate && (
+                        <div style={{ fontSize: 10, color: '#aaa', marginLeft: 13, marginTop: 3 }}>{fmtRelativeTime(v.lastUpdate)}</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-          <div style={{ overflowY: 'auto', flex: 1 }}>
-            {loading && <div style={{ padding: 16, fontSize: 13, color: '#888' }}>Loading vehicles…</div>}
-            {!loading && filtered.length === 0 && (
-              <div style={{ padding: 16, fontSize: 13, color: '#888' }}>No vehicles match.</div>
-            )}
-            {filtered.map(v => {
-              const pos = positionFor(v);
-              return (
-                <div key={v.vh_code} onClick={() => setSelected(v)} style={{
-                  padding: '10px 12px', borderBottom: '1px solid #f0f2f5', cursor: 'pointer',
-                  background: selected?.vh_code === v.vh_code ? '#eef6fb' : 'white',
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
-                      background: pos ? '#10b981' : '#d1d5db' }} />
-                    <div style={{ fontWeight: 700, fontSize: 13, fontFamily: 'monospace' }}>{v.vh_code}</div>
-                  </div>
-                  <div style={{ fontSize: 11, color: '#888', marginLeft: 13 }}>
-                    {v.vh_type} · {[v.vh_make, v.vh_model].filter(Boolean).join(' ') || '—'}
-                  </div>
-                  {pos?.lastUpdate && (
-                    <div style={{ fontSize: 10, color: '#aaa', marginLeft: 13 }}>{fmtRelativeTime(pos.lastUpdate)}</div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
+          </>
+        )}
 
         {/* ── Map ── */}
         <div style={{ flex: 1, background: '#eef1f4', border: '1px solid #e8edf2', borderRadius: 8,
           overflow: 'hidden', minHeight: 400, position: 'relative' }}>
+          {sidebarCollapsed && (
+            <button onClick={() => setSidebarCollapsed(false)} style={{
+              position: 'absolute', top: 12, left: 12, zIndex: 600,
+              background: 'white', border: '1px solid #e8edf2', borderRadius: 8,
+              padding: '8px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer', color: '#005A8E',
+              boxShadow: '0 2px 10px rgba(0,0,0,0.15)',
+            }}>☰ Show Vehicles</button>
+          )}
           {posLoading && positions.length === 0 ? (
             <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
               alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 24 }}>

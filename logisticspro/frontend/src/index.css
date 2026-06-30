@@ -515,3 +515,31 @@ html, body, #root { height: 100%; min-height: 100dvh; }
 }
 
 
+/* ── Fleet Live Location — collapsible vehicle list ──────────────
+   Desktop: fixed-width sidebar sits inline beside the map (collapse
+   just removes it from the flex row, map fills the freed space).
+   Mobile: when shown, the sidebar overlays the map as a drawer
+   (absolute position) instead of squeezing it into a sliver — a
+   fixed 300px sidebar on a ~375px phone would otherwise leave next
+   to no room for the map. A backdrop behind the drawer closes it
+   on tap, same pattern as the main nav sidebar in App.jsx. ──────── */
+.live-location-backdrop { display: none; }
+
+@media (max-width: 768px) {
+  .live-location-layout { position: relative; }
+  .live-location-sidebar {
+    position: absolute !important;
+    top: 0; left: 0; bottom: 0;
+    width: 85vw !important;
+    max-width: 320px;
+    z-index: 700;
+    box-shadow: 2px 0 16px rgba(0,0,0,0.18);
+    max-height: none !important;
+  }
+  .live-location-backdrop {
+    display: block;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.4);
+    z-index: 650;
+  }
+}
