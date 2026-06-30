@@ -5,7 +5,10 @@
   "scripts": {
     "start": "cd backend && node src/index.js",
     "dev":   "cd backend && npm run dev",
-    "install-all": "cd backend && npm install && cd ../frontend && npm install"
+    "install-all": "cd backend && npm install && cd ../frontend && npm install",
+    "frontend": "cd frontend && npm run dev",
+    "build": "cd frontend && npm run build",
+    "qa": "cd ../qa-agent && npm test"
   },
   "engines": {
     "node": ">=18.0.0"
