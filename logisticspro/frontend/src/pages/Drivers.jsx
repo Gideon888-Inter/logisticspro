@@ -268,3 +268,103 @@ export default function Drivers() {
     </div>
   );
 }
+
+// ── Cellphones — quick-reference directory for calling/WhatsApping drivers ──
+function normalizeZaCell(cell) {
+  const digits = (cell || '').replace(/\D/g, '');
+  if (!digits) return null;
+  if (digits.startsWith('27')) return digits;
+  if (digits.startsWith('0'))  return '27' + digits.slice(1);
+  return digits;
+}
+
+export function DriverCellphones() {
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+
+  useEffect(() => {
+    (async () => {
+      try { setData(await api.getDrivers()); } catch (e) { console.error(e); }
+      finally { setLoading(false); }
+    })();
+  }, []);
+
+  const filtered = data
+    .filter(d => d.d_active === 'Y')
+    .filter(d => {
+      const s = search.toLowerCase();
+      return !s || d.d_nickname?.toLowerCase().includes(s) || (d.d_name || '').toLowerCase().includes(s) || (d.d_cell || '').includes(s);
+    })
+    .sort((a, b) => (a.d_nickname || '').localeCompare(b.d_nickname || ''));
+
+  return (
+    <div>
+      <div className="filter-bar">
+        <input placeholder="Search by name or number…" value={search} onChange={e => setSearch(e.target.value)} style={{ flex: 1, minWidth: 180 }} />
+      </div>
+
+      {loading && <div className="loading">Loading drivers…</div>}
+      {!loading && filtered.length === 0 && <div className="empty-state">No drivers found</div>}
+
+      <div className="mobile-card-list">
+        {!loading && filtered.map(d => {
+          const wa = normalizeZaCell(d.d_cell);
+          return (
+            <div key={d.d_id} className="data-card">
+              <div className="data-card-header">
+                <div>
+                  <div className="data-card-title">{d.d_nickname}</div>
+                  <div className="data-card-sub">{d.d_name && d.d_name !== d.d_nickname ? d.d_name : ''}</div>
+                </div>
+              </div>
+              <div className="data-card-meta">
+                <div style={{ fontFamily: 'monospace', fontSize: 14 }}>{d.d_cell || '—'}</div>
+              </div>
+              {d.d_cell && (
+                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                  <a className="btn btn-sm" href={`tel:${d.d_cell}`} style={{ flex: 1, textAlign: 'center' }}>📞 Call</a>
+                  {wa && (
+                    <a className="btn btn-sm btn-primary" href={`https://wa.me/${wa}`} target="_blank" rel="noreferrer" style={{ flex: 1, textAlign: 'center' }}>
+                      💬 WhatsApp
+                    </a>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="desktop-table">
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Nickname</th><th>Name</th><th>Cell Number</th><th></th></tr></thead>
+            <tbody>
+              {loading && <tr><td colSpan={4}><div className="loading">Loading drivers…</div></td></tr>}
+              {!loading && filtered.length === 0 && <tr><td colSpan={4}><div className="empty-state">No drivers found</div></td></tr>}
+              {!loading && filtered.map(d => {
+                const wa = normalizeZaCell(d.d_cell);
+                return (
+                  <tr key={d.d_id}>
+                    <td style={{ fontWeight: 600 }}>{d.d_nickname}</td>
+                    <td>{d.d_name && d.d_name !== d.d_nickname ? d.d_name : '—'}</td>
+                    <td className="mono">{d.d_cell || '—'}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      {d.d_cell && (
+                        <>
+                          <a className="btn btn-sm" href={`tel:${d.d_cell}`} style={{ marginRight: 6 }}>📞 Call</a>
+                          {wa && <a className="btn btn-sm btn-primary" href={`https://wa.me/${wa}`} target="_blank" rel="noreferrer">💬 WhatsApp</a>}
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -478,7 +478,7 @@ function exportFleetCSV(rows) {
     v.ignition === 1 ? 'ON' : v.ignition === 0 ? 'OFF' : '',
     v.home_base || '',
     v.location || (v.lat != null ? `${v.lat}, ${v.lng}` : ''),
-    v.lastUpdate || '',
+    v.lastUpdate ? new Date(v.lastUpdate).toLocaleString('en-ZA') : '',
   ]);
   const csv = [headers, ...csvRows]
     .map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))
@@ -555,10 +555,18 @@ function FleetTab() {
     return new Date(iso).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short' });
   };
 
+  const fmtDateTime = (iso) => {
+    if (!iso) return null;
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return null;
+    return d.toLocaleString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  };
+
   const filtered = data.filter(v => {
     if (ignitionFilter === 'on'  && v.ignition !== 1) return false;
     if (ignitionFilter === 'off' && v.ignition !== 0) return false;
-    if (homeBaseFilter !== 'all' && v.home_base !== homeBaseFilter) return false;
+    if (homeBaseFilter === 'NOT_HOME' && v.home_base) return false;
+    else if (homeBaseFilter !== 'all' && homeBaseFilter !== 'NOT_HOME' && v.home_base !== homeBaseFilter) return false;
     return true;
   });
 
@@ -586,9 +594,9 @@ function FleetTab() {
           <option value="off">⚫ Ignition OFF</option>
         </select>
         <select value={homeBaseFilter} onChange={e => setHomeBaseFilter(e.target.value)}>
-          <option value="all">All home bases</option>
+          <option value="all">All locations</option>
           {homeBases.map(hb => <option key={hb.address_id} value={hb.a_name}>{hb.a_name}</option>)}
-          <option value="">Away from any home base</option>
+          <option value="NOT_HOME">Not at home base</option>
         </select>
         <button className="btn btn-sm" onClick={() => exportFleetCSV(filtered)}>⬇ Export CSV</button>
       </div>
@@ -605,11 +613,12 @@ function FleetTab() {
                 <th>Load No</th>
                 <th>Ignition</th>
                 <th>Last Location</th>
+                <th>Last Update</th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 && (
-                <tr><td colSpan={6} style={{ textAlign: 'center', color: '#aaa', fontSize: 13, padding: 24 }}>
+                <tr><td colSpan={7} style={{ textAlign: 'center', color: '#aaa', fontSize: 13, padding: 24 }}>
                   No vehicles match the current filters.
                 </td></tr>
               )}
@@ -630,7 +639,14 @@ function FleetTab() {
                   </td>
                   <td style={{ fontSize:12, maxWidth:280 }}>
                     {v.location || (v.lat != null ? `${v.lat.toFixed(4)}, ${v.lng.toFixed(4)}` : '—')}
-                    {v.lastUpdate && <div style={{ color:'#aaa', fontSize:11 }}>{fmtAgo(v.lastUpdate)}</div>}
+                  </td>
+                  <td style={{ fontSize:12, whiteSpace:'nowrap' }}>
+                    {v.lastUpdate ? (
+                      <>
+                        <div>{fmtDateTime(v.lastUpdate)}</div>
+                        <div style={{ color:'#aaa', fontSize:11 }}>{fmtAgo(v.lastUpdate)}</div>
+                      </>
+                    ) : '—'}
                   </td>
                 </tr>
               ))}
@@ -657,8 +673,12 @@ function FleetTab() {
             </div>
             <div style={{ fontSize:12, color:'#666', marginBottom:4 }}>
               {v.location || (v.lat != null ? `${v.lat.toFixed(4)}, ${v.lng.toFixed(4)}` : 'Location unavailable')}
-              {v.lastUpdate && <span style={{ color:'#aaa' }}> · {fmtAgo(v.lastUpdate)}</span>}
             </div>
+            {v.lastUpdate && (
+              <div style={{ fontSize:11, color:'#aaa', marginBottom:4 }}>
+                Last update: {fmtDateTime(v.lastUpdate)} ({fmtAgo(v.lastUpdate)})
+              </div>
+            )}
             <div style={{ fontFamily:'monospace', fontWeight:600, fontSize:13, color: v.load_no ? '#005A8E' : '#bbb' }}>
               Load: {v.load_no || 'None'}
             </div>

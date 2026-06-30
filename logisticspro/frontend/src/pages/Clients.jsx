@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { api } from '../lib/api';
 import { loadGoogleMaps, resetGoogleMapsLoader } from '../lib/googleMaps';
 
-const EMPTY = { c_code:'', c_name:'', c_send_pod:'Y', c_send_invoice:'Y', c_active:'Y' };
+const EMPTY = { c_code:'', c_name:'', c_send_pod:'Y', c_send_invoice:'Y', c_pod_email:'', c_invoice_email:'', c_active:'Y' };
 const EMPTY_ADDRESS = { a_name:'', a_address:'', a_latitude:null, a_longitude:null, a_radius_km:2, a_type:'CLIENT', a_client_code:'' };
 
 const ADDRESS_TYPES = [
@@ -460,6 +460,22 @@ function ClientsTab() {
                   </select>
                 </div>
               </div>
+              {(form.c_send_pod==='Y' || form.c_send_invoice==='Y') && (
+                <div className="form-row">
+                  {form.c_send_pod==='Y' && (
+                    <div className="form-group"><label>POD Email Address(es)</label>
+                      <input value={form.c_pod_email||''} onChange={e=>set('c_pod_email',e.target.value)}
+                        placeholder="pods@client.com (comma-separate multiple)" />
+                    </div>
+                  )}
+                  {form.c_send_invoice==='Y' && (
+                    <div className="form-group"><label>Invoice Email Address(es)</label>
+                      <input value={form.c_invoice_email||''} onChange={e=>set('c_invoice_email',e.target.value)}
+                        placeholder="accounts@client.com (comma-separate multiple)" />
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="form-row">
                 <div className="form-group"><label>Active</label>
                   <select value={form.c_active} onChange={e=>set('c_active',e.target.value)}>

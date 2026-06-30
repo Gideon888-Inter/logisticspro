@@ -13,7 +13,7 @@ import Loads from './pages/Loads';
 import Dashboard from './pages/Dashboard';
 import Approvals from './pages/Approvals';
 import Fleet from './pages/Fleet';
-import Drivers from './pages/Drivers';
+import Drivers, { DriverCellphones } from './pages/Drivers';
 import Clients from './pages/Clients';
 import Rates from './pages/Rates';
 import Users from './pages/Users';
@@ -108,8 +108,9 @@ function buildMenu(user) {
   if (canManageDrivers(user))
     menu.push({ key: 'drivers', label: 'Drivers', icon: '👤',
       sub: [
-        { key: 'drivers-list',  label: 'Driver List' },
-        { key: 'drivers-leave', label: 'Leave' },
+        { key: 'drivers-list',       label: 'Driver List' },
+        { key: 'drivers-cellphones', label: 'Cellphones' },
+        { key: 'drivers-leave',      label: 'Leave' },
       ]
     });
   if (canViewRates(user))
@@ -141,7 +142,7 @@ const PAGE_TITLES = {
   '': 'Overview',
   movement: 'Loads',
   vehicles: 'Fleet',
-  'drivers-list': 'Drivers', 'drivers-leave': 'Driver Leave',
+  'drivers-list': 'Drivers', 'drivers-leave': 'Driver Leave', 'drivers-cellphones': 'Cellphones',
   'clients-list': 'Customers',
   'workshop-service': 'Service Cards', 'workshop-maintenance': 'Maintenance',
   'workshop-inventory': 'Inventory', 'workshop-pos': 'Purchase Orders',
@@ -215,6 +216,7 @@ export default function App() {
       case 'approvals':           return canViewApprovals(user) ? <Approvals /> : <AccessDenied />;
       case 'vehicles':            return canViewFleet(user) ? <Fleet /> : <AccessDenied />;
       case 'drivers-list':        return canManageDrivers(user) ? <Drivers /> : <AccessDenied />;
+      case 'drivers-cellphones':  return canManageDrivers(user) ? <DriverCellphones /> : <AccessDenied />;
       case 'workshop-service':    return canViewWorkshop(user) ? <ServiceCards /> : <AccessDenied />;
       case 'workshop-maintenance':return canViewWorkshop(user) ? <Maintenance /> : <AccessDenied />;
       case 'workshop-inventory':  return canViewInventory(user) ? <InventoryPage /> : <AccessDenied />;

@@ -95,7 +95,7 @@ const STEP_ROLES = {
   WAIT_INVOICE_NO:  [],                                 // system only (invoice flow)
 };
 
-const COST_TYPES = ['Loadshift', 'Fine', 'Labour', 'Extra Stop', 'Other'];
+const COST_TYPES = ['Loadshift', 'Fine', 'Labour', 'Other'];
 
 function fmtDate(d) {
   return d
