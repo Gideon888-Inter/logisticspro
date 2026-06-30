@@ -34,8 +34,41 @@ const STATUS_BADGE = {
   KM_CORRECTION_NEEDED:  'badge-red',
 };
 
-// ── Movement view: short "current status" text + colour, derived from
-// the load's status + destination (no live GPS field exists yet) ──────────
+// ── Friendly status text + colour, derived from a load's status +
+// destination. Originally built for the (now-retired) Movement tab, but
+// Dashboard.jsx's fleet overview table also uses these to describe a
+// vehicle's current load — kept here as shared exports rather than
+// removed, since that's a real, separate consumer.
+export function movementStatusText(l) {
+  const to = l.m_to || '—';
+  switch (l.m_status) {
+    case 'PRELOAD':              return `Awaiting dispatch to ${to}`;
+    case 'EN_ROUTE':              return `En Route to ${to}`;
+    case 'OFFLOADED':             return `Arrived at ${to}`;
+    case 'WAIT_ORDER_NO':         return 'Awaiting Order Number';
+    case 'WAIT_POD_SCAN':         return 'Awaiting POD Scan';
+    case 'WAIT_APPROVAL':         return 'Awaiting Operator Approval';
+    case 'WAIT_RATE_CHECK':       return 'Awaiting Rate Check';
+    case 'WAIT_INVOICE_NO':       return 'Awaiting Invoice';
+    case 'LOAD_INVOICED':         return 'Invoiced';
+    case 'WAIT_PROCESSING':       return 'Processing';
+    case 'REJECTED':              return 'Rejected';
+    case 'PENDING_KM_APPROVAL':   return 'KM Pending Approval';
+    case 'KM_CORRECTION_NEEDED':  return 'KM Correction Needed';
+    default:                      return l.m_status?.replace(/_/g, ' ') || '—';
+  }
+}
+export function movementStatusColor(l) {
+  const badgeClass = STATUS_BADGE[l.m_status] || 'badge-gray';
+  return {
+    'badge-gray':   '#374151',
+    'badge-blue':   '#1e40af',
+    'badge-green':  '#065f46',
+    'badge-amber':  '#92400e',
+    'badge-orange': '#9a3412',
+    'badge-red':    '#991b1b',
+  }[badgeClass] || '#374151';
+}
 
 // Statuses users can manually filter/view — KM system statuses are EXCLUDED
 // from the workflow buttons but INCLUDED in the filter dropdown
