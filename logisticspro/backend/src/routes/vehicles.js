@@ -3,6 +3,7 @@ const supabase = require('../supabase');
 const { authMiddleware, loadUserPermissions, requirePermission } = require('../middleware/auth');
 const { getPulsitVehicles, mapVehicle } = require('../lib/pulsit');
 const { normalizeVehicleKey, buildVehicleKeyMap } = require('../lib/vehicleCode');
+const { fetchChunked } = require('../lib/supabasePaging');
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -46,17 +47,25 @@ router.get('/', async (req, res) => {
   // imported load rows can carry a differently zero-padded truck code than
   // the canonical lp_vehicles.vh_code (e.g. "BT01" vs "BT001") — an exact
   // match would silently miss those rows. See lib/vehicleCode.js.
+  //
+  // Also chunk-fetched (lib/supabasePaging) rather than one plain select —
+  // Supabase/PostgREST silently caps any single unranged response at the
+  // project's "max rows" setting (commonly 1000), and lp_movement already
+  // has well over that many rows. A plain select here would silently miss
+  // older loads, which is exactly the kind of bug this normalized-key join
+  // was added to prevent in the first place.
   const codes = (data || []).map(v => v.vh_code);
   const codeKeyMap = buildVehicleKeyMap(data); // normalizedKey -> vh_code
   let loadMap = {};
   if (codes.length > 0) {
-    const { data: loads } = await supabase
+    const buildLoadsQuery = () => supabase
       .from('lp_movement')
-      .select('m_truck, m_closing_km, m_opening_km, m_status, m_date')
+      .select('m_truck, m_closing_km, m_opening_km, m_status, m_date, m_load_no')
       .not('m_truck', 'is', null)
       .neq('m_status', 'DELETED')
       .order('m_date', { ascending: false })
-      .order('created_at', { ascending: false });
+      .order('m_load_no', { ascending: false });
+    const { rows: loads } = await fetchChunked(buildLoadsQuery, 0, Number.MAX_SAFE_INTEGER);
 
     // Keep only the most recent load per truck, resolved to the
     // canonical vh_code via normalized key.
@@ -138,17 +147,18 @@ router.get('/fleet-overview', requirePermission('FLEET', 'view'), async (req, re
     const codeKeyMap = buildVehicleKeyMap(horses); // normalizedKey -> vh_code
 
     // Latest non-deleted load per horse, to determine "active" + trailers.
-    // Matched by normalized key — see lib/vehicleCode.js.
+    // Matched by normalized key — see lib/vehicleCode.js. Chunk-fetched —
+    // see lib/supabasePaging.js — for the same reason as GET / above.
     let loadMap = {};
     if (codes.length > 0) {
-      const { data: loads, error: lErr } = await supabase
+      const buildLoadsQuery = () => supabase
         .from('lp_movement')
-        .select('m_truck, m_load_no, m_status, m_trailer1, m_trailer2, m_date, created_at')
+        .select('m_truck, m_load_no, m_status, m_trailer1, m_trailer2, m_date')
         .not('m_truck', 'is', null)
         .neq('m_status', 'DELETED')
         .order('m_date', { ascending: false })
-        .order('created_at', { ascending: false });
-      if (lErr) throw lErr;
+        .order('m_load_no', { ascending: false });
+      const { rows: loads } = await fetchChunked(buildLoadsQuery, 0, Number.MAX_SAFE_INTEGER);
       (loads || []).forEach(l => {
         const canonical = codeKeyMap.get(normalizeVehicleKey(l.m_truck));
         if (canonical && !loadMap[canonical]) loadMap[canonical] = l;

@@ -1,5 +1,6 @@
 const express = require('express');
 const supabase = require('../supabase');
+const { fetchChunked } = require('../lib/supabasePaging');
 const {
   authMiddleware, requireRole,
   ROLES,
@@ -59,6 +60,15 @@ const ORDER_NO_LOCKED_STATUSES = [
   'WAIT_APPROVAL', 'WAIT_RATE_CHECK', 'WAIT_INVOICE_NO', 'LOAD_INVOICED', 'REJECTED', 'DELETED',
 ];
 
+// Supabase/PostgREST projects enforce a project-level "max rows" cap on any
+// single response (commonly 1000 by default in the Supabase dashboard under
+// Settings → API). This is enforced server-side regardless of what `.range()`
+// is requested, and the supabase-js client does NOT surface it as an error —
+// it just silently returns fewer rows than asked for. That's why requesting
+// limit=2000 (e.g. the Dashboard's monthly "Total Loads" tile) was capped at
+// exactly 1000 rows. See lib/supabasePaging.js (fetchChunked) for the fix —
+// it fetches in chunks no larger than that cap and concatenates them.
+
 // ============================================================
 // GET /api/loads — list with filters
 // ============================================================
@@ -71,39 +81,49 @@ router.get('/', requirePermission('LOADS', 'view'), async (req, res) => {
 
   const offset = (page - 1) * limit;
 
-  let query = supabase
-    .from('lp_movement')
-    .select(
-      'm_load_no, m_date, m_customer, m_truck, m_driver_id, m_from, m_to, ' +
-      'm_rate, m_status, m_invoice, m_opening_km, m_closing_km, ' +
-      'm_trailer1, m_trailer2, m_responsible_operator, m_operator, ' +
-      'm_order_no, m_order_no_pending, m_order_no_requested_by, ' +
-      'm_loading_address, m_offloading_address, ' +
-      'm_pod_received, m_pod_received_by, m_pod_received_at, m_pod_sharepoint_url',
-      { count: 'exact' }
-    )
-    .neq('m_status', 'DELETED')
-    .order('m_date', { ascending: false })
-    .range(offset, offset + Number(limit) - 1);
+  // Rebuilt fresh for each chunk request — same filters every time, only
+  // the .range() differs. A stable secondary sort key (m_load_no) is
+  // required alongside m_date so that paginating across multiple chunk
+  // requests can't skip or duplicate rows that share the same date.
+  const buildQuery = () => {
+    let q = supabase
+      .from('lp_movement')
+      .select(
+        'm_load_no, m_date, m_customer, m_truck, m_driver_id, m_from, m_to, ' +
+        'm_rate, m_status, m_invoice, m_opening_km, m_closing_km, ' +
+        'm_trailer1, m_trailer2, m_responsible_operator, m_operator, ' +
+        'm_order_no, m_order_no_pending, m_order_no_requested_by, ' +
+        'm_loading_address, m_offloading_address, ' +
+        'm_pod_received, m_pod_received_by, m_pod_received_at, m_pod_sharepoint_url',
+        { count: 'exact' }
+      )
+      .neq('m_status', 'DELETED')
+      .order('m_date', { ascending: false })
+      .order('m_load_no', { ascending: false });
 
-  if (status)    query = query.eq('m_status', status);
-  // bus_unit filter removed — column dropped in cleanup
-  if (customer)  query = query.eq('m_customer', customer);
-  if (truck)     query = query.eq('m_truck', truck);
-  if (date_from) query = query.gte('m_date', date_from);
-  if (date_to)   query = query.lte('m_date', date_to);
-  if (search) {
-    query = query.or(
-      `m_load_no.ilike.%${search}%,m_truck.ilike.%${search}%,` +
-      `m_customer.ilike.%${search}%,m_from.ilike.%${search}%,` +
-      `m_to.ilike.%${search}%,m_driver_id.ilike.%${search}%,` +
-      `m_order_no.ilike.%${search}%`
-    );
+    if (status)    q = q.eq('m_status', status);
+    // bus_unit filter removed — column dropped in cleanup
+    if (customer)  q = q.eq('m_customer', customer);
+    if (truck)     q = q.eq('m_truck', truck);
+    if (date_from) q = q.gte('m_date', date_from);
+    if (date_to)   q = q.lte('m_date', date_to);
+    if (search) {
+      q = q.or(
+        `m_load_no.ilike.%${search}%,m_truck.ilike.%${search}%,` +
+        `m_customer.ilike.%${search}%,m_from.ilike.%${search}%,` +
+        `m_to.ilike.%${search}%,m_driver_id.ilike.%${search}%,` +
+        `m_order_no.ilike.%${search}%`
+      );
+    }
+    return q;
+  };
+
+  try {
+    const { rows, count } = await fetchChunked(buildQuery, offset, Number(limit));
+    res.json({ data: rows, total: count, page: Number(page), limit: Number(limit) });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
-
-  const { data, error, count } = await query;
-  if (error) return res.status(500).json({ error: error.message });
-  res.json({ data, total: count, page: Number(page), limit: Number(limit) });
 });
 
 
@@ -112,21 +132,32 @@ router.get('/', requirePermission('LOADS', 'view'), async (req, res) => {
 // ============================================================
 router.get('/stats/summary', requirePermission('LOADS', 'view'), async (req, res) => {
   const { bus_unit } = req.query;
-  let q = supabase
-    .from('lp_movement')
-    .select('m_status, m_load_total, m_rate')
-    .neq('m_status', 'DELETED');
   // bus_unit filter removed — column dropped in cleanup
-  const { data, error } = await q;
-  if (error) return res.status(500).json({ error: error.message });
 
-  res.json({
-    total:         data.length,
-    en_route:      data.filter(r => r.m_status === 'EN_ROUTE').length,
-    wait_approval: data.filter(r => r.m_status === 'WAIT_APPROVAL').length,
-    invoiced:      data.filter(r => r.m_status === 'LOAD_INVOICED').length,
-    total_value:   data.reduce((s, r) => s + Number(r.m_rate || 0), 0),
-  });
+  const buildQuery = () => supabase
+    .from('lp_movement')
+    .select('m_status, m_load_total, m_rate', { count: 'exact' })
+    .neq('m_status', 'DELETED')
+    .order('m_load_no', { ascending: false });
+
+  try {
+    // No upper bound here (unlike GET /) — this needs every active load to
+    // compute accurate totals, so keep chunking until exhausted. Uses the
+    // same chunked-fetch workaround as GET / for Supabase's project-level
+    // max-rows cap — see fetchChunked for why a plain unranged select
+    // silently truncates once the table grows past that cap.
+    const { rows: data } = await fetchChunked(buildQuery, 0, Number.MAX_SAFE_INTEGER);
+
+    res.json({
+      total:         data.length,
+      en_route:      data.filter(r => r.m_status === 'EN_ROUTE').length,
+      wait_approval: data.filter(r => r.m_status === 'WAIT_APPROVAL').length,
+      invoiced:      data.filter(r => r.m_status === 'LOAD_INVOICED').length,
+      total_value:   data.reduce((s, r) => s + Number(r.m_rate || 0), 0),
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 

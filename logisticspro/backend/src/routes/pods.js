@@ -1,6 +1,7 @@
 const express = require('express');
 const supabase = require('../supabase');
 const { authMiddleware, loadUserPermissions, requirePermission } = require('../middleware/auth');
+const { fetchChunked } = require('../lib/supabasePaging');
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -53,25 +54,33 @@ router.get('/pending', requirePermission('PODS', 'view'), async (req, res) => {
 router.get('/received', requirePermission('PODS', 'view'), async (req, res) => {
   const { bus_unit, search } = req.query;
 
-  let q = supabase
-    .from('lp_movement')
-    .select('m_load_no, m_date, m_customer, m_truck, m_from, m_to, m_rate, m_status, m_order_no')
-    .eq('m_pod_received', true)
-    .neq('m_status', 'DELETED')
-    .order('m_date', { ascending: false });
+  // This dataset only grows (every load that ever gets a POD stays on this
+  // list forever, per the no-hard-deletion principle) and supports search
+  // across the full history, so it must NOT be silently capped at Supabase's
+  // project-level max-rows limit — see lib/supabasePaging.js.
+  const buildQuery = () => {
+    let q = supabase
+      .from('lp_movement')
+      .select('m_load_no, m_date, m_customer, m_truck, m_from, m_to, m_rate, m_status, m_order_no', { count: 'exact' })
+      .eq('m_pod_received', true)
+      .neq('m_status', 'DELETED')
+      .order('m_date', { ascending: false })
+      .order('m_load_no', { ascending: false });
+    // bus_unit filter removed — column dropped
+    if (search) q = q.or(`m_load_no.ilike.%${search}%,m_customer.ilike.%${search}%,m_truck.ilike.%${search}%`);
+    return q;
+  };
 
-  // bus_unit filter removed — column dropped
-  if (search)   q = q.or(`m_load_no.ilike.%${search}%,m_customer.ilike.%${search}%,m_truck.ilike.%${search}%`);
-
-  const { data, error } = await q;
-  if (error) return res.status(500).json({ error: error.message });
-
-  const result = (data || []).map(load => ({
-    ...load,
-    sharepoint_url: sharepointLink(load.m_load_no),
-  }));
-
-  res.json(result);
+  try {
+    const { rows: data } = await fetchChunked(buildQuery, 0, Number.MAX_SAFE_INTEGER);
+    const result = data.map(load => ({
+      ...load,
+      sharepoint_url: sharepointLink(load.m_load_no),
+    }));
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 

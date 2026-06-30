@@ -1,5 +1,6 @@
 const express = require('express');
 const supabase = require('../supabase');
+const { fetchChunked } = require('../lib/supabasePaging');
 const { authMiddleware, loadUserPermissions, requirePermission } = require('../middleware/auth');
 
 const router = express.Router();
@@ -183,13 +184,18 @@ router.post('/auto-create', requirePermission('WORKSHOP', 'edit'), async (req, r
 
     const codes = vehicles.map(v => v.vh_code);
 
-    // Live odometer from last load
-    const { data: loads } = await supabase
+    // Live odometer from last load. Chunk-fetched — see lib/supabasePaging.js —
+    // since lp_movement already has well over Supabase's project-level
+    // max-rows cap worth of records; an unranged select here would risk
+    // silently missing a vehicle's most recent load.
+    const buildLoadsQuery = () => supabase
       .from('lp_movement')
-      .select('m_truck, m_closing_km, m_opening_km, created_at')
+      .select('m_truck, m_closing_km, m_opening_km, m_load_no')
       .in('m_truck', codes)
       .neq('m_status', 'DELETED')
-      .order('created_at', { ascending: false });
+      .order('m_date', { ascending: false })
+      .order('m_load_no', { ascending: false });
+    const { rows: loads } = await fetchChunked(buildLoadsQuery, 0, Number.MAX_SAFE_INTEGER);
 
     const loadMap = {};
     (loads || []).forEach(l => { if (!loadMap[l.m_truck]) loadMap[l.m_truck] = l; });
