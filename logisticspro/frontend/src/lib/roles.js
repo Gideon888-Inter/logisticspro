@@ -30,6 +30,19 @@ export const ROLES = {
   READONLY:            'READONLY',
 };
 
+// ── DB-driven permission check ──────────────────────────────────
+// The backend (auth.js loadUserPermissions) computes this same map for both
+// built-in and custom roles and returns it on /auth/login and /auth/me as
+// user.permissions = { MODULE: { view, edit, delete, approve } }.
+// When present, this is authoritative — it's what makes custom roles actually
+// work on the frontend instead of being silently blocked by a hardcoded list.
+// Falls back to `null` (caller decides what to do) if permissions haven't
+// loaded yet, which built-in-role hardcoded checks below still cover safely.
+export function hasPermission(user, moduleName, action = 'view') {
+  if (!user?.permissions) return null;
+  return user.permissions[moduleName]?.[action] === true;
+}
+
 // ── Display labels ────────────────────────────────────────────
 export const ROLE_LABELS = {
   ADMIN:               'Admin',
@@ -74,6 +87,8 @@ export const ROLE_GROUPS = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function canViewLoads(user) {
+  const perm = hasPermission(user, 'LOADS', 'view');
+  if (perm !== null) return perm;
   return [
     ROLES.ADMIN, ROLES.MANAGER, ROLES.OPERATOR, ROLES.OPS_ASSISTANT,
     ROLES.CONTROL_ROOM, ROLES.FINANCE,
@@ -85,6 +100,8 @@ export function canViewLoads(user) {
 
 // Finance and all Workshop roles cannot create load cards
 export function canCreateLoad(user) {
+  const perm = hasPermission(user, 'LOADS', 'edit');
+  if (perm !== null) return perm;
   return [
     ROLES.ADMIN, ROLES.OPERATOR,
     ROLES.OPS_ASSISTANT, ROLES.CONTROL_ROOM,
@@ -98,6 +115,8 @@ export function canEditLoad(user) {
 }
 
 export function canDeleteLoad(user) {
+  const perm = hasPermission(user, 'LOADS', 'delete');
+  if (perm !== null) return perm;
   return [ROLES.OPERATOR, ROLES.ADMIN].includes(user?.role);
 }
 
@@ -170,6 +189,8 @@ export const STATUS_LABELS = {
 
 // Workshop Manager can view fleet (needs to see asset details for POs)
 export function canViewFleet(user) {
+  const perm = hasPermission(user, 'FLEET', 'view');
+  if (perm !== null) return perm;
   return [
     ROLES.ADMIN, ROLES.MANAGER, ROLES.OPERATOR,
     ROLES.OPS_ASSISTANT, ROLES.WORKSHOP_MANAGER,
@@ -178,6 +199,8 @@ export function canViewFleet(user) {
 
 // Finance cannot edit fleet records
 export function canEditFleet(user) {
+  const perm = hasPermission(user, 'FLEET', 'edit');
+  if (perm !== null) return perm;
   return [ROLES.ADMIN, ROLES.OPERATOR, ROLES.OPS_ASSISTANT].includes(user?.role);
 }
 
@@ -186,6 +209,8 @@ export function canEditFleet(user) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function canViewWorkshop(user) {
+  const perm = hasPermission(user, 'WORKSHOP', 'view');
+  if (perm !== null) return perm;
   return [
     ROLES.ADMIN, ROLES.MANAGER, ROLES.OPERATOR, ROLES.OPS_ASSISTANT,
     ROLES.WORKSHOP_MANAGER, ROLES.WORKSHOP_ASSISTANT,
@@ -194,6 +219,8 @@ export function canViewWorkshop(user) {
 }
 
 export function canEditWorkshop(user) {
+  const perm = hasPermission(user, 'WORKSHOP', 'edit');
+  if (perm !== null) return perm;
   return [
     ROLES.ADMIN,
     ROLES.WORKSHOP_MANAGER, ROLES.WORKSHOP_ASSISTANT, ROLES.WORKSHOP,
@@ -205,6 +232,8 @@ export function canEditWorkshop(user) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function canViewRates(user) {
+  const perm = hasPermission(user, 'RATES', 'view');
+  if (perm !== null) return perm;
   return [ROLES.ADMIN, ROLES.MANAGER].includes(user?.role);
 }
 
@@ -217,6 +246,8 @@ export function canManageDrivers(user) {
 }
 
 export function canManageUsers(user) {
+  const perm = hasPermission(user, 'USERS', 'view');
+  if (perm !== null) return perm;
   return [ROLES.ADMIN, ROLES.MANAGER].includes(user?.role);
 }
 
@@ -226,10 +257,14 @@ export function canManageUsers(user) {
 
 // Finance replaces ACCOUNTING everywhere in the invoice/approval flow
 export function canManageInvoices(user) {
+  const perm = hasPermission(user, 'INVOICES', 'view');
+  if (perm !== null) return perm;
   return [ROLES.ADMIN, ROLES.FINANCE].includes(user?.role);
 }
 
 export function canCreateCreditNote(user) {
+  const perm = hasPermission(user, 'INVOICES', 'edit');
+  if (perm !== null) return perm;
   return [ROLES.ADMIN, ROLES.FINANCE].includes(user?.role);
 }
 
@@ -239,11 +274,15 @@ export function canViewApprovals(user) {
 
 // GL journal posting — Admin and Finance only. No other role.
 export function canPostGLJournals(user) {
+  const perm = hasPermission(user, 'FINANCE', 'edit');
+  if (perm !== null) return perm;
   return [ROLES.ADMIN, ROLES.FINANCE].includes(user?.role);
 }
 
 // View the Finance / Accounting module at all
 export function canViewFinance(user) {
+  const perm = hasPermission(user, 'FINANCE', 'view');
+  if (perm !== null) return perm;
   return [ROLES.ADMIN, ROLES.FINANCE].includes(user?.role);
 }
 
@@ -252,6 +291,8 @@ export function canViewFinance(user) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function canAddCosts(user) {
+  const perm = hasPermission(user, 'COSTS', 'edit');
+  if (perm !== null) return perm;
   return [ROLES.ADMIN, ROLES.OPERATOR, ROLES.OPS_ASSISTANT, ROLES.CONTROL_ROOM].includes(user?.role);
 }
 
