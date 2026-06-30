@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Component } from 'react';
 import LOGO from '../assets/logo.png';
 import { useAuth } from './lib/AuthContext';
 import {
@@ -54,6 +54,32 @@ const LogoutIcon = () => (
     <line x1="21" y1="12" x2="9" y2="12"/>
   </svg>
 );
+
+// ── Error boundary ──────────────────────────────────────────────
+// Without this, an uncaught render error in ANY page component unmounts
+// the entire app (sidebar, header, everything) instead of just that page.
+// Keyed by `page` in the render below so switching pages resets it.
+class PageErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidCatch(error, info) { console.error('Page crashed:', error, info); }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'50vh', gap:12, textAlign:'center', padding: 24 }}>
+          <div style={{ fontSize:48 }}>⚠️</div>
+          <div style={{ fontSize:20, fontWeight:700, color:'#c05621' }}>This page hit an error</div>
+          <div style={{ fontSize:13, color:'#888', maxWidth:420 }}>{this.state.error.message || 'Something went wrong loading this page.'}</div>
+          <button onClick={() => this.setState({ error: null })} style={{
+            fontSize: 13, padding: '8px 16px', border: '1px solid #ddd', borderRadius: 6,
+            background: 'white', cursor: 'pointer', color: '#555', marginTop: 8,
+          }}>↻ Try again</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 // Build menu dynamically based on user role
 function buildMenu(user) {
@@ -326,7 +352,9 @@ export default function App() {
         </div>
 
         <div className="main-content" style={{ flex: 1, overflowY: 'auto' }}>
-          {renderPage()}
+          <PageErrorBoundary key={page}>
+            {renderPage()}
+          </PageErrorBoundary>
         </div>
       </div>
     </div>
