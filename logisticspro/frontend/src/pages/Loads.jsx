@@ -2,76 +2,9 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/AuthContext';
+import { loadGoogleMaps, resetGoogleMapsLoader } from '../lib/googleMaps';
 
 const API = import.meta.env.VITE_API_URL || '';
-const MAPS_KEY = import.meta.env.VITE_MAPS_KEY || '';
-
-// ── Google Maps loader (declared ONCE here — do not repeat below) ──
-// Reports failures through the callback instead of failing silently, so
-// the picker can show a real message for: missing key, invalid key,
-// billing disabled, Places not enabled, blocked referrer, or network
-// failure. window.gm_authFailure is the global Google Maps calls when
-// the key/billing/referrer check fails — there is no exception to catch.
-let mapsLoaded = false;
-let mapsLoading = false;
-let mapsError = null;
-const mapsCallbacks = []; // each: (error: string|null) => void
-
-function resetGoogleMapsLoader() {
-  mapsLoaded = false;
-  mapsLoading = false;
-  mapsError = null;
-  delete window.gm_authFailure;
-  const existing = document.getElementById('lp-google-maps-script');
-  if (existing) existing.remove();
-}
-
-function loadGoogleMaps(cb) {
-  if (mapsLoaded) return cb(null);
-  if (mapsError) return cb(mapsError);
-  if (!MAPS_KEY) {
-    const msg = 'Map picker is not configured (missing Google Maps API key). Contact your administrator.';
-    console.warn(msg);
-    mapsError = msg;
-    return cb(msg);
-  }
-
-  mapsCallbacks.push(cb);
-  if (mapsLoading) return;
-  mapsLoading = true;
-
-  // Fires if the key is invalid, billing is disabled, or the referrer
-  // (domain) isn't on the allowed list for this key.
-  window.gm_authFailure = () => {
-    mapsLoading = false;
-    mapsError = 'Google Maps rejected this site — check the API key, billing status, or allowed domains in Google Cloud Console.';
-    mapsCallbacks.forEach(f => f(mapsError));
-    mapsCallbacks.length = 0;
-  };
-
-  const script = document.createElement('script');
-  script.id = 'lp-google-maps-script';
-  script.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_KEY}&libraries=places`;
-  script.async = true;
-  script.onload = () => {
-    // gm_authFailure (if it fires) does so asynchronously right after load —
-    // give it a brief window before declaring success.
-    setTimeout(() => {
-      if (mapsError) return; // already handled by gm_authFailure above
-      mapsLoaded = true;
-      mapsLoading = false;
-      mapsCallbacks.forEach(f => f(null));
-      mapsCallbacks.length = 0;
-    }, 300);
-  };
-  script.onerror = () => {
-    mapsLoading = false;
-    mapsError = 'Could not reach Google Maps — check your internet connection.';
-    mapsCallbacks.forEach(f => f(mapsError));
-    mapsCallbacks.length = 0;
-  };
-  document.head.appendChild(script);
-}
 
 const token = () => localStorage.getItem('lp_token');
 const req = (path, opts = {}) =>
