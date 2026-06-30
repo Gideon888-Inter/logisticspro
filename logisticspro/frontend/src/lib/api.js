@@ -207,6 +207,20 @@ export const api = {
   // ── KM (Pulsit-driven closing odometer) ─────────────────────────
   getPulsitReading:    (truck)       => request(`/km/pulsit-reading/${encodeURIComponent(truck)}`),
   confirmClosingAuto:  (loadNo)      => request(`/km/closing-auto/${encodeURIComponent(loadNo)}`, { method: 'POST' }),
+
+  // ── Vehicle trips (Pulsit Trip Report import) — FormData upload, so
+  // this bypasses request()'s JSON content-type rather than fighting it ──
+  importVehicleTrips: async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const token = localStorage.getItem('lp_token');
+    const res = await fetch(`${BASE}/api/vehicles/import-trips`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: formData,
+    });
+    return res.json();
+  },
 };
 
 
