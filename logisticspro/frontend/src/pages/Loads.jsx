@@ -36,7 +36,7 @@ const STATUS_BADGE = {
 
 // ── Movement view: short "current status" text + colour, derived from
 // the load's status + destination (no live GPS field exists yet) ──────────
-function movementStatusText(l) {
+export function movementStatusText(l) {
   const to = l.m_to || '—';
   switch (l.m_status) {
     case 'PRELOAD':              return `Awaiting dispatch to ${to}`;
@@ -55,7 +55,7 @@ function movementStatusText(l) {
     default:                      return l.m_status?.replace(/_/g, ' ') || '—';
   }
 }
-function movementStatusColor(l) {
+export function movementStatusColor(l) {
   const badgeClass = STATUS_BADGE[l.m_status] || 'badge-gray';
   return {
     'badge-gray':   '#374151',

@@ -1,5 +1,6 @@
 // v2.1.0
 import { useState, useEffect, useRef } from 'react';
+import { movementStatusText, movementStatusColor } from './Loads';
 
 const API = import.meta.env.VITE_API_URL || '';
 const token = () => localStorage.getItem('lp_token');
@@ -469,12 +470,13 @@ function ServiceTile({ vehicles, onNavigate }) {
 }
 
 function exportFleetCSV(rows) {
-  const headers = ['Horse', 'Trailers', 'Client', 'Load No', 'Ignition', 'Home Base', 'Last Location', 'Last Update'];
+  const headers = ['Horse', 'Trailers', 'Client', 'Load No', 'Status', 'Ignition', 'Home Base', 'Last Location', 'Last Update'];
   const csvRows = rows.map(v => [
     v.vh_code,
     v.trailers.map(t => t.code + (t.confirmed === true ? ' (confirmed)' : t.confirmed === false ? ' (unconfirmed — check pairing)' : t.tracked ? '' : ' (not GPS-tracked)')).join('; '),
     v.client_name || v.client || '',
     v.load_no || '',
+    v.load_status ? movementStatusText({ m_status: v.load_status, m_to: v.load_to }) : '',
     v.ignition === 1 ? 'ON' : v.ignition === 0 ? 'OFF' : '',
     v.home_base || '',
     v.location || (v.lat != null ? `${v.lat}, ${v.lng}` : ''),
@@ -632,6 +634,7 @@ function FleetTab() {
                 <th>Trailers</th>
                 <th>Client</th>
                 <th>Load No</th>
+                <th>Status</th>
                 <th>Ignition</th>
                 <th>Last Location</th>
                 <th>Last Update</th>
@@ -639,7 +642,7 @@ function FleetTab() {
             </thead>
             <tbody>
               {filtered.length === 0 && (
-                <tr><td colSpan={7} style={{ textAlign: 'center', color: '#aaa', fontSize: 13, padding: 24 }}>
+                <tr><td colSpan={8} style={{ textAlign: 'center', color: '#aaa', fontSize: 13, padding: 24 }}>
                   No vehicles match the current filters.
                 </td></tr>
               )}
@@ -652,6 +655,9 @@ function FleetTab() {
                   <td style={{ fontSize:12 }}>{v.client_name || '—'}</td>
                   <td style={{ fontFamily:'monospace', fontWeight:600, color: v.load_no ? '#005A8E' : '#bbb' }}>
                     {v.load_no || 'None'}
+                  </td>
+                  <td style={{ fontSize:12, fontWeight:600, color: v.load_status ? movementStatusColor({ m_status: v.load_status }) : '#bbb' }}>
+                    {v.load_status ? movementStatusText({ m_status: v.load_status, m_to: v.load_to }) : '—'}
                   </td>
                   <td>
                     {v.ignition === 1 && <span style={{ color:'#059669', fontWeight:600, fontSize:12 }}>🟢 ON</span>}
@@ -713,6 +719,11 @@ function FleetTab() {
             <div style={{ fontFamily:'monospace', fontWeight:600, fontSize:13, color: v.load_no ? '#005A8E' : '#bbb' }}>
               Load: {v.load_no || 'None'}
             </div>
+            {v.load_status && (
+              <div style={{ fontSize:12, fontWeight:600, marginTop:2, color: movementStatusColor({ m_status: v.load_status }) }}>
+                {movementStatusText({ m_status: v.load_status, m_to: v.load_to })}
+              </div>
+            )}
           </div>
         ))}
         {filtered.length === 0 && <div style={{ color:'#aaa', fontSize:13, textAlign:'center', padding:20 }}>No vehicles match the current filters.</div>}

@@ -268,6 +268,7 @@ router.get('/fleet-overview', requirePermission('FLEET', 'view'), async (req, re
         client_name:  load?.m_customer ? (customerMap.get(load.m_customer) || load.m_customer) : null,
         load_no:      load?.m_load_no || null,
         load_status:  load?.m_status || null,
+        load_to:      load?.m_to || null,
         is_active:    isActive,
         ignition:     pos ? pos.ignition : null,    // 1 = on, 0 = off, null = unknown
         location:     matchedAddress ? matchedAddress.a_name : (pos ? pos.location : null),
