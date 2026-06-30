@@ -29,15 +29,23 @@ async function request(path, options = {}) {
     throw new Error('Network error — server may be starting up. Please wait a moment and try again.');
   }
 
-  // JWT expired or invalid — force logout so user sees login screen
+  // JWT expired or invalid — clear session and let the app react gracefully
   if (res.status === 401) {
     localStorage.removeItem('lp_token');
     localStorage.removeItem('lp_user');
-    window.location.reload();
+    window.dispatchEvent(new CustomEvent('lp-auth-expired'));
     throw new Error('Session expired — please log in again.');
   }
 
-  const data = await res.json();
+  // Read as text first — a non-JSON response (HTML error page, CDN/Render
+  // outage, cold-start response) must not throw an opaque JSON parse error.
+  const text = await res.text();
+  let data = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = { error: text || 'Unexpected server response' };
+  }
   if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
   return data;
 }
