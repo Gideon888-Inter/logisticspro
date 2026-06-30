@@ -543,3 +543,17 @@ html, body, #root { height: 100%; min-height: 100dvh; }
     z-index: 35;
   }
 }
+
+/* ── Fleet card — collapsible Vehicle Details sections (mobile only) ──
+   Read-Only Identity / Auto-Calculated / Editable Fields each get a
+   clickable header with a chevron (see SectionHeader in Fleet.jsx). The
+   collapsed state only actually hides content below the mobile
+   breakpoint — on desktop every section always shows in full regardless
+   of the toggle, since there's no space constraint there to justify
+   collapsing anything. ──────────────────────────────────────────── */
+.vehicle-section-toggle { cursor: default; }
+
+@media (max-width: 768px) {
+  .vehicle-section-toggle { cursor: pointer; }
+  .vehicle-section-body.collapsed { display: none; }
+}
