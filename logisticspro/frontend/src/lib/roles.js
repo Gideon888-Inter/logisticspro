@@ -82,6 +82,20 @@ export const ROLE_GROUPS = {
   'Other':       ['READONLY'],
 };
 
+// Mirrors ACCESS_GROUPS in backend/src/middleware/auth.js — the simplified
+// quick-toggle layer shown on a user's card (Basic/Operational/Fleet/
+// Workshop/Finance/Management/Director). Labels/order only; the actual
+// permission truth always comes from the backend via GET /users/:id/access.
+export const ACCESS_GROUP_LABELS = [
+  { key: 'BASIC',       label: 'Basic',       hint: 'Home, Approvals' },
+  { key: 'OPERATIONAL', label: 'Operational', hint: 'Loads' },
+  { key: 'FLEET',       label: 'Fleet',       hint: 'Fleet' },
+  { key: 'WORKSHOP',    label: 'Workshop',    hint: 'Workshop, Inventory, Purchase Orders' },
+  { key: 'FINANCE',     label: 'Finance',     hint: 'Finance, Invoices' },
+  { key: 'MANAGEMENT',  label: 'Management',  hint: 'Drivers, Clients, Users, Rates' },
+  { key: 'DIRECTOR',    label: 'Director',    hint: 'Cross-department dashboard views' },
+];
+
 // ─────────────────────────────────────────────────────────────────────────────
 // LOADS — who can do what
 // ─────────────────────────────────────────────────────────────────────────────
@@ -257,6 +271,16 @@ export function canManageDrivers(user) {
 export function canManageUsers(user) {
   const perm = hasPermission(user, 'USERS', 'view');
   if (perm !== null) return perm;
+  return [ROLES.ADMIN, ROLES.MANAGER].includes(user?.role);
+}
+
+// Password management (reset another user's password, change your own,
+// and the per-user access overrides) is gated to a fixed Admin/Manager
+// role check on the backend — deliberately NOT a DB-configurable
+// permission like the rest of the system, since it's a security boundary
+// rather than an operational setting. Mirror that exactly here so the UI
+// never offers something the backend will reject.
+export function canManagePasswords(user) {
   return [ROLES.ADMIN, ROLES.MANAGER].includes(user?.role);
 }
 
