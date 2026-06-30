@@ -138,6 +138,11 @@ const BUILTIN_PERMISSION_MAP = {
   // (rather than a hardcoded role check) so it can be granted to another
   // role later purely via User Roles, with no code/deploy needed.
   TRACKING_DEBUG:  { view: [ROLES.ADMIN],    edit: [ROLES.ADMIN],              delete: [], approve: [] },
+  // Reserved for Director-tier dashboard sections (cross-department KPIs)
+  // — Home itself has no permission gate today, so this doesn't restrict
+  // anything yet. It exists so the "Director" access-group toggle has a
+  // real flag to set, ready for Dashboard.jsx to check once that's built.
+  DASHBOARD:       { view: [ROLES.ADMIN, ROLES.MANAGER], edit: [ROLES.ADMIN], delete: [], approve: [] },
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -310,6 +315,53 @@ function hasPermission(permissions, module, action = 'view') {
   return permissions?.[module]?.[action] === true;
 }
 
+// ─────────────────────────────────────────────────────────────
+// ACCESS GROUPS — simplified quick-toggle layer
+// ─────────────────────────────────────────────────────────────
+// Sits ALONGSIDE the detailed module permission matrix above, not instead
+// of it. Each group bundles the modules behind one section of the app, so
+// a user's card can show 7 simple on/off switches (Basic, Operational,
+// Fleet, Workshop, Finance, Management, Director) instead of the full
+// per-module view/edit/delete/approve grid. Toggling a group on grants
+// `view` (and, where it makes operational sense, `edit`) on every module
+// in it; toggling off removes them. The detailed matrix is still there
+// underneath for anyone who needs to fine-tune beyond what a group
+// toggle gives them — see PATCH /users/:id/access.
+const ACCESS_GROUPS = {
+  BASIC:       { label: 'Basic',       modules: ['APPROVALS'] },
+  OPERATIONAL: { label: 'Operational', modules: ['LOADS', 'PODS', 'COSTS', 'KM'] },
+  FLEET:       { label: 'Fleet',       modules: ['FLEET'] },
+  WORKSHOP:    { label: 'Workshop',    modules: ['WORKSHOP', 'INVENTORY', 'PURCHASE_ORDERS'] },
+  FINANCE:     { label: 'Finance',     modules: ['FINANCE', 'INVOICES'] },
+  MANAGEMENT:  { label: 'Management',  modules: ['DRIVERS', 'CLIENTS', 'USERS', 'RATES'] },
+  // "Director" doesn't map to a restricted module today — Home/Dashboard
+  // has no permission gate (every logged-in user can already see it).
+  // This flag is reserved for the dashboard surfacing extra cross-
+  // department KPIs to Director-tier users later, without requiring a
+  // schema change when that's built — see Dashboard.jsx for where to
+  // hook it in when that's ready.
+  DIRECTOR:    { label: 'Director',    modules: ['DASHBOARD'] },
+};
+
+// ─────────────────────────────────────────────────────────────
+// PASSWORD POLICY
+// ─────────────────────────────────────────────────────────────
+// Shared by /auth/change-password, /auth/register, and
+// /users/:id/reset-password so the rule lives in exactly one place.
+function isStrongPassword(pw) {
+  if (typeof pw !== 'string' || pw.length < 10)
+    return { valid: false, error: 'Password must be at least 10 characters' };
+  if (!/[A-Z]/.test(pw))
+    return { valid: false, error: 'Password must include at least one uppercase letter' };
+  if (!/[a-z]/.test(pw))
+    return { valid: false, error: 'Password must include at least one lowercase letter' };
+  if (!/[0-9]/.test(pw))
+    return { valid: false, error: 'Password must include at least one number' };
+  if (!/[^A-Za-z0-9]/.test(pw))
+    return { valid: false, error: 'Password must include at least one special character' };
+  return { valid: true };
+}
+
 module.exports = {
   authMiddleware,
   requireRole,
@@ -319,6 +371,8 @@ module.exports = {
   ROLES,
   BUILTIN_ROLES,
   BUILTIN_PERMISSION_MAP,
+  ACCESS_GROUPS,
+  isStrongPassword,
   // Load / ops arrays (for backward compat with existing routes)
   CAN_VIEW_LOADS,
   CAN_CREATE_LOAD,
