@@ -4,6 +4,8 @@ const {
   authMiddleware, loadUserPermissions, requirePermission,
   CAN_MANAGE_INVOICES, CAN_CREATE_CREDIT_NOTE,
 } = require('../middleware/auth');
+const { sendMail, listFolderFiles, downloadFileAsBase64, SP_POD_FOLDER } = require('../lib/msgraph');
+const { generateInvoicePdfBuffer } = require('../lib/invoicePdf');
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -332,5 +334,95 @@ router.post('/:id/credit-note', requirePermission('INVOICES', 'edit'), async (re
 });
 
 
-module.exports = router;
+// ============================================================
+// POST /api/invoices/:id/send-to-client
+// Email the POD and/or invoice PDF to the client's configured
+// addresses (lp_customers.c_pod_email / c_invoice_email), gated by
+// c_send_pod / c_send_invoice. Only FINAL invoices can be sent.
+// Requires Microsoft Graph to be configured (GRAPH_* env vars) —
+// see lib/msgraph.js for setup details.
+// ============================================================
+router.post('/:id/send-to-client', requirePermission('INVOICES', 'approve'), async (req, res) => {
+  try {
+    const { data: inv, error: fetchErr } = await supabase
+      .from('lp_invoices').select('*').eq('id', req.params.id).single();
+    if (fetchErr || !inv) return res.status(404).json({ error: 'Invoice not found' });
+    if (inv.inv_status !== 'FINAL')
+      return res.status(400).json({ error: 'Only FINAL invoices can be emailed to the client' });
 
+    const { data: customer } = await supabase
+      .from('lp_customers').select('*').eq('c_code', inv.inv_customer).single();
+    if (!customer) return res.status(404).json({ error: 'Customer record not found for this invoice' });
+
+    const { data: load } = await supabase
+      .from('lp_movement').select('m_from, m_to, m_date').eq('m_load_no', inv.inv_load_no).single();
+
+    const wantInvoice = customer.c_send_invoice === 'Y' && customer.c_invoice_email?.trim();
+    const wantPod     = customer.c_send_pod === 'Y' && customer.c_pod_email?.trim();
+
+    if (!wantInvoice && !wantPod) {
+      return res.status(400).json({
+        error: 'This client has no Send POD / Send Invoice email address configured — set one on the Clients page first.',
+      });
+    }
+
+    const sent = [];
+
+    // ── Invoice email ───────────────────────────────────────
+    if (wantInvoice) {
+      const pdfBuffer = await generateInvoicePdfBuffer(inv, load, customer.c_name);
+      await sendMail({
+        to: customer.c_invoice_email,
+        subject: `Invoice ${inv.inv_number} — ${customer.c_name}`,
+        htmlBody: `<p>Dear ${customer.c_name},</p>
+          <p>Please find attached invoice <strong>${inv.inv_number}</strong> for load ${inv.inv_load_no}, amounting to R ${Number(inv.inv_amount_incl).toLocaleString('en-ZA', { minimumFractionDigits: 2 })} (incl. VAT).</p>
+          <p>Kind regards,<br/>${process.env.COMPANY_NAME || 'Interland Distribution Cape (Pty) Ltd'}</p>`,
+        attachments: [{
+          name: `Invoice_${inv.inv_number}.pdf`,
+          contentType: 'application/pdf',
+          contentBytes: pdfBuffer.toString('base64'),
+        }],
+      });
+      sent.push({ type: 'invoice', to: customer.c_invoice_email });
+    }
+
+    // ── POD email ───────────────────────────────────────────
+    if (wantPod) {
+      const files = await listFolderFiles(`${SP_POD_FOLDER}/A${inv.inv_load_no}`);
+      if (files.length === 0) {
+        sent.push({ type: 'pod', to: customer.c_pod_email, skipped: 'No POD files found in SharePoint for this load' });
+      } else {
+        const attachments = [];
+        for (const f of files.slice(0, 6)) { // cap attachments per email
+          const contentBytes = await downloadFileAsBase64(f.id);
+          attachments.push({ name: f.name, contentType: f.file.mimeType || 'application/octet-stream', contentBytes });
+        }
+        await sendMail({
+          to: customer.c_pod_email,
+          subject: `POD — Load ${inv.inv_load_no} — ${customer.c_name}`,
+          htmlBody: `<p>Dear ${customer.c_name},</p>
+            <p>Please find attached the proof of delivery for load <strong>${inv.inv_load_no}</strong>.</p>
+            <p>Kind regards,<br/>${process.env.COMPANY_NAME || 'Interland Distribution Cape (Pty) Ltd'}</p>`,
+          attachments,
+        });
+        sent.push({ type: 'pod', to: customer.c_pod_email, files: attachments.length });
+      }
+    }
+
+    await supabase.from('lp_comments').insert([{
+      c_load:      inv.inv_load_no,
+      c_comment:   `Emailed to client by ${req.user.username}: ${sent.map(s => `${s.type}${s.skipped ? ' (skipped: ' + s.skipped + ')' : ' -> ' + s.to}`).join(', ')}.`,
+      c_logged_by: req.user.username,
+    }]);
+
+    res.json({ success: true, sent });
+  } catch (err) {
+    if (err.notConfigured) return res.status(503).json({ error: err.message });
+    console.error('[invoices/send-to-client]', err.message, err.details || '');
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+
+module.exports = router;

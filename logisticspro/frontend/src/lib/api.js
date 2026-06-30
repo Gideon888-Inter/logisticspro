@@ -181,6 +181,7 @@ export const api = {
   getInvoice:          (id)          => request(`/invoices/${id}`),
   createInvoice:       (body)        => request('/invoices', { method: 'POST', body: JSON.stringify(body) }),
   approveInvoice:      (id, body)    => request(`/invoices/${id}/approve`, { method: 'POST', body: JSON.stringify(body) }),
+  sendInvoiceToClient: (id)          => request(`/invoices/${id}/send-to-client`, { method: 'POST' }),
   createCreditNote:    (id, body)    => request(`/invoices/${id}/credit-note`, { method: 'POST', body: JSON.stringify(body) }),
 
   // ── Fleet overview (Dashboard Fleet tab) ───────────────────────

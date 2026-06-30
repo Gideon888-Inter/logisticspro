@@ -81,6 +81,21 @@ export default function Invoices() {
     finally { setSaving(false); }
   };
 
+  // Email POD + invoice to the client (Outlook/Graph)
+  const sendToClient = async (inv) => {
+    if (!window.confirm(`Email POD/invoice to the client for ${inv.inv_number}?`)) return;
+    setSaving(true);
+    try {
+      const result = await req(`/invoices/${inv.id}/send-to-client`, { method: 'POST' });
+      if (result.error) { alert(result.error); return; }
+      const summary = (result.sent || []).map(s =>
+        s.skipped ? `${s.type}: skipped — ${s.skipped}` : `${s.type} sent to ${s.to}`
+      ).join('\n');
+      alert(`Done:\n${summary}`);
+    } catch (e) { alert(e.message); }
+    finally { setSaving(false); }
+  };
+
   // Raise credit note
   const submitCreditNote = async () => {
     if (!cnReason.trim()) return setError('A reason for the credit note is required');
@@ -327,6 +342,11 @@ export default function Invoices() {
               {selectedInv.inv_status === 'DRAFT' && (
                 <button className="btn btn-primary" onClick={() => approveInvoice(selectedInv)} disabled={saving}>
                   {saving ? 'Saving…' : 'Finalise Invoice'}
+                </button>
+              )}
+              {selectedInv.inv_status === 'FINAL' && (
+                <button className="btn" style={{ background:'#005A8E', color:'white' }} onClick={() => sendToClient(selectedInv)} disabled={saving}>
+                  {saving ? 'Sending…' : '📧 Email to Client'}
                 </button>
               )}
               {selectedInv.inv_status === 'FINAL' && canCreateCreditNote(user) && (
