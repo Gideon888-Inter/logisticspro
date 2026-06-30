@@ -1,9 +1,10 @@
 const express = require('express');
 const supabase = require('../supabase');
-const { authMiddleware } = require('../middleware/auth');
+const { authMiddleware, loadUserPermissions, requirePermission } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(authMiddleware);
+router.use(loadUserPermissions);
 
 // ── Service card statuses ──────────────────────────────────────────────────────
 const BLOCKING_STATUSES = ['SERVICE_ACCEPTED', 'WAITING_FOR_PART'];
@@ -131,7 +132,7 @@ async function generateServiceNo() {
 // ============================================================
 // GET /api/service — list all service cards
 // ============================================================
-router.get('/', async (req, res) => {
+router.get('/', requirePermission('WORKSHOP', 'view'), async (req, res) => {
   const { status, vehicle, page = 1, limit = 100 } = req.query;
   const offset = (page - 1) * limit;
 
@@ -152,7 +153,7 @@ router.get('/', async (req, res) => {
 // ============================================================
 // GET /api/service/stats  ← MUST be before /:no
 // ============================================================
-router.get('/stats', async (req, res) => {
+router.get('/stats', requirePermission('WORKSHOP', 'view'), async (req, res) => {
   const { data, error } = await supabase
     .from('lp_service_cards')
     .select('sc_status');
@@ -172,7 +173,7 @@ router.get('/stats', async (req, res) => {
 // POST /api/service/auto-create  ← MUST be before /:no
 // Idempotent — skips vehicles that already have an open card
 // ============================================================
-router.post('/auto-create', async (req, res) => {
+router.post('/auto-create', requirePermission('WORKSHOP', 'edit'), async (req, res) => {
   try {
     const { data: vehicles, error: vErr } = await supabase
       .from('lp_vehicles')
@@ -290,7 +291,7 @@ router.post('/auto-create', async (req, res) => {
 // ============================================================
 // GET /api/service/:no
 // ============================================================
-router.get('/:no', async (req, res) => {
+router.get('/:no', requirePermission('WORKSHOP', 'view'), async (req, res) => {
   const { data, error } = await supabase
     .from('lp_service_cards')
     .select('*')
@@ -303,7 +304,7 @@ router.get('/:no', async (req, res) => {
 // ============================================================
 // GET /api/service/:no/audit
 // ============================================================
-router.get('/:no/audit', async (req, res) => {
+router.get('/:no/audit', requirePermission('WORKSHOP', 'view'), async (req, res) => {
   const { data, error } = await supabase
     .from('lp_service_audit')
     .select('*')
@@ -316,7 +317,7 @@ router.get('/:no/audit', async (req, res) => {
 // ============================================================
 // GET /api/service/:no/checklist
 // ============================================================
-router.get('/:no/checklist', async (req, res) => {
+router.get('/:no/checklist', requirePermission('WORKSHOP', 'view'), async (req, res) => {
   const { data, error } = await supabase
     .from('lp_service_checklist')
     .select('*')
@@ -329,7 +330,7 @@ router.get('/:no/checklist', async (req, res) => {
 // ============================================================
 // GET /api/service/:no/comments
 // ============================================================
-router.get('/:no/comments', async (req, res) => {
+router.get('/:no/comments', requirePermission('WORKSHOP', 'view'), async (req, res) => {
   const { data, error } = await supabase
     .from('lp_service_comments')
     .select('*')
@@ -342,7 +343,7 @@ router.get('/:no/comments', async (req, res) => {
 // ============================================================
 // POST /api/service — create new service card
 // ============================================================
-router.post('/', async (req, res) => {
+router.post('/', requirePermission('WORKSHOP', 'edit'), async (req, res) => {
   try {
     const sc_no = await generateServiceNo();
     const card = {
@@ -371,7 +372,7 @@ router.post('/', async (req, res) => {
 // ============================================================
 // PATCH /api/service/:no — update status / notes
 // ============================================================
-router.patch('/:no', async (req, res) => {
+router.patch('/:no', requirePermission('WORKSHOP', 'edit'), async (req, res) => {
   const updates = { ...req.body, updated_at: new Date().toISOString() };
   const newStatus = updates.sc_status;
 
@@ -418,7 +419,7 @@ router.patch('/:no', async (req, res) => {
 // ============================================================
 // POST /api/service/:no/comments
 // ============================================================
-router.post('/:no/comments', async (req, res) => {
+router.post('/:no/comments', requirePermission('WORKSHOP', 'edit'), async (req, res) => {
   const { comment } = req.body;
   if (!comment?.trim()) return res.status(400).json({ error: 'Comment cannot be empty' });
 
@@ -439,7 +440,7 @@ router.post('/:no/comments', async (req, res) => {
 // POST /api/service/:no/checklist/seed — seed template items
 // Idempotent: only inserts if checklist is currently empty
 // ============================================================
-router.post('/:no/checklist/seed', async (req, res) => {
+router.post('/:no/checklist/seed', requirePermission('WORKSHOP', 'edit'), async (req, res) => {
   try {
     const { data: card } = await supabase
       .from('lp_service_cards').select('sc_vehicle').eq('sc_no', req.params.no).single();
@@ -458,7 +459,7 @@ router.post('/:no/checklist/seed', async (req, res) => {
 // ============================================================
 // POST /api/service/:no/checklist — add item
 // ============================================================
-router.post('/:no/checklist', async (req, res) => {
+router.post('/:no/checklist', requirePermission('WORKSHOP', 'edit'), async (req, res) => {
   const { item_label, sl_order } = req.body;
   if (!item_label?.trim()) return res.status(400).json({ error: 'Item label required' });
 
@@ -479,7 +480,7 @@ router.post('/:no/checklist', async (req, res) => {
 // ============================================================
 // PATCH /api/service/:no/checklist/:id — toggle item
 // ============================================================
-router.patch('/:no/checklist/:id', async (req, res) => {
+router.patch('/:no/checklist/:id', requirePermission('WORKSHOP', 'edit'), async (req, res) => {
   const { sl_checked, sl_comment } = req.body;
   const updateFields = {};
   if (sl_checked !== undefined) {
@@ -507,7 +508,7 @@ router.patch('/:no/checklist/:id', async (req, res) => {
 // ============================================================
 // DELETE /api/service/:no/checklist/:id
 // ============================================================
-router.delete('/:no/checklist/:id', async (req, res) => {
+router.delete('/:no/checklist/:id', requirePermission('WORKSHOP', 'edit'), async (req, res) => {
   const { data: item } = await supabase
     .from('lp_service_checklist').select('sl_label').eq('id', req.params.id).single();
 
@@ -525,7 +526,7 @@ router.delete('/:no/checklist/:id', async (req, res) => {
 // ============================================================
 // POST /api/service/:no/reject — reject a pending service card
 // ============================================================
-router.post('/:no/reject', async (req, res) => {
+router.post('/:no/reject', requirePermission('WORKSHOP', 'approve'), async (req, res) => {
   const { reason } = req.body;
   if (!reason?.trim()) return res.status(400).json({ error: 'Rejection reason is required' });
 
@@ -557,7 +558,7 @@ router.post('/:no/reject', async (req, res) => {
 // POST /api/service/:no/complete — complete service with KMs
 // Updates vehicle odometer + unblocks it
 // ============================================================
-router.post('/:no/complete', async (req, res) => {
+router.post('/:no/complete', requirePermission('WORKSHOP', 'approve'), async (req, res) => {
   const { completion_km } = req.body;
   const km = parseInt(completion_km, 10);
   if (!km || isNaN(km) || km <= 0)
