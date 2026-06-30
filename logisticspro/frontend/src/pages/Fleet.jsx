@@ -259,6 +259,11 @@ function FleetList({ focusServiceDue }) {
   const [serviceHistory, setServiceHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [openServiceCard, setOpenServiceCard] = useState(null);
+  const [tripHistory, setTripHistory] = useState([]);
+  const [tripHistoryLoading, setTripHistoryLoading] = useState(false);
+  const [tripHistoryLoaded, setTripHistoryLoaded] = useState(false);
+  const [expandedYears, setExpandedYears] = useState({});
+  const [expandedMonths, setExpandedMonths] = useState({});
 
   // Vehicle Details sections (Read-Only Identity / Auto-Calculated / Editable)
   // collapse on mobile only — see the .vehicle-section-body CSS rule in
@@ -355,6 +360,10 @@ function FleetList({ focusServiceDue }) {
     setAuditLog([]);
     setSectionCollapsed({ identity: true, auto: true, editable: false });
     setExpandedAudit({});
+    setTripHistory([]);
+    setTripHistoryLoaded(false);
+    setExpandedYears({});
+    setExpandedMonths({});
     setShowModal(true);
 
     // Load audit trail
@@ -381,6 +390,37 @@ function FleetList({ focusServiceDue }) {
       );
     } catch { setServiceHistory([]); }
     finally { setHistoryLoading(false); }
+  };
+
+  // Tracking History is lazy-loaded — most vehicles won't have trip data
+  // yet (it depends on Pulsit imports actually having been done), so this
+  // avoids an extra round-trip on every single card open for a tab that's
+  // often empty or unopened.
+  const loadTripHistory = async (code) => {
+    if (tripHistoryLoaded || tripHistoryLoading) return;
+    setTripHistoryLoading(true);
+    try {
+      const trips = await fetch(
+        `${import.meta.env.VITE_API_URL || ''}/api/vehicles/${code}/trips`,
+        { headers: { Authorization: 'Bearer ' + localStorage.getItem('lp_token') } }
+      ).then(r => r.json());
+      setTripHistory(Array.isArray(trips) ? trips : []);
+      // Default the most recent year/month open so there's something to
+      // see immediately rather than a wall of collapsed headers.
+      if (Array.isArray(trips) && trips.length > 0) {
+        const d = new Date(trips[0].start_time);
+        const yKey = String(d.getFullYear());
+        const mKey = `${yKey}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        setExpandedYears({ [yKey]: true });
+        setExpandedMonths({ [mKey]: true });
+      }
+    } catch { setTripHistory([]); }
+    finally { setTripHistoryLoading(false); setTripHistoryLoaded(true); }
+  };
+
+  const switchTab = (tab) => {
+    setActiveTab(tab);
+    if (tab === 'tracking_history' && editVehicle) loadTripHistory(editVehicle.vh_code);
   };
 
   const save = async () => {
@@ -955,11 +995,12 @@ function FleetList({ focusServiceDue }) {
             {/* Tabs */}
             <div style={{ display: 'flex', borderBottom: '1px solid #e8edf2', background: '#f8fafc' }}>
               {[
-                { key: 'details',         label: '📋 Vehicle Details' },
-                { key: 'service_history', label: `🔧 Service History (${serviceHistory.length})` },
-                { key: 'audit',           label: `📜 Audit Trail (${auditLog.length})` },
+                { key: 'details',          label: '📋 Vehicle Details' },
+                { key: 'tracking_history', label: '🗺️ Tracking History' },
+                { key: 'service_history',  label: `🔧 Service History (${serviceHistory.length})` },
+                { key: 'audit',            label: `📜 Audit Trail (${auditLog.length})` },
               ].map(tab => (
-                <button key={tab.key} onClick={() => setActiveTab(tab.key)} style={{
+                <button key={tab.key} onClick={() => switchTab(tab.key)} style={{
                   padding: '10px 20px', fontSize: 12, fontWeight: activeTab === tab.key ? 700 : 400,
                   border: 'none', background: 'none', cursor: 'pointer',
                   borderBottom: activeTab === tab.key ? '2px solid #005A8E' : '2px solid transparent',
@@ -1166,6 +1207,97 @@ function FleetList({ focusServiceDue }) {
                   </div>
                 </>
               )}
+
+              {activeTab === 'tracking_history' && (() => {
+                const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+                const fmtKm = (n) => `${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 1 })} km`;
+                const fmtMins = (n) => {
+                  const h = Math.floor((n || 0) / 60), m = (n || 0) % 60;
+                  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+                };
+
+                // Group into Year -> Month -> [trips], computed fresh each
+                // render off the flat tripHistory array — cheap enough for
+                // the realistic per-vehicle volumes this view covers.
+                const years = {};
+                tripHistory.forEach(t => {
+                  const d = new Date(t.start_time);
+                  const y = String(d.getFullYear());
+                  const m = d.getMonth();
+                  years[y] = years[y] || { months: {}, count: 0, distance: 0 };
+                  years[y].months[m] = years[y].months[m] || { trips: [], count: 0, distance: 0 };
+                  years[y].months[m].trips.push(t);
+                  years[y].months[m].count++;
+                  years[y].months[m].distance += Number(t.distance_km) || 0;
+                  years[y].count++;
+                  years[y].distance += Number(t.distance_km) || 0;
+                });
+                const sortedYears = Object.keys(years).sort((a, b) => b - a);
+
+                return (
+                  <div>
+                    {tripHistoryLoading && <div className="loading">Loading tracking history…</div>}
+                    {!tripHistoryLoading && tripHistory.length === 0 && (
+                      <div className="empty-state" style={{ padding: 40 }}>
+                        No trip history for this vehicle yet — this fills in once Pulsit Trip Report data has been imported (Fleet List → Import Trip Data) and/or the live tracking poller has been running.
+                      </div>
+                    )}
+                    {!tripHistoryLoading && sortedYears.map(y => {
+                      const yearOpen = !!expandedYears[y];
+                      return (
+                        <div key={y} style={{ marginBottom: 8, border: '1px solid #e8edf2', borderRadius: 6, overflow: 'hidden' }}>
+                          <div onClick={() => setExpandedYears(s => ({ ...s, [y]: !s[y] }))} style={{
+                            padding: '10px 14px', background: '#f8fafc', cursor: 'pointer',
+                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                          }}>
+                            <span style={{ fontWeight: 700, fontSize: 13 }}>{y}</span>
+                            <span style={{ fontSize: 11, color: '#888', display: 'flex', alignItems: 'center', gap: 10 }}>
+                              {years[y].count} trips · {fmtKm(years[y].distance)}
+                              <span style={{ transform: yearOpen ? 'none' : 'rotate(-90deg)', transition: 'transform 0.15s' }}>▾</span>
+                            </span>
+                          </div>
+                          {yearOpen && Object.keys(years[y].months).sort((a, b) => b - a).map(m => {
+                            const mKey = `${y}-${String(Number(m) + 1).padStart(2, '0')}`;
+                            const monthOpen = !!expandedMonths[mKey];
+                            const monthData = years[y].months[m];
+                            return (
+                              <div key={mKey} style={{ borderTop: '1px solid #f0f0f0' }}>
+                                <div onClick={() => setExpandedMonths(s => ({ ...s, [mKey]: !s[mKey] }))} style={{
+                                  padding: '8px 14px 8px 28px', cursor: 'pointer', background: 'white',
+                                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                }}>
+                                  <span style={{ fontWeight: 600, fontSize: 12, color: '#333' }}>{MONTH_NAMES[m]}</span>
+                                  <span style={{ fontSize: 11, color: '#888', display: 'flex', alignItems: 'center', gap: 10 }}>
+                                    {monthData.count} trips · {fmtKm(monthData.distance)}
+                                    <span style={{ fontSize: 10, transform: monthOpen ? 'none' : 'rotate(-90deg)', transition: 'transform 0.15s' }}>▾</span>
+                                  </span>
+                                </div>
+                                {monthOpen && (
+                                  <div style={{ padding: '4px 14px 10px 28px' }}>
+                                    {monthData.trips
+                                      .sort((a, b) => new Date(b.start_time) - new Date(a.start_time))
+                                      .map((t, i) => (
+                                        <div key={i} style={{ padding: '6px 0', borderBottom: i < monthData.trips.length - 1 ? '1px solid #f5f5f5' : 'none', fontSize: 11 }}>
+                                          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                            <strong>{fmtDateTime(t.start_time)}</strong>
+                                            <span style={{ color: '#059669', fontWeight: 600 }}>{fmtKm(t.distance_km)} · {fmtMins(t.elapsed_minutes)}</span>
+                                          </div>
+                                          <div style={{ color: '#888', marginTop: 2 }}>
+                                            {t.start_location || '—'} → {t.end_location || '—'}
+                                          </div>
+                                        </div>
+                                      ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
 
               {activeTab === 'service_history' && (
                 <div>
@@ -1399,16 +1531,16 @@ function TrackingMap({ vehicles, positions, selectedCode, onSelectVehicle }) {
 
         const icon = {
           path: window.google.maps.SymbolPath.CIRCLE,
-          scale: isSelected ? 16 : 13,
-          fillColor: isSelected ? '#005A8E' : '#0ea5e9',
+          scale: isSelected ? 22 : 12,
+          fillColor: isSelected ? '#f59e0b' : '#0ea5e9',
           fillOpacity: 1,
-          strokeColor: 'white',
-          strokeWeight: 2,
+          strokeColor: isSelected ? '#7c2d12' : 'white',
+          strokeWeight: isSelected ? 3 : 2,
         };
         const label = {
           text: code,
           color: 'white',
-          fontSize: '10px',
+          fontSize: isSelected ? '11px' : '10px',
           fontWeight: '700',
         };
 
@@ -1416,9 +1548,10 @@ function TrackingMap({ vehicles, positions, selectedCode, onSelectVehicle }) {
           markersRef.current[code].setPosition(position);
           markersRef.current[code].setIcon(icon);
           markersRef.current[code].setLabel(label);
+          markersRef.current[code].setZIndex(isSelected ? 999 : 1);
         } else {
           const marker = new window.google.maps.Marker({
-            position, map, icon, label, title: code,
+            position, map, icon, label, title: code, zIndex: isSelected ? 999 : 1,
           });
           marker.addListener('click', () => onSelectVehicle?.(vehicle || { vh_code: code }));
           markersRef.current[code] = marker;
