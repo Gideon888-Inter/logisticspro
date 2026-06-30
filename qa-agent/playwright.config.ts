@@ -3,7 +3,7 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const baseURL = process.env.APP_BASE_URL || 'http://localhost:3000';
+const baseURL = process.env.APP_BASE_URL || 'http://localhost:5173';
 
 export default defineConfig({
   testDir: './tests',
@@ -29,6 +29,18 @@ export default defineConfig({
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] }
+    },
+    {
+      name: 'Mobile Chrome',
+      use: { ...devices['Pixel 5'] }
+    },
+    {
+      name: 'Mobile Safari',
+      use: { ...devices['iPhone 12'] }
+    },
+    {
+      name: 'Tablet',
+      use: { ...devices['iPad Pro 11'] }
     }
   ]
 });
