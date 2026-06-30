@@ -7,193 +7,70 @@ const API = import.meta.env.VITE_API_URL || '';
 const MAPS_KEY = import.meta.env.VITE_MAPS_KEY || '';
 
 // ── Google Maps loader (declared ONCE here — do not repeat below) ──
+// Reports failures through the callback instead of failing silently, so
+// the picker can show a real message for: missing key, invalid key,
+// billing disabled, Places not enabled, blocked referrer, or network
+// failure. window.gm_authFailure is the global Google Maps calls when
+// the key/billing/referrer check fails — there is no exception to catch.
 let mapsLoaded = false;
 let mapsLoading = false;
-const mapsCallbacks = [];
+let mapsError = null;
+const mapsCallbacks = []; // each: (error: string|null) => void
+
+function resetGoogleMapsLoader() {
+  mapsLoaded = false;
+  mapsLoading = false;
+  mapsError = null;
+  delete window.gm_authFailure;
+  const existing = document.getElementById('lp-google-maps-script');
+  if (existing) existing.remove();
+}
+
 function loadGoogleMaps(cb) {
-  if (mapsLoaded) return cb();
+  if (mapsLoaded) return cb(null);
+  if (mapsError) return cb(mapsError);
   if (!MAPS_KEY) {
-    console.warn('Google Maps key missing (VITE_MAPS_KEY) — map picker disabled.');
-    return;
+    const msg = 'Map picker is not configured (missing Google Maps API key). Contact your administrator.';
+    console.warn(msg);
+    mapsError = msg;
+    return cb(msg);
   }
+
   mapsCallbacks.push(cb);
   if (mapsLoading) return;
   mapsLoading = true;
+
+  // Fires if the key is invalid, billing is disabled, or the referrer
+  // (domain) isn't on the allowed list for this key.
+  window.gm_authFailure = () => {
+    mapsLoading = false;
+    mapsError = 'Google Maps rejected this site — check the API key, billing status, or allowed domains in Google Cloud Console.';
+    mapsCallbacks.forEach(f => f(mapsError));
+    mapsCallbacks.length = 0;
+  };
+
   const script = document.createElement('script');
+  script.id = 'lp-google-maps-script';
   script.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_KEY}&libraries=places`;
   script.async = true;
   script.onload = () => {
-    mapsLoaded = true;
-    mapsCallbacks.forEach(f => f());
+    // gm_authFailure (if it fires) does so asynchronously right after load —
+    // give it a brief window before declaring success.
+    setTimeout(() => {
+      if (mapsError) return; // already handled by gm_authFailure above
+      mapsLoaded = true;
+      mapsLoading = false;
+      mapsCallbacks.forEach(f => f(null));
+      mapsCallbacks.length = 0;
+    }, 300);
+  };
+  script.onerror = () => {
+    mapsLoading = false;
+    mapsError = 'Could not reach Google Maps — check your internet connection.';
+    mapsCallbacks.forEach(f => f(mapsError));
     mapsCallbacks.length = 0;
   };
   document.head.appendChild(script);
-}
-
-const token = () => localStorage.getItem('lp_token');
-const req = (path, opts = {}) =>
-  fetch(API + '/api' + path, {
-    ...opts,
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer ' + token(),
-      ...(opts.headers || {}),
-    },
-  }).then(r => r.json());
-
-// ── Status definitions ────────────────────────────────────────
-const STATUS_BADGE = {
-  PRELOAD:               'badge-gray',
-  EN_ROUTE:              'badge-blue',
-  OFFLOADED:             'badge-green',
-  WAIT_ORDER_NO:         'badge-amber',
-  WAIT_POD_SCAN:         'badge-amber',
-  WAIT_APPROVAL:         'badge-blue',
-  WAIT_RATE_CHECK:       'badge-orange',
-  WAIT_INVOICE_NO:       'badge-orange',
-  LOAD_INVOICED:         'badge-green',
-  WAIT_PROCESSING:       'badge-gray',
-  REJECTED:              'badge-red',
-  PENDING_KM_APPROVAL:   'badge-orange',
-  KM_CORRECTION_NEEDED:  'badge-red',
-};
-
-// ── Movement view: short "current status" text + colour, derived from
-// the load's status + destination (no live GPS field exists yet) ──────────
-function movementStatusText(l) {
-  const to = l.m_to || '—';
-  switch (l.m_status) {
-    case 'PRELOAD':              return `Awaiting dispatch to ${to}`;
-    case 'EN_ROUTE':              return `En Route to ${to}`;
-    case 'OFFLOADED':             return `Arrived at ${to}`;
-    case 'WAIT_ORDER_NO':         return 'Awaiting Order Number';
-    case 'WAIT_POD_SCAN':         return 'Awaiting POD Scan';
-    case 'WAIT_APPROVAL':         return 'Awaiting Operator Approval';
-    case 'WAIT_RATE_CHECK':       return 'Awaiting Rate Check';
-    case 'WAIT_INVOICE_NO':       return 'Awaiting Invoice';
-    case 'LOAD_INVOICED':         return 'Invoiced';
-    case 'WAIT_PROCESSING':       return 'Processing';
-    case 'REJECTED':              return 'Rejected';
-    case 'PENDING_KM_APPROVAL':   return 'KM Pending Approval';
-    case 'KM_CORRECTION_NEEDED':  return 'KM Correction Needed';
-    default:                      return l.m_status?.replace(/_/g, ' ') || '—';
-  }
-}
-function movementStatusColor(l) {
-  const badgeClass = STATUS_BADGE[l.m_status] || 'badge-gray';
-  return {
-    'badge-gray':   '#374151',
-    'badge-blue':   '#1e40af',
-    'badge-green':  '#065f46',
-    'badge-amber':  '#92400e',
-    'badge-orange': '#9a3412',
-    'badge-red':    '#991b1b',
-  }[badgeClass] || '#374151';
-}
-
-// Statuses users can manually filter/view — KM system statuses are EXCLUDED
-// from the workflow buttons but INCLUDED in the filter dropdown
-const ALL_STATUSES = [
-  'PRELOAD', 'EN_ROUTE', 'OFFLOADED',
-  'WAIT_ORDER_NO', 'WAIT_POD_SCAN', 'WAIT_APPROVAL',
-  'WAIT_RATE_CHECK', 'WAIT_INVOICE_NO', 'LOAD_INVOICED', 'REJECTED',
-  'PENDING_KM_APPROVAL', 'KM_CORRECTION_NEEDED',
-];
-
-// The valid manual workflow sequence (no KM system statuses here)
-const WORKFLOW_STEPS = [
-  'PRELOAD', 'EN_ROUTE', 'OFFLOADED',
-  'WAIT_ORDER_NO', 'WAIT_POD_SCAN', 'WAIT_APPROVAL',
-  'WAIT_RATE_CHECK', 'WAIT_INVOICE_NO', 'LOAD_INVOICED',
-];
-
-// Who can manually advance each step
-const STEP_ROLES = {
-  PRELOAD:          ['OPERATOR', 'ADMIN'],
-  EN_ROUTE:         ['OPERATOR', 'ADMIN'],              // via KM offload
-  OFFLOADED:        ['OPERATOR', 'ADMIN'],              // → WAIT_ORDER_NO
-  WAIT_ORDER_NO:    ['OPERATOR', 'ADMIN'],              // → WAIT_POD_SCAN
-  WAIT_POD_SCAN:    [],                                 // system only (POD upload)
-  WAIT_APPROVAL:    ['OPERATOR', 'ADMIN'],              // Operator reviews POD → WAIT_RATE_CHECK
-  WAIT_RATE_CHECK:  ['MANAGER', 'ADMIN'],               // Admin/Manager confirms rate → WAIT_INVOICE_NO
-  WAIT_INVOICE_NO:  [],                                 // system only (invoice flow)
-};
-
-const COST_TYPES = ['Loadshift', 'Fine', 'Labour', 'Extra Stop', 'Other'];
-
-function fmtDate(d) {
-  return d
-    ? new Date(d).toLocaleDateString('en-ZA', {
-        day: '2-digit', month: 'short', year: 'numeric',
-      })
-    : '—';
-}
-
-function fmtDateTime(d) {
-  return d
-    ? new Date(d).toLocaleString('en-ZA', {
-        day: '2-digit', month: 'short', year: 'numeric',
-        hour: '2-digit', minute: '2-digit',
-      })
-    : '—';
-}
-
-function fmtR(n) {
-  return n || n === 0
-    ? 'R ' + Number(n).toLocaleString('en-ZA', { minimumFractionDigits: 0 })
-    : '—';
-}
-
-// ── Export CSV helper ─────────────────────────────────────────
-async function exportAllLoadsCSV(dateFrom, dateTo, status, search) {
-  const tkn = localStorage.getItem('lp_token');
-  const BASE = import.meta.env.VITE_API_URL || '';
-  let allLoads = [];
-  let currentPage = 1;
-  let hasMore = true;
-  const batchSize = 1000;
-
-  while (hasMore) {
-    const params = new URLSearchParams({ limit: batchSize, page: currentPage });
-    if (dateFrom) params.append('date_from', dateFrom);
-    if (dateTo)   params.append('date_to', dateTo);
-    if (status)   params.append('status', status);
-    if (search)   params.append('search', search);
-
-    const res = await fetch(`${BASE}/api/loads?${params}`, {
-      headers: { 'Authorization': 'Bearer ' + tkn },
-    });
-    const json = await res.json();
-    const batch = json.data || [];
-    allLoads = allLoads.concat(batch);
-    hasMore = batch.length === batchSize;
-    currentPage++;
-  }
-
-  const headers = [
-    'Load Number', 'Load Date', 'Client', 'Truck', 'Driver',
-    'From', 'To', 'Rate', 'Status', 'Opening KM', 'Closing KM',
-    'Trailer 1', 'Operator', 'Invoice No', 'Order No',
-  ];
-  const rows = allLoads.map(l => [
-    l.m_load_no || '', l.m_date || '', l.m_customer || '',
-    l.m_truck || '', l.m_driver_id || '', l.m_from || '', l.m_to || '',
-    l.m_rate || 0, l.m_status || '',
-    l.m_opening_km || 0, l.m_closing_km || 0,
-    l.m_trailer1 || '', l.m_responsible_operator || '',
-    l.m_invoice || '', l.m_order_no || '',
-  ]);
-
-  const csv = [headers, ...rows]
-    .map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))
-    .join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `loads_export_${dateFrom || 'all'}_to_${dateTo || 'today'}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
 }
 
 // ── Map Location Picker ───────────────────────────────────────
@@ -204,6 +81,8 @@ function MapPicker({ label, value, onChange, onClose }) {
   const mapRef = React.useRef(null);
   const inputRef = React.useRef(null);
   const [address, setAddress] = React.useState(value || '');
+  const [mapError, setMapError] = React.useState(null);
+  const [retryKey, setRetryKey] = React.useState(0);
 
   const updateAddress = (newAddr) => {
     setAddress(newAddr);
@@ -212,65 +91,79 @@ function MapPicker({ label, value, onChange, onClose }) {
   };
 
   React.useEffect(() => {
-    loadGoogleMaps(() => {
-      const defaultPos = { lat: -26.2041, lng: 28.0473 }; // Johannesburg
-      const m = new window.google.maps.Map(mapRef.current, {
-        center: defaultPos, zoom: 10,
-        mapTypeControl: false, streetViewControl: false,
-      });
-      const mk = new window.google.maps.Marker({ map: m, draggable: true });
-
-      // Autocomplete search box
-      const autocomplete = new window.google.maps.places.Autocomplete(
-        inputRef.current,
-        { componentRestrictions: { country: 'za' } }
-      );
-      autocomplete.bindTo('bounds', m);
-      autocomplete.addListener('place_changed', () => {
-        const place = autocomplete.getPlace();
-        if (!place.geometry) return;
-        m.setCenter(place.geometry.location);
-        m.setZoom(15);
-        mk.setPosition(place.geometry.location);
-        // FIX: Use the formatted address from the place result
-        const addr = place.formatted_address || inputRef.current.value;
-        updateAddress(addr);
-      });
-
-      // Click on map to pin
-      m.addListener('click', (e) => {
-        mk.setPosition(e.latLng);
-        const geocoder = new window.google.maps.Geocoder();
-        geocoder.geocode({ location: e.latLng }, (results, status) => {
-          if (status === 'OK' && results[0]) {
-            updateAddress(results[0].formatted_address);
-          }
+    setMapError(null);
+    loadGoogleMaps((err) => {
+      if (err) { setMapError(err); return; }
+      try {
+        const defaultPos = { lat: -26.2041, lng: 28.0473 }; // Johannesburg
+        const m = new window.google.maps.Map(mapRef.current, {
+          center: defaultPos, zoom: 10,
+          mapTypeControl: false, streetViewControl: false,
         });
-      });
+        const mk = new window.google.maps.Marker({ map: m, draggable: true });
 
-      // Drag the marker
-      mk.addListener('dragend', (e) => {
-        const geocoder = new window.google.maps.Geocoder();
-        geocoder.geocode({ location: e.latLng }, (results, status) => {
-          if (status === 'OK' && results[0]) {
-            updateAddress(results[0].formatted_address);
-          }
+        // Autocomplete search box
+        const autocomplete = new window.google.maps.places.Autocomplete(
+          inputRef.current,
+          { componentRestrictions: { country: 'za' } }
+        );
+        autocomplete.bindTo('bounds', m);
+        autocomplete.addListener('place_changed', () => {
+          const place = autocomplete.getPlace();
+          if (!place.geometry) return;
+          m.setCenter(place.geometry.location);
+          m.setZoom(15);
+          mk.setPosition(place.geometry.location);
+          // FIX: Use the formatted address from the place result
+          const addr = place.formatted_address || inputRef.current.value;
+          updateAddress(addr);
         });
-      });
 
-      // If a value was passed in, show it on the map
-      if (value) {
-        const geocoder = new window.google.maps.Geocoder();
-        geocoder.geocode({ address: value + ', South Africa' }, (results, status) => {
-          if (status === 'OK' && results[0]) {
-            m.setCenter(results[0].geometry.location);
-            m.setZoom(14);
-            mk.setPosition(results[0].geometry.location);
-          }
+        // Click on map to pin
+        m.addListener('click', (e) => {
+          mk.setPosition(e.latLng);
+          const geocoder = new window.google.maps.Geocoder();
+          geocoder.geocode({ location: e.latLng }, (results, status) => {
+            if (status === 'OK' && results[0]) {
+              updateAddress(results[0].formatted_address);
+            }
+          });
         });
+
+        // Drag the marker
+        mk.addListener('dragend', (e) => {
+          const geocoder = new window.google.maps.Geocoder();
+          geocoder.geocode({ location: e.latLng }, (results, status) => {
+            if (status === 'OK' && results[0]) {
+              updateAddress(results[0].formatted_address);
+            }
+          });
+        });
+
+        // If a value was passed in, show it on the map
+        if (value) {
+          const geocoder = new window.google.maps.Geocoder();
+          geocoder.geocode({ address: value + ', South Africa' }, (results, status) => {
+            if (status === 'OK' && results[0]) {
+              m.setCenter(results[0].geometry.location);
+              m.setZoom(14);
+              mk.setPosition(results[0].geometry.location);
+            }
+          });
+        }
+      } catch (e) {
+        // Most likely cause: Places API not enabled on this key, so
+        // google.maps.places.Autocomplete isn't a usable constructor.
+        console.error('Map picker init error:', e);
+        setMapError(`Map picker failed to start (${e.message}). You can still type the address below.`);
       }
     });
-  }, []);
+  }, [retryKey]);
+
+  const retry = () => {
+    resetGoogleMapsLoader();
+    setRetryKey(k => k + 1);
+  };
 
   // FIX: Confirm passes the current address state (not DOM value) to parent
   const confirm = () => {
@@ -291,10 +184,26 @@ function MapPicker({ label, value, onChange, onClose }) {
               ref={inputRef}
               defaultValue={value}
               placeholder="Search for an address…"
+              onChange={(e) => updateAddress(e.target.value)}
               style={{ width: '100%', padding: '8px 12px', fontSize: 13, border: '1px solid #ddd', borderRadius: 4, fontFamily: 'inherit', boxSizing: 'border-box' }}
             />
           </div>
-          <div ref={mapRef} style={{ width: '100%', height: 380 }} />
+          {mapError ? (
+            <div style={{ padding: '20px 16px', textAlign: 'center' }}>
+              <div style={{ fontSize: 28, marginBottom: 8 }}>⚠️</div>
+              <div style={{ fontSize: 13, color: '#c05621', fontWeight: 600, marginBottom: 4 }}>Map unavailable</div>
+              <div style={{ fontSize: 12, color: '#888', marginBottom: 12, maxWidth: 440, marginLeft: 'auto', marginRight: 'auto' }}>{mapError}</div>
+              <button onClick={retry} style={{
+                fontSize: 12, padding: '6px 14px', border: '1px solid #ddd', borderRadius: 6,
+                background: 'white', cursor: 'pointer', color: '#555',
+              }}>↻ Retry</button>
+              <div style={{ fontSize: 11, color: '#aaa', marginTop: 10 }}>
+                The address field above still works — type the full address and confirm.
+              </div>
+            </div>
+          ) : (
+            <div ref={mapRef} style={{ width: '100%', height: 380 }} />
+          )}
           {address && (
             <div style={{ padding: '10px 16px', background: '#f0fdf4', borderTop: '1px solid #86efac', fontSize: 13, color: '#059669' }}>
               📍 <strong>Selected:</strong> {address}
