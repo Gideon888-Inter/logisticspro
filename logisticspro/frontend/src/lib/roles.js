@@ -377,11 +377,14 @@ export function canSelectInventoryOnPO(user) {
  * because they are already at or above L1 in the hierarchy.
  */
 export function myPOApprovalStatuses(user) {
-  // Higher-level roles can approve lower stages (hierarchy bypass).
-  // The backend enforces the same logic — this drives UI button visibility.
-  // PENDING_FINANCIAL is no longer an approval step — it means Finance has approved
-  // and the PO is waiting for an AP invoice to be captured against it.
-  // Finance/Admin approve FROM lower stages, pushing the PO TO PENDING_FINANCIAL.
+  // DB-driven (lp_po_approval_tiers, returned as user.po_approval_tier by
+  // /auth/login and /auth/me) — works for custom roles, not just the 11
+  // built-in ones. Falls back to the hardcoded map only if a session
+  // predates this field (shouldn't happen after a fresh login).
+  if (user?.po_approval_tier !== undefined) {
+    const stages = ['PENDING_L1', 'PENDING_L2', 'PENDING_L3'];
+    return stages.slice(0, Math.min(user.po_approval_tier, 3));
+  }
   const map = {
     [ROLES.STOCK_CONTROLLER]:   ['PENDING_L1'],
     [ROLES.WORKSHOP_ASSISTANT]: ['PENDING_L1', 'PENDING_L2'],
@@ -398,9 +401,17 @@ export function hasPOApprovalDuties(user) {
 
 /**
  * First approval status when a PO is submitted, based on who created it.
- * Mirrors the logic in inventory.js backend firstApprovalStatus().
+ * Mirrors getPOApprovalTier()/firstApprovalStatus() in the backend
+ * routes/inventory.js — same tier table, same formula.
+ * Accepts either the full user object (preferred — uses DB tier) or a bare
+ * role-key string for backward compatibility with older call sites.
  */
-export function firstApprovalStatus(creatorRole) {
+export function firstApprovalStatus(userOrRole) {
+  if (userOrRole && typeof userOrRole === 'object' && userOrRole.po_approval_tier !== undefined) {
+    const stageOrder = ['PENDING_L1', 'PENDING_L2', 'PENDING_L3', 'PENDING_FINANCIAL'];
+    return stageOrder[Math.min(userOrRole.po_approval_tier, 3)];
+  }
+  const creatorRole = typeof userOrRole === 'string' ? userOrRole : userOrRole?.role;
   if (creatorRole === ROLES.WORKSHOP_MANAGER) return 'PENDING_FINANCIAL';
   if (creatorRole === ROLES.WORKSHOP_ASSISTANT) return 'PENDING_L3';
   if (creatorRole === ROLES.STOCK_CONTROLLER) return 'PENDING_L2';
@@ -411,10 +422,11 @@ export function firstApprovalStatus(creatorRole) {
 /**
  * Capital purchase option — locked by default.
  * Admin enables via lp_config 'po_capital_enabled'.
- * Only Workshop Manager and Admin can use it even when enabled.
+ * can_use_capital_po is DB-driven (lp_po_approval_tiers) when present.
  */
 export function canUseCapitalPO(user, capitalEnabled = false) {
   if (!capitalEnabled) return false;
+  if (user?.can_use_capital_po !== undefined) return user.can_use_capital_po;
   return [ROLES.ADMIN, ROLES.WORKSHOP_MANAGER].includes(user?.role);
 }
 
