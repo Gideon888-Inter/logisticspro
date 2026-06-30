@@ -17,6 +17,7 @@ const invoicesRouter = require('./routes/invoices');
 const stockRouter    = require('./routes/inventory');    // LP2.0 Inventory & PO module
 const rolesRouter    = require('./routes/roles_admin');  // LP2.0 Role Manager
 const financeRouter  = require('./routes/finance');       // LP2.0 Financial Module
+const trackingRouter = require('./routes/tracking');      // LP2.0 Pulsit GPS tracking integration
 
 const app = express();
 app.set('trust proxy', 1);
@@ -55,6 +56,7 @@ app.use('/api/maintenance', maintenanceRouter);
 app.use('/api/stock',       stockRouter);       // LP2.0 Inventory & Purchase Orders module
 app.use('/api/roles',       rolesRouter);       // LP2.0 Role Manager (Admin only)
 app.use('/api/fin',         financeRouter);    // LP2.0 Financial Module
+app.use('/api/tracking',    trackingRouter);    // LP2.0 Pulsit GPS tracking integration
 app.use('/api/routes',      routesRouter);
 app.use('/api/rates',       clientRatesRouter);
 app.use('/api/users',       usersRouter);
