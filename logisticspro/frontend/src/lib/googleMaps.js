@@ -50,7 +50,7 @@ export function loadGoogleMaps(cb) {
 
   const script = document.createElement('script');
   script.id = 'lp-google-maps-script';
-  script.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_KEY}&libraries=places`;
+  script.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_KEY}&libraries=places&loading=async`;
   script.async = true;
   script.onload = () => {
     // gm_authFailure (if it fires) does so asynchronously right after load —
