@@ -244,6 +244,8 @@ function FleetList({ focusServiceDue }) {
   const [sortCol, setSortCol] = useState('vh_code');
   const [sortDir, setSortDir] = useState('asc');
   const [quickFilter, setQuickFilter] = useState('all');  // all | service_due | align_due | cof_expired | license_expired
+  const [tripImporting, setTripImporting] = useState(false);
+  const [tripImportResult, setTripImportResult] = useState(null);
   const [expandedHorse, setExpandedHorse] = useState(null); // vh_code of the horse row currently expanded to show its nested trailer(s)
 
   // Modal state
@@ -320,6 +322,23 @@ function FleetList({ focusServiceDue }) {
   // with a loadNo riding along so the Loads page can open straight to it.
   const goToLoad = (loadNo) => {
     window.dispatchEvent(new CustomEvent('lp-navigate', { detail: { page: 'movement', loadNo } }));
+  };
+
+  // Pulsit Trip Report import — Admin only (see POST /vehicles/import-trips).
+  const handleTripImport = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // allow re-selecting the same file after fixing/re-uploading
+    if (!file) return;
+    setTripImporting(true);
+    setTripImportResult(null);
+    try {
+      const result = await api.importVehicleTrips(file);
+      setTripImportResult(result);
+    } catch (err) {
+      setTripImportResult({ error: err.message });
+    } finally {
+      setTripImporting(false);
+    }
   };
 
   const openEdit = async (v) => {
@@ -559,7 +578,39 @@ function FleetList({ focusServiceDue }) {
           <option value="N">Inactive</option>
         </select>
         <button className="btn btn-sm" onClick={() => exportCSV(filtered)}>⬇ Export CSV</button>
+        {user?.role === 'ADMIN' && (
+          <>
+            <label className="btn btn-sm" style={{ cursor: tripImporting ? 'default' : 'pointer', opacity: tripImporting ? 0.6 : 1 }}>
+              {tripImporting ? 'Importing…' : '📥 Import Trip Data'}
+              <input type="file" accept=".xlsx,.xls,.csv" onChange={handleTripImport} disabled={tripImporting} style={{ display: 'none' }} />
+            </label>
+          </>
+        )}
       </div>
+      {tripImportResult && (
+        <div style={{
+          margin: '0 0 12px', padding: '10px 14px', borderRadius: 6, fontSize: 12,
+          background: tripImportResult.error ? '#fff5f5' : '#f0fdf4',
+          border: `1px solid ${tripImportResult.error ? '#fca5a5' : '#bbf7d0'}`,
+          color: tripImportResult.error ? '#e53e3e' : '#065f46',
+        }}>
+          {tripImportResult.error ? (
+            <>⚠ {tripImportResult.error}</>
+          ) : (
+            <>
+              ✓ Imported {tripImportResult.rows_processed} of {tripImportResult.rows_in_file} rows from the file.
+              {tripImportResult.rows_skipped_missing_fields > 0 && ` ${tripImportResult.rows_skipped_missing_fields} row(s) skipped (missing required fields).`}
+              {tripImportResult.unresolved_vehicle_codes?.length > 0 && (
+                <div style={{ marginTop: 4, color: '#c05621' }}>
+                  ⚠ These vehicle codes didn't match anything in Fleet, so their trips weren't imported: <strong>{tripImportResult.unresolved_vehicle_codes.join(', ')}</strong>.
+                  Fix or add them, then re-upload the same file — already-imported trips won't be duplicated.
+                </div>
+              )}
+            </>
+          )}
+          <button onClick={() => setTripImportResult(null)} style={{ float: 'right', border: 'none', background: 'none', cursor: 'pointer', color: 'inherit', fontWeight: 700 }}>✕</button>
+        </div>
+      )}
 
       {/* Mobile card list */}
       <div className="mobile-card-list">
