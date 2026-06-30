@@ -115,9 +115,13 @@ const BUILTIN_PERMISSION_MAP = {
   LOADS:           { view: CAN_VIEW_LOADS,   edit: [...CAN_CREATE_LOAD],        delete: CAN_DELETE_LOAD, approve: CAN_APPROVE_FOR_POD },
   PODS:            { view: CAN_VIEW_LOADS,   edit: CAN_MARK_POD,               delete: [], approve: CAN_MARK_POD },
   COSTS:           { view: CAN_VIEW_LOADS,   edit: CAN_ADD_COSTS,              delete: [ROLES.ADMIN, ROLES.MANAGER, ROLES.OPERATOR], approve: [ROLES.ADMIN, ROLES.MANAGER, ROLES.OPERATOR] },
-  FLEET:           { view: CAN_VIEW_FLEET,   edit: CAN_EDIT_FLEET,             delete: [ROLES.ADMIN], approve: [] },
-  DRIVERS:         { view: CAN_MANAGE_CLIENTS, edit: CAN_MANAGE_CLIENTS,       delete: [ROLES.ADMIN], approve: [] },
-  CLIENTS:         { view: CAN_MANAGE_CLIENTS, edit: CAN_MANAGE_CLIENTS,       delete: [ROLES.ADMIN], approve: [] },
+  // FLEET.edit = operational fleet actions (assignments, KM, etc). FLEET.approve
+  // is reused here for vehicle MASTER RECORD management (create/edit vehicle in
+  // the register) — a separate, stricter concern, matching vehicles.js.
+  FLEET:           { view: CAN_VIEW_FLEET,   edit: CAN_EDIT_FLEET,             delete: [ROLES.ADMIN], approve: [ROLES.ADMIN, ROLES.MANAGER] },
+  DRIVERS:         { view: CAN_MANAGE_CLIENTS, edit: [ROLES.ADMIN, ROLES.MANAGER], delete: [ROLES.ADMIN], approve: [] },
+  CLIENTS:         { view: CAN_MANAGE_CLIENTS, edit: [ROLES.ADMIN, ROLES.MANAGER], delete: [ROLES.ADMIN], approve: [] },
+  ROUTES:          { view: CAN_VIEW_LOADS,     edit: [ROLES.ADMIN, ROLES.MANAGER], delete: [ROLES.ADMIN], approve: [] },
   RATES:           { view: CAN_VIEW_RATES,   edit: CAN_VIEW_RATES,             delete: [ROLES.ADMIN, ROLES.MANAGER], approve: [] },
   WORKSHOP:        { view: CAN_VIEW_WORKSHOP, edit: CAN_EDIT_WORKSHOP,         delete: [ROLES.ADMIN, ROLES.WORKSHOP_MANAGER], approve: CAN_EDIT_WORKSHOP },
   INVENTORY:       { view: CAN_VIEW_INVENTORY, edit: CAN_CREATE_INVENTORY_ITEMS, delete: [ROLES.ADMIN, ROLES.WORKSHOP_MANAGER], approve: CAN_APPROVE_INVENTORY_ITEMS },
@@ -125,7 +129,7 @@ const BUILTIN_PERMISSION_MAP = {
   INVOICES:        { view: CAN_MANAGE_INVOICES, edit: CAN_MANAGE_INVOICES,     delete: [ROLES.ADMIN], approve: CAN_APPROVE_INVOICE },
   FINANCE:         { view: CAN_MANAGE_INVOICES, edit: CAN_POST_GL_JOURNALS,    delete: [ROLES.ADMIN], approve: CAN_POST_GL_JOURNALS },
   APPROVALS:       { view: [ROLES.ADMIN, ROLES.OPERATOR, ROLES.FINANCE], edit: [ROLES.ADMIN, ROLES.OPERATOR, ROLES.FINANCE], delete: [], approve: [ROLES.ADMIN, ROLES.OPERATOR, ROLES.FINANCE] },
-  USERS:           { view: CAN_MANAGE_USERS, edit: CAN_MANAGE_USERS,          delete: [ROLES.ADMIN], approve: CAN_MANAGE_USERS },
+  USERS:           { view: CAN_MANAGE_USERS, edit: [ROLES.ADMIN],             delete: [ROLES.ADMIN], approve: CAN_MANAGE_USERS },
   ROLES:           { view: CAN_MANAGE_ROLES, edit: CAN_MANAGE_ROLES,          delete: CAN_MANAGE_ROLES, approve: [] },
   REPORTS:         { view: CAN_VIEW_LOADS,   edit: [ROLES.ADMIN],             delete: [ROLES.ADMIN], approve: [] },
   KM:              { view: CAN_VIEW_LOADS,   edit: CAN_APPROVE_KM,             delete: [ROLES.ADMIN], approve: [...CAN_APPROVE_KM, ROLES.MANAGER] },
