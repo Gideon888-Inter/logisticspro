@@ -476,8 +476,14 @@ function FleetTab() {
   const load = async () => {
     try {
       const r = await req('/vehicles/fleet-overview');
-      setData(Array.isArray(r) ? r : []);
-      setError('');
+      if (Array.isArray(r)) {
+        setData(r);
+        setError('');
+      } else {
+        setData([]);
+        setError(r?.error || 'Unexpected response from the server — see console for details.');
+        console.error('[FleetTab] unexpected response:', r);
+      }
     } catch (e) {
       setError('Could not load fleet data — server may be starting up.');
     } finally {
@@ -527,6 +533,11 @@ function FleetTab() {
               </tr>
             </thead>
             <tbody>
+              {data.length === 0 && (
+                <tr><td colSpan={5} style={{ textAlign: 'center', color: '#aaa', fontSize: 13, padding: 24 }}>
+                  No active horses found.
+                </td></tr>
+              )}
               {data.map(v => (
                 <tr key={v.vh_code}>
                   <td style={{ fontFamily:'monospace', fontWeight:700 }}>{v.vh_code}</td>
