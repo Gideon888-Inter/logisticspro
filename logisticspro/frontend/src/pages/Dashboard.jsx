@@ -468,7 +468,118 @@ function ServiceTile({ vehicles, onNavigate }) {
   );
 }
 
+function FleetTab() {
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const load = async () => {
+    try {
+      const r = await req('/vehicles/fleet-overview');
+      setData(Array.isArray(r) ? r : []);
+      setError('');
+    } catch (e) {
+      setError('Could not load fleet data — server may be starting up.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    load();
+    const id = setInterval(load, 20000); // keep ignition/location reasonably fresh
+    return () => clearInterval(id);
+  }, []);
+
+  const fmtAgo = (iso) => {
+    if (!iso) return null;
+    const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+    if (isNaN(mins)) return null;
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    return new Date(iso).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short' });
+  };
+
+  if (loading) return <div className="loading">Loading fleet status…</div>;
+  if (error) return (
+    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'40vh', gap:12 }}>
+      <div style={{ fontSize:36 }}>⚠️</div>
+      <div style={{ fontSize:13, color:'#c05621' }}>{error}</div>
+      <button className="btn btn-primary" onClick={() => { setLoading(true); load(); }}>Retry</button>
+    </div>
+  );
+
+  return (
+    <div>
+      {/* Desktop table */}
+      <div className="desktop-table">
+        <div className="table-wrap" style={{ overflowX: 'auto' }}>
+          <table style={{ minWidth: 900 }}>
+            <thead>
+              <tr>
+                <th>Horse</th>
+                <th>Trailers</th>
+                <th>Ignition</th>
+                <th>Last Location</th>
+                <th>Load No</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.map(v => (
+                <tr key={v.vh_code}>
+                  <td style={{ fontFamily:'monospace', fontWeight:700 }}>{v.vh_code}</td>
+                  <td style={{ fontSize:12 }}>{v.trailers.length > 0 ? v.trailers.join(', ') : '—'}</td>
+                  <td>
+                    {v.ignition === 1 && <span style={{ color:'#059669', fontWeight:600, fontSize:12 }}>🟢 ON</span>}
+                    {v.ignition === 0 && <span style={{ color:'#888', fontWeight:600, fontSize:12 }}>⚫ OFF</span>}
+                    {v.ignition == null && <span style={{ color:'#ccc', fontSize:12 }}>—</span>}
+                  </td>
+                  <td style={{ fontSize:12, maxWidth:280 }}>
+                    {v.location || (v.lat != null ? `${v.lat.toFixed(4)}, ${v.lng.toFixed(4)}` : '—')}
+                    {v.lastUpdate && <div style={{ color:'#aaa', fontSize:11 }}>{fmtAgo(v.lastUpdate)}</div>}
+                  </td>
+                  <td style={{ fontFamily:'monospace', fontWeight:600, color: v.load_no ? '#005A8E' : '#bbb' }}>
+                    {v.load_no || 'None'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Mobile card list */}
+      <div className="mobile-card-list">
+        {data.map(v => (
+          <div key={v.vh_code} className="load-card" style={{ marginBottom: 10 }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
+              <span style={{ fontFamily:'monospace', fontWeight:700, fontSize:14 }}>{v.vh_code}</span>
+              {v.ignition === 1 && <span style={{ color:'#059669', fontWeight:600, fontSize:12 }}>🟢 ON</span>}
+              {v.ignition === 0 && <span style={{ color:'#888', fontWeight:600, fontSize:12 }}>⚫ OFF</span>}
+              {v.ignition == null && <span style={{ color:'#ccc', fontSize:12 }}>—</span>}
+            </div>
+            <div style={{ fontSize:12, color:'#666', marginBottom:4 }}>
+              Trailers: {v.trailers.length > 0 ? v.trailers.join(', ') : '—'}
+            </div>
+            <div style={{ fontSize:12, color:'#666', marginBottom:4 }}>
+              {v.location || (v.lat != null ? `${v.lat.toFixed(4)}, ${v.lng.toFixed(4)}` : 'Location unavailable')}
+              {v.lastUpdate && <span style={{ color:'#aaa' }}> · {fmtAgo(v.lastUpdate)}</span>}
+            </div>
+            <div style={{ fontFamily:'monospace', fontWeight:600, fontSize:13, color: v.load_no ? '#005A8E' : '#bbb' }}>
+              Load: {v.load_no || 'None'}
+            </div>
+          </div>
+        ))}
+        {data.length === 0 && <div style={{ color:'#aaa', fontSize:13, textAlign:'center', padding:20 }}>No active horses found.</div>}
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard({ onNavigate }) {
+  const [dashTab, setDashTab] = useState('overview');
   const [loads, setLoads] = useState([]);
   const [users, setUsers] = useState([]);
   const [vehicles, setVehicles] = useState([]);
@@ -531,25 +642,59 @@ export default function Dashboard({ onNavigate }) {
 
   useEffect(() => { fetchLoads(selectedMonth); }, [selectedMonth]);
 
-  if (loading) return (
-    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'50vh', gap:16 }}>
-      <div className="loading" style={{ paddingTop: 0 }}>
-        {retrying ? '⏳ Server is waking up…' : 'Loading dashboard…'}
+  const tabBar = (
+    <div style={{ display: 'flex', borderBottom: '2px solid #e8edf2', marginBottom: 16, background: 'white',
+      borderRadius: '8px 8px 0 0', overflow: 'hidden', border: '1px solid #e8edf2' }}>
+      {[['overview', 'Overview'], ['fleet', 'Fleet']].map(([key, label]) => {
+        const active = dashTab === key;
+        return (
+          <button key={key} onClick={() => setDashTab(key)} style={{
+            flex: 1, padding: '12px 8px', fontSize: 13, fontWeight: active ? 700 : 400,
+            border: 'none', background: active ? 'white' : '#f8fafc',
+            borderBottom: active ? '3px solid #005A8E' : '3px solid transparent',
+            color: active ? '#005A8E' : '#888', cursor: 'pointer', transition: 'all 0.15s',
+          }}>{label}</button>
+        );
+      })}
+    </div>
+  );
+
+  // Fleet tab fetches its own data independently — don't gate it on the
+  // Overview tab's month-based loads/error state.
+  if (dashTab === 'fleet') {
+    return (
+      <div>
+        {tabBar}
+        <FleetTab />
       </div>
-      {loadError && (
-        <div style={{ fontSize:13, color:'#c05621', background:'#fffaf0', border:'1px solid #fbd38d', borderRadius:6, padding:'8px 16px', maxWidth:400, textAlign:'center' }}>
-          {loadError}
+    );
+  }
+
+  if (loading) return (
+    <div>
+      {tabBar}
+      <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'50vh', gap:16 }}>
+        <div className="loading" style={{ paddingTop: 0 }}>
+          {retrying ? '⏳ Server is waking up…' : 'Loading dashboard…'}
         </div>
-      )}
+        {loadError && (
+          <div style={{ fontSize:13, color:'#c05621', background:'#fffaf0', border:'1px solid #fbd38d', borderRadius:6, padding:'8px 16px', maxWidth:400, textAlign:'center' }}>
+            {loadError}
+          </div>
+        )}
+      </div>
     </div>
   );
 
   if (loadError && !loading) return (
-    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'50vh', gap:16 }}>
-      <div style={{ fontSize:40 }}>⚠️</div>
-      <div style={{ fontSize:16, fontWeight:600, color:'#c05621' }}>Could not load dashboard</div>
-      <div style={{ fontSize:13, color:'#666', maxWidth:380, textAlign:'center' }}>{loadError}</div>
-      <button className="btn btn-primary" onClick={() => fetchLoads(selectedMonth)}>Retry</button>
+    <div>
+      {tabBar}
+      <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'50vh', gap:16 }}>
+        <div style={{ fontSize:40 }}>⚠️</div>
+        <div style={{ fontSize:16, fontWeight:600, color:'#c05621' }}>Could not load dashboard</div>
+        <div style={{ fontSize:13, color:'#666', maxWidth:380, textAlign:'center' }}>{loadError}</div>
+        <button className="btn btn-primary" onClick={() => fetchLoads(selectedMonth)}>Retry</button>
+      </div>
     </div>
   );
 
@@ -648,6 +793,8 @@ export default function Dashboard({ onNavigate }) {
 
   return (
     <div style={{display:'flex', flexDirection:'column', gap:20}}>
+
+      {tabBar}
 
       {/* Alert Tiles — License, Service, Driver PDP */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16 }}>
