@@ -1,6 +1,7 @@
 const express = require('express');
 const supabase = require('../supabase');
 const { fetchChunked } = require('../lib/supabasePaging');
+const { listFolderFiles, SP_INVOICE_FOLDER } = require('../lib/msgraph');
 const {
   authMiddleware, requireRole,
   ROLES,
@@ -130,6 +131,35 @@ router.get('/', requirePermission('LOADS', 'view'), async (req, res) => {
 // GET /api/loads/stats/summary
 // ============================================================
 router.get('/stats/summary', requirePermission('LOADS', 'view'), async (req, res) => {
+  // Prefers a single aggregate query computed in Postgres — see
+  // database/migration_load_stats_perf.sql. Falls back to the old
+  // chunked-fetch-and-reduce-in-JS approach only if that migration hasn't
+  // been run yet, so this degrades gracefully rather than breaking during
+  // rollout (same fallback pattern as getLatestLoadPerTruck in
+  // vehicles.js). The RPC path is the actual fix for "tile takes too long
+  // to load": lp_movement has ~31k historic rows, and pulling all of them
+  // on every page load (the old behaviour) was the real cause.
+  try {
+    const { data, error } = await supabase.rpc('get_load_stats');
+    if (error) throw error;
+    const row = data?.[0];
+    if (row) {
+      return res.json({
+        total:          Number(row.total) || 0,
+        active:         Number(row.active) || 0,
+        en_route:       Number(row.en_route) || 0,
+        wait_approval:  Number(row.wait_approval) || 0,
+        invoiced:       Number(row.invoiced) || 0,
+        invoiced_value: Number(row.invoiced_value) || 0,
+      });
+    }
+  } catch (e) {
+    console.error(
+      '[loads/stats/summary] RPC unavailable, falling back to full table scan — ' +
+      'run database/migration_load_stats_perf.sql to fix this:', e.message
+    );
+  }
+
   const buildQuery = () => supabase
     .from('lp_movement')
     .select('m_status, m_load_total, m_rate', { count: 'exact' })
@@ -187,6 +217,50 @@ router.get('/pending-order-nos', requirePermission('LOADS', 'view'), async (req,
     .order('m_order_no_request_time', { ascending: false });
   if (error) return res.status(500).json({ error: error.message });
   res.json(data || []);
+});
+
+
+// ============================================================
+// GET /api/loads/:loadNo/invoice-link
+// Resolves the REAL SharePoint file link for a load's invoice, the same
+// way pods.js does for PODs.
+//
+// Why this exists: the invoice number is NOT necessarily the exact
+// filename on SharePoint (extension, casing, and naming are whatever the
+// person who saved/uploaded the invoice used — the app itself only
+// generates the PDF in-memory to email it, it doesn't upload a copy to
+// SharePoint). The frontend used to build the link by guessing
+// `${m_invoice}` as the literal filename, which produced a dead link
+// whenever that guess didn't match. This instead lists the real INVOICES
+// folder via Graph and finds whichever file actually contains the invoice
+// number, returning its real webUrl — same verified-link approach as POD.
+//
+// NOTE: registered before /:id below per the project's route-ordering
+// rule, though it wouldn't collide anyway (different segment count).
+// ============================================================
+router.get('/:loadNo/invoice-link', requirePermission('LOADS', 'view'), async (req, res) => {
+  const { loadNo } = req.params;
+  try {
+    const { data: load, error } = await supabase
+      .from('lp_movement')
+      .select('m_invoice')
+      .eq('m_load_no', loadNo)
+      .single();
+
+    if (error || !load || !load.m_invoice) return res.json({ found: false });
+
+    const files = await listFolderFiles(SP_INVOICE_FOLDER);
+    const needle = String(load.m_invoice).toLowerCase();
+    const match = files.find(f => f.name?.toLowerCase().includes(needle));
+
+    if (!match) return res.json({ found: false, invoice_no: load.m_invoice });
+
+    res.json({ found: true, invoice_no: load.m_invoice, sharepoint_url: match.webUrl });
+  } catch (err) {
+    console.error('[INVOICE LINK ERROR]', err);
+    // Non-fatal — frontend falls back to opening the INVOICES folder listing
+    res.json({ found: false });
+  }
 });
 
 
