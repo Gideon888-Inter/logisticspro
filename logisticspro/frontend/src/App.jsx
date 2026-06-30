@@ -64,6 +64,8 @@ function buildMenu(user) {
     return menu;
   }
   menu.push({ key: '', label: 'Home', icon: '🏠' });
+  if (canViewFleet(user))
+    menu.push({ key: 'vehicles', label: 'Fleet', icon: '🚚' });
   if (canViewLoads(user))
     menu.push({ key: 'movement', label: 'Loads', icon: '🚛' });
   if (canViewWorkshop(user) || canViewInventory(user))
@@ -77,8 +79,6 @@ function buildMenu(user) {
     });
   if (canViewApprovals(user))
     menu.push({ key: 'approvals', label: 'Approvals', icon: '✅' });
-  if (canViewFleet(user))
-    menu.push({ key: 'vehicles', label: 'Fleet', icon: '🚚' });
   if (canManageDrivers(user))
     menu.push({ key: 'drivers', label: 'Drivers', icon: '👤',
       sub: [
