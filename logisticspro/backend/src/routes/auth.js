@@ -448,7 +448,7 @@ router.post('/forgot-password', authMiddleware, requireRole(ROLES.ADMIN, ROLES.M
     .update({
       u_password:           hashed,
       u_first_login:        'Y',
-      u_reset_token:        tempPassword,
+      u_reset_token:        hashed,  // store the bcrypt hash, not the plaintext — only used as an existence check
       u_reset_token_expiry: expiry,
       u_reset_used:         false,
       u_password_set_by:    req.user.username,
