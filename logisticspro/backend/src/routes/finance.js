@@ -38,6 +38,7 @@
 const express = require('express');
 const router  = express.Router();
 const supabase = require('../supabase');
+const { orSearchFilter } = require('../lib/searchFilter');
 const { authMiddleware, requireRole, ROLES, loadUserPermissions, requirePermission } = require('../middleware/auth');
 
 router.use(authMiddleware);
@@ -64,7 +65,7 @@ router.get('/accounts', requireFin, async (req, res) => {
   if (category)     query = query.eq('category', category);
   if (account_type) query = query.eq('account_type', account_type);
   if (search) {
-    query = query.or(`account_code.ilike.%${search}%,account_name.ilike.%${search}%`);
+    query = query.or(orSearchFilter(['account_code', 'account_name'], search));
   }
 
   const { data, error } = await query;
@@ -522,7 +523,7 @@ router.get('/suppliers', requireFin, async (req, res) => {
 
   if (active !== undefined) query = query.eq('active', active === 'true');
   if (workshop_only === 'true') query = query.eq('workshop_allowed', true);
-  if (search) query = query.or(`supplier_code.ilike.%${search}%,supplier_name.ilike.%${search}%`);
+  if (search) query = query.or(orSearchFilter(['supplier_code', 'supplier_name'], search));
 
   const { data, error } = await query;
   if (error) return res.status(500).json({ error: error.message });
@@ -617,7 +618,7 @@ router.get('/ar-customers', requireFin, async (req, res) => {
     .order('customer_name');
 
   if (active !== undefined) query = query.eq('active', active === 'true');
-  if (search) query = query.or(`customer_code.ilike.%${search}%,customer_name.ilike.%${search}%`);
+  if (search) query = query.or(orSearchFilter(['customer_code', 'customer_name'], search));
 
   const { data, error } = await query;
   if (error) return res.status(500).json({ error: error.message });
@@ -743,7 +744,7 @@ router.get('/assets', requireFin, async (req, res) => {
 
   if (class_code) query = query.eq('class_code', class_code);
   if (active !== undefined) query = query.eq('is_active', active === 'true');
-  if (search) query = query.or(`asset_code.ilike.%${search}%,description.ilike.%${search}%`);
+  if (search) query = query.or(orSearchFilter(['asset_code', 'description'], search));
 
   const { data, error } = await query;
   if (error) return res.status(500).json({ error: error.message });
