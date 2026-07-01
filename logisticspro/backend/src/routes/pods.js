@@ -2,6 +2,7 @@ const express = require('express');
 const supabase = require('../supabase');
 const { authMiddleware, loadUserPermissions, requirePermission } = require('../middleware/auth');
 const { fetchChunked } = require('../lib/supabasePaging');
+const { orSearchFilter } = require('../lib/searchFilter');
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -62,7 +63,7 @@ router.get('/received', requirePermission('PODS', 'view'), async (req, res) => {
       .neq('m_status', 'DELETED')
       .order('m_date', { ascending: false })
       .order('m_load_no', { ascending: false });
-    if (search) q = q.or(`m_load_no.ilike.%${search}%,m_customer.ilike.%${search}%,m_truck.ilike.%${search}%`);
+    if (search) q = q.or(orSearchFilter(['m_load_no', 'm_customer', 'm_truck'], search));
     return q;
   };
 
