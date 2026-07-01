@@ -9,6 +9,10 @@ const router = express.Router();
 router.use(authMiddleware);
 router.use(loadUserPermissions);
 
+// Roles a non-Admin editor must never be able to grant or touch via the
+// generic PATCH /:id / reset-password routes — see the guards below.
+const PRIVILEGED_ROLES = [ROLES.ADMIN, ROLES.FINANCE];
+
 // ── Helper: log a sensitive user-account action ─────────────────────────────
 async function logUserAudit(username, action, detail, operator) {
   try {
@@ -170,9 +174,39 @@ router.get('/', requirePermission('USERS', 'view'), async (req, res) => {
 // edit can never accidentally slip an unvalidated password through.
 // ============================================================
 router.patch('/:id', requirePermission('USERS', 'edit'), async (req, res) => {
-  const updates = { ...req.body };
-  delete updates.u_bus_unit; // removed from schema
-  delete updates.u_password; // see POST /:id/reset-password
+  // Whitelist — previously this spread the entire request body (minus
+  // u_bus_unit/u_password) straight into the update, so any column on
+  // lp_users sent in the body would be written, including ones that should
+  // only ever change via a dedicated flow. Only these profile/role fields
+  // are editable from this generic route.
+  const ALLOWED_FIELDS = ['u_name', 'u_email', 'u_role', 'u_active', 'u_region'];
+  const updates = {};
+  for (const key of ALLOWED_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(req.body, key)) updates[key] = req.body[key];
+  }
+
+  const requesterIsAdmin = req.user?.role === ROLES.ADMIN;
+
+  // Role-escalation guard: only Admin may grant a privileged role (Admin/
+  // Finance) to anyone, and only Admin may edit a user who currently holds
+  // a privileged role — a Manager with USERS.edit access (e.g. via the
+  // Management access-group toggle) should never be able to promote
+  // someone to Admin/Finance or modify an existing Admin/Finance account.
+  if (!requesterIsAdmin) {
+    if (updates.u_role && PRIVILEGED_ROLES.includes(updates.u_role)) {
+      return res.status(403).json({ error: 'Only an Admin can assign that role' });
+    }
+    const { data: target, error: targetErr } = await supabase
+      .from('lp_users')
+      .select('u_role')
+      .eq('u_id', req.params.id)
+      .single();
+    if (targetErr) return res.status(400).json({ error: targetErr.message });
+    if (target && PRIVILEGED_ROLES.includes(target.u_role)) {
+      return res.status(403).json({ error: 'Only an Admin can modify this user' });
+    }
+  }
+
   const { data, error } = await supabase
     .from('lp_users')
     .update(updates)
@@ -180,6 +214,7 @@ router.patch('/:id', requirePermission('USERS', 'edit'), async (req, res) => {
     .select('u_id,u_username,u_name,u_email,u_role,u_active,u_region')
     .single();
   if (error) return res.status(400).json({ error: error.message });
+  await logUserAudit(data.u_username, 'PROFILE_UPDATE', `Updated by ${req.user.username}: ${Object.keys(updates).join(', ')}`, req.user.username);
   res.json(data);
 });
 
@@ -196,10 +231,17 @@ router.post('/:id/reset-password', requireRole(ROLES.ADMIN, ROLES.MANAGER), asyn
 
   const { data: target, error: findErr } = await supabase
     .from('lp_users')
-    .select('u_username')
+    .select('u_username, u_role')
     .eq('u_id', req.params.id)
     .single();
   if (findErr || !target) return res.status(404).json({ error: 'User not found' });
+
+  // Manager may reset most passwords, but never an Admin's or Finance
+  // user's — those stay Admin-only, matching the role-escalation guard on
+  // PATCH /:id above.
+  if (req.user?.role !== ROLES.ADMIN && PRIVILEGED_ROLES.includes(target.u_role)) {
+    return res.status(403).json({ error: 'Only an Admin can reset this user\u2019s password' });
+  }
 
   const hashed = await bcrypt.hash(new_password, 10);
   const { error } = await supabase
