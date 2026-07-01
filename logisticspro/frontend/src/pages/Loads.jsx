@@ -1930,7 +1930,7 @@ export default function Loads({ initialLoadNo = null } = {}) {
           {/* Relative wrapper overlays a visible hint on iOS where type=date ignores placeholder */}
           <div style={{ flex: '1 1 0', minWidth: 0, position: 'relative' }}>
             <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(1); }}
-              style={{ width: '100%', padding: '7px 6px', fontSize: 12, border: '1px solid #ddd', borderRadius: 4,
+              style={{ width: '100%', minWidth: 0, padding: '7px 6px', fontSize: 12, border: '1px solid #ddd', borderRadius: 4,
                        color: dateFrom ? undefined : 'transparent', boxSizing: 'border-box' }} />
             {!dateFrom && <span style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)',
               pointerEvents: 'none', color: '#aaa', fontSize: 12 }}>From date</span>}
@@ -1938,7 +1938,7 @@ export default function Loads({ initialLoadNo = null } = {}) {
           <span style={{ fontSize: 11, color: '#aaa', flexShrink: 0 }}>to</span>
           <div style={{ flex: '1 1 0', minWidth: 0, position: 'relative' }}>
             <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(1); }}
-              style={{ width: '100%', padding: '7px 6px', fontSize: 12, border: '1px solid #ddd', borderRadius: 4,
+              style={{ width: '100%', minWidth: 0, padding: '7px 6px', fontSize: 12, border: '1px solid #ddd', borderRadius: 4,
                        color: dateTo ? undefined : 'transparent', boxSizing: 'border-box' }} />
             {!dateTo && <span style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)',
               pointerEvents: 'none', color: '#aaa', fontSize: 12 }}>To date</span>}
