@@ -8,8 +8,9 @@
 -- ROOT CAUSE: get_load_stats() computed invoiced_value as
 --   SUM(COALESCE(m_load_total, m_rate, 0)) FILTER (m_status='LOAD_INVOICED')
 -- Because m_load_total carries stale Sage figures, this ran to ~R512m
--- all-time. The correct source is lp_invoices.inv_amount_incl over FINAL
--- (issued, non-credited) invoices, scoped by inv_date.
+-- all-time. The correct source is lp_invoices.inv_amount_excl over FINAL
+-- (issued, non-credited) invoices, scoped by inv_date. Reported values
+-- always EXCLUDE VAT (VAT is a pass-through liability, not revenue).
 --
 -- NOTE: The backend (GET /api/loads/stats/summary) now computes invoiced
 -- value/count from lp_invoices directly and OVERRIDES whatever this RPC
@@ -56,7 +57,7 @@ AS $$
        WHERE inv_status = 'FINAL'
          AND (date_from IS NULL OR inv_date >= date_from)
          AND (date_to   IS NULL OR inv_date <= date_to)) AS invoiced,
-    (SELECT COALESCE(SUM(inv_amount_incl), 0) FROM lp_invoices
+    (SELECT COALESCE(SUM(inv_amount_excl), 0) FROM lp_invoices
        WHERE inv_status = 'FINAL'
          AND (date_from IS NULL OR inv_date >= date_from)
          AND (date_to   IS NULL OR inv_date <= date_to)) AS invoiced_value;
