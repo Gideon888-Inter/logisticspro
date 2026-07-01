@@ -1824,7 +1824,7 @@ function ExpandedRow({ load, onRefresh, onCostUpdate, asCard = false }) {
 
   return (
     <tr>
-      <td colSpan={12} style={{ padding: 0, background: '#f8fafc', borderBottom: '2px solid #00AEEF' }}>
+      <td colSpan={14} style={{ padding: 0, background: '#f8fafc', borderBottom: '2px solid #00AEEF' }}>
         {inner}
         {showCostModal && (
           <AddCostModal loadId={load.m_load_no} onClose={() => setShowCostModal(false)}
