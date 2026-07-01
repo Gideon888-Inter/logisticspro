@@ -350,7 +350,11 @@ router.patch('/notifications/read-all', async (req, res) => {
 
 // PATCH mark single notification as read
 router.patch('/notifications/:id/read', async (req, res) => {
-  await supabase.from('lp_notifications').update({ n_read: 'Y' }).eq('id', req.params.id);
+  // Ownership predicate: only mark as read if it belongs to this user or role
+  await supabase.from('lp_notifications')
+    .update({ n_read: 'Y' })
+    .eq('id', req.params.id)
+    .or(`n_user.eq.${req.user.username},n_role.eq.${req.user.role}`);
   res.json({ success: true });
 });
 
