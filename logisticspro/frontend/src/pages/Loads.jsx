@@ -1290,8 +1290,8 @@ function ExpandedRow({ load, onRefresh, onCostUpdate, asCard = false }) {
 
           {/* Edit Assignment Panel removed — pencils now inline in the detail fields above */}
 
-          {/* Costs + Extra Stops — side by side, each in its own block */}
-          <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+          {/* Costs + Extra Stops — side by side on desktop, stacked on mobile */}
+          <div style={{ display: 'flex', flexDirection: asCard ? 'column' : 'row', gap: asCard ? 10 : 16, alignItems: 'flex-start' }}>
 
             {/* ── Additional Costs ── */}
             <div style={{ flex: 1, minWidth: 0 }}>
