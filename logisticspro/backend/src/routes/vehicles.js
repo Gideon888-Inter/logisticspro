@@ -97,7 +97,7 @@ async function writeAudit(vehicleCode, action, changedFields, operator) {
 }
 
 // ── GET /api/vehicles ─────────────────────────────────────────────────────────
-router.get('/', async (req, res) => {
+router.get('/', requirePermission('FLEET', 'view'), async (req, res) => {
   const { type, active = 'Y' } = req.query;
   let q = supabase.from('lp_vehicles').select('*').order('vh_code');
   if (active !== 'all') q = q.eq('vh_active', active);
@@ -463,7 +463,7 @@ router.post('/import-trips', requireRole(ROLES.ADMIN), tripUpload.single('file')
 });
 
 // ── GET /api/vehicles/:code ───────────────────────────────────────────────────
-router.get('/:code', async (req, res) => {
+router.get('/:code', requirePermission('FLEET', 'view'), async (req, res) => {
   const { data, error } = await supabase
     .from('lp_vehicles').select('*').eq('vh_code', req.params.code).single();
   if (error) return res.status(404).json({ error: 'Vehicle not found' });
@@ -471,7 +471,7 @@ router.get('/:code', async (req, res) => {
 });
 
 // ── GET /api/vehicles/:code/audit ─────────────────────────────────────────────
-router.get('/:code/audit', async (req, res) => {
+router.get('/:code/audit', requirePermission('FLEET', 'view'), async (req, res) => {
   const { data, error } = await supabase
     .from('lp_vehicle_audit')
     .select('*')
@@ -488,7 +488,7 @@ router.get('/:code/audit', async (req, res) => {
 // Capped at 5000 most recent trips: even a vehicle running several trips a
 // day stays well under that across a few years, and this is an
 // on-demand detail view rather than something polled.
-router.get('/:code/trips', async (req, res) => {
+router.get('/:code/trips', requirePermission('FLEET', 'view'), async (req, res) => {
   const { data, error } = await supabase
     .from('lp_vehicle_trips')
     .select('start_time, end_time, start_location, end_location, elapsed_minutes, distance_km, avg_speed, max_speed')
@@ -500,7 +500,7 @@ router.get('/:code/trips', async (req, res) => {
 });
 
 // ── GET /api/vehicles/:code/maintenance ───────────────────────────────────────
-router.get('/:code/maintenance', async (req, res) => {
+router.get('/:code/maintenance', requirePermission('FLEET', 'view'), async (req, res) => {
   const { data, error } = await supabase
     .from('lp_maintenance').select('*').eq('ma_vehicle', req.params.code)
     .order('ma_date', { ascending: false });
