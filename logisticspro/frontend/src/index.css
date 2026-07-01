@@ -357,6 +357,16 @@ html, body, #root { height: 100%; min-height: 100dvh; }
 }
 
 /* ════════════════════════════════════
+   TABLET  769px – 1200px
+   Tighten table padding so 14-column loads table fits iPad without horizontal scroll.
+   Saves ~168px (14 columns × 12px) vs the default 10px 14px padding.
+   ════════════════════════════════════ */
+@media (max-width: 1200px) and (min-width: 769px) {
+  .desktop-table th, .desktop-table td { padding: 6px 8px; }
+  .desktop-table table { font-size: 12px; }
+}
+
+/* ════════════════════════════════════
    PHONE  ≤ 640px
    ════════════════════════════════════ */
 @media (max-width: 640px) {
