@@ -23,7 +23,7 @@ router.get('/pending-deletions', requirePermission('COSTS', 'approve'), async (r
 });
 
 // GET costs — single load or all loads summary
-router.get('/', async (req, res) => {
+router.get('/', requirePermission('COSTS', 'view'), async (req, res) => {
   const { load, summary } = req.query;
 
   // Return all costs as a load_no -> total map for dashboard
