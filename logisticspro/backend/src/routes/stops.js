@@ -23,7 +23,7 @@ const STOP_LOCKED_STATUSES = [
 ];
 
 // ── GET /api/stops?load=A123456 ──────────────────────────────────────────────
-router.get('/', async (req, res) => {
+router.get('/', requirePermission('LOADS', 'view'), async (req, res) => {
   const { load } = req.query;
   if (!load) return res.json([]);
   const { data, error } = await supabase
