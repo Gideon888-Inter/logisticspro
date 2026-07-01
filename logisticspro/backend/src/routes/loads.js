@@ -152,15 +152,17 @@ router.get('/stats/summary', requirePermission('LOADS', 'view'), async (req, res
   // NOT from lp_movement. lp_movement.m_load_total is never populated with a
   // meaningful value by the live app — it holds stale Sage-import figures —
   // so summing it produced the wildly inflated "R512m" tile. We sum
-  // inv_amount_incl over FINAL (issued, non-credited) invoices, scoped to the
-  // same date range via inv_date. Computed here in Node (chunked to dodge the
-  // PostgREST max-rows cap) so the fix ships on a backend redeploy alone,
-  // independent of whether the get_load_stats SQL migration has been re-run.
+  // inv_amount_excl over FINAL (issued, non-credited) invoices, scoped to the
+  // same date range via inv_date. Reported values always EXCLUDE VAT — VAT is
+  // a pass-through liability, not revenue — so this uses inv_amount_excl, not
+  // inv_amount_incl. Computed here in Node (chunked to dodge the PostgREST
+  // max-rows cap) so the fix ships on a backend redeploy alone, independent of
+  // whether the get_load_stats SQL migration has been re-run.
   async function computeInvoicedValue() {
     const buildInvQuery = () => {
       let iq = supabase
         .from('lp_invoices')
-        .select('inv_amount_incl', { count: 'exact' })
+        .select('inv_amount_excl', { count: 'exact' })
         .eq('inv_status', 'FINAL');
       if (date_from) iq = iq.gte('inv_date', date_from);
       if (date_to)   iq = iq.lte('inv_date', date_to);
@@ -168,7 +170,7 @@ router.get('/stats/summary', requirePermission('LOADS', 'view'), async (req, res
     };
     const { rows: invRows } = await fetchChunked(buildInvQuery, 0, Number.MAX_SAFE_INTEGER);
     return {
-      invoiced_value: invRows.reduce((s, r) => s + Number(r.inv_amount_incl || 0), 0),
+      invoiced_value: invRows.reduce((s, r) => s + Number(r.inv_amount_excl || 0), 0),
       invoiced:       invRows.length,
     };
   }
