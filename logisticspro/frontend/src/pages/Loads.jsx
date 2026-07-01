@@ -1117,7 +1117,7 @@ function ExpandedRow({ load, onRefresh, onCostUpdate, asCard = false }) {
   );
 
   const inner = (
-        <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ padding: '10px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
 
           {/* Load detail fields */}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px 32px' }}>
@@ -1351,14 +1351,14 @@ function ExpandedRow({ load, onRefresh, onCostUpdate, asCard = false }) {
 
           {/* Costs section */}
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: '#005A8E', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Additional Costs</div>
               {!['WAIT_APPROVAL','WAIT_RATE_CHECK','WAIT_INVOICE_NO','LOAD_INVOICED','REJECTED'].includes(currentStatus) && (
                 <button className="btn btn-sm btn-primary" onClick={() => setShowCostModal(true)}>+ Add Cost</button>
               )}
             </div>
             {costs.length === 0 ? (
-              <div style={{ fontSize: 12, color: '#aaa', padding: '8px 0' }}>No additional costs</div>
+              <div style={{ fontSize: 12, color: '#aaa', padding: '2px 0' }}>No additional costs</div>
             ) : (
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: 8 }}>
                 <thead>
@@ -1419,7 +1419,7 @@ function ExpandedRow({ load, onRefresh, onCostUpdate, asCard = false }) {
                 </tbody>
               </table>
             )}
-            <div style={{ display: 'flex', gap: 24, justifyContent: 'flex-end', paddingTop: 8, borderTop: '1px solid #ddd' }}>
+            <div style={{ display: 'flex', gap: 24, justifyContent: 'flex-end', paddingTop: 4, borderTop: '1px solid #ddd' }}>
               <div style={{ textAlign: 'right' }}>
                 <div style={{ fontSize: 10, color: '#aaa', textTransform: 'uppercase' }}>Rate</div>
                 <div style={{ fontFamily: 'monospace', fontWeight: 600, color: '#005A8E' }}>{fmtR(load.m_rate)}</div>
@@ -1440,15 +1440,15 @@ function ExpandedRow({ load, onRefresh, onCostUpdate, asCard = false }) {
           </div>
 
           {/* Extra Stops section */}
-          <div style={{ marginTop: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: '#005A8E', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Extra Stops</div>
               {!['WAIT_APPROVAL','WAIT_RATE_CHECK','WAIT_INVOICE_NO','LOAD_INVOICED','REJECTED'].includes(currentStatus) && (
                 <button className="btn btn-sm btn-primary" onClick={() => setShowStopModal(true)}>+ Add Stop</button>
               )}
             </div>
             {stops.filter(s => s.s_deleted !== 'Y').length === 0 ? (
-              <div style={{ fontSize: 12, color: '#aaa', padding: '8px 0' }}>No extra stops</div>
+              <div style={{ fontSize: 12, color: '#aaa', padding: '2px 0' }}>No extra stops</div>
             ) : (
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: 8 }}>
                 <thead>
@@ -1514,12 +1514,12 @@ function ExpandedRow({ load, onRefresh, onCostUpdate, asCard = false }) {
 
             {/* ── STATUS WORKFLOW PANEL ── */}
             <div style={{ minWidth: 240 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: '#005A8E', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#005A8E', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
                 Update Status
               </div>
 
               {/* Current status badge */}
-              <div style={{ marginBottom: 10 }}>
+              <div style={{ marginBottom: 6 }}>
                 <span className={`badge ${STATUS_BADGE[currentStatus] || 'badge-gray'}`} style={{ fontSize: 13, padding: '4px 10px' }}>
                   {currentStatus?.replace(/_/g, ' ')}
                 </span>
@@ -1547,7 +1547,7 @@ function ExpandedRow({ load, onRefresh, onCostUpdate, asCard = false }) {
 
               {/* Odometer / KMs — always visible, independent of the closing-KM flow below */}
               {load.m_truck && (
-                <div style={{ marginBottom: 10, padding: 10, background: '#f9fafb', border: '1px solid #e2e8f0', borderRadius: 6 }}>
+                <div style={{ marginBottom: 6, padding: 8, background: '#f9fafb', border: '1px solid #e2e8f0', borderRadius: 6 }}>
                   <div style={{ fontSize: 11, color: '#005A8E', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
                     Odometer
                   </div>
@@ -1744,7 +1744,7 @@ function ExpandedRow({ load, onRefresh, onCostUpdate, asCard = false }) {
             <div style={{ flex: 1, minWidth: 300 }}>
               <div
                 onClick={() => asCard && setShowComments(s => !s)}
-                style={{ fontSize: 12, fontWeight: 600, color: '#005A8E', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: asCard ? 'pointer' : 'default' }}>
+                style={{ fontSize: 12, fontWeight: 600, color: '#005A8E', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4, display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: asCard ? 'pointer' : 'default' }}>
                 <span>Audit Trail & Comments {comments.length > 0 ? `(${comments.length})` : ''}</span>
                 {asCard && (
                   <span style={{ fontSize: 16, color: '#00AEEF', transition: 'transform 0.2s', display: 'inline-block', transform: showComments ? 'rotate(180deg)' : 'none' }}>▼</span>
