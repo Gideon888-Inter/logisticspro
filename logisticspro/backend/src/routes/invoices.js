@@ -236,36 +236,35 @@ router.post('/:id/approve', requirePermission('INVOICES', 'approve'), async (req
     if (inv.inv_status !== 'DRAFT')
       return res.status(400).json({ error: 'Only DRAFT invoices can be finalised' });
 
-    // Finalise invoice
-    const { error: updateErr } = await supabase
-      .from('lp_invoices')
-      .update({
-        inv_status:      'FINAL',
-        inv_approved_by: req.user.username,
-        inv_approved_at: new Date().toISOString(),
-        updated_at:      new Date().toISOString(),
-      })
-      .eq('id', req.params.id);
-
-    if (updateErr) return res.status(500).json({ error: updateErr.message });
+    // Atomic finance post: creates AR invoice, GL journal (Dr Debtors / Cr Revenue + VAT),
+    // and VAT transaction — all in one DB transaction. Also sets lp_invoices.inv_status = FINAL
+    // and the fin_* link columns. Uses fin_posting_config for revenue account (1000) and VAT code.
+    const { data: posted, error: postErr } = await supabase.rpc('fin_post_lp_invoice', {
+      p_lp_invoice_id: Number(req.params.id),
+      p_posted_by:     req.user.username,
+      p_revenue_account: null,  // resolved from fin_posting_config.transport_revenue_account
+      p_vat_code:      null,    // resolved from fin_posting_config.default_output_vat_code
+      p_entity_id:     1,
+    });
+    if (postErr) return res.status(400).json({ error: postErr.message });
 
     // Advance load to LOAD_INVOICED
     await supabase.from('lp_movement')
       .update({
-        m_status:    'LOAD_INVOICED',
-        m_invoice:   inv.inv_number,
-        updated_at:  new Date().toISOString(),
+        m_status:   'LOAD_INVOICED',
+        m_invoice:  inv.inv_number,
+        updated_at: new Date().toISOString(),
       })
       .eq('m_load_no', inv.inv_load_no);
 
     // Audit comment
     await supabase.from('lp_comments').insert([{
       c_load:      inv.inv_load_no,
-      c_comment:   `Invoice ${inv.inv_number} finalised by ${req.user.username}. Load marked as INVOICED.`,
+      c_comment:   `Invoice ${inv.inv_number} finalised and posted to AR/GL by ${req.user.username}. Journal: ${posted?.journal_ref || 'see fin_gl_journals'}.`,
       c_logged_by: req.user.username,
     }]);
 
-    res.json({ success: true, inv_number: inv.inv_number });
+    res.json({ success: true, inv_number: inv.inv_number, ...(posted || {}) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -288,12 +287,22 @@ router.post('/:id/credit-note', requirePermission('INVOICES', 'edit'), async (re
     if (inv.inv_status !== 'FINAL')
       return res.status(400).json({ error: 'Credit notes can only be raised against FINAL invoices' });
 
+    // Finance guard: original invoice must be posted to AR before it can be credited.
+    // Invoices approved before the finance posting migration was applied need to be
+    // backfilled first (run migration_finance_posting_backfill.sql in Supabase).
+    if (!inv.fin_ar_invoice_id) {
+      return res.status(400).json({
+        error: `Invoice ${inv.inv_number} has not been posted to the finance ledger. Ask Finance to post it first (run the backfill migration or re-approve it).`,
+      });
+    }
+
     const cnAmountExcl = amount_excl ? Number(amount_excl) : Number(inv.inv_amount_excl);
     const cnVat        = Math.round(cnAmountExcl * VAT_RATE * 100) / 100;
     const cnAmountIncl = Math.round((cnAmountExcl + cnVat) * 100) / 100;
 
     const cn_number = await genCreditNoteNo();
 
+    // Step 1: create the LP credit note record
     const { data: cn, error: cnErr } = await supabase
       .from('lp_credit_notes')
       .insert([{
@@ -315,19 +324,34 @@ router.post('/:id/credit-note', requirePermission('INVOICES', 'edit'), async (re
 
     if (cnErr) return res.status(500).json({ error: cnErr.message });
 
-    // Mark original invoice as CREDITED
-    await supabase.from('lp_invoices')
-      .update({ inv_status: 'CREDITED', updated_at: new Date().toISOString() })
-      .eq('id', req.params.id);
+    // Step 2: atomic finance post — AR credit note, GL reversal, VAT reversal;
+    // also sets lp_invoices.inv_status = CREDITED and lp_credit_notes fin_* columns.
+    const { data: posted, error: postErr } = await supabase.rpc('fin_post_lp_credit_note', {
+      p_lp_credit_note_id: cn.id,
+      p_posted_by:         req.user.username,
+      p_revenue_account:   null,
+      p_vat_code:          null,
+      p_entity_id:         1,
+    });
+    if (postErr) {
+      // Finance post failed — CN record exists but is unposted (fin_ar_credit_note_id is null).
+      // lp_invoices remains FINAL. Finance team must investigate before re-attempting.
+      console.error('[invoices/credit-note] fin_post_lp_credit_note failed:', postErr.message);
+      return res.status(400).json({
+        error: `Credit note ${cn_number} was created but finance posting failed: ${postErr.message}. Contact Finance.`,
+        cn_id: cn.id,
+        cn_number,
+      });
+    }
 
-    // Audit comment
+    // Audit comment (lp_invoices.inv_status = CREDITED already set by RPC)
     await supabase.from('lp_comments').insert([{
       c_load:      inv.inv_load_no,
-      c_comment:   `Credit note ${cn_number} raised by ${req.user.username} against ${inv.inv_number}. Reason: ${reason.trim()}. Amount: R ${cnAmountIncl.toLocaleString('en-ZA', { minimumFractionDigits: 2 })} (incl. VAT)`,
+      c_comment:   `Credit note ${cn_number} raised by ${req.user.username} against ${inv.inv_number}. Reason: ${reason.trim()}. Amount: R ${cnAmountIncl.toLocaleString('en-ZA', { minimumFractionDigits: 2 })} incl. VAT. Journal: ${posted?.journal_ref || 'see fin_gl_journals'}.`,
       c_logged_by: req.user.username,
     }]);
 
-    res.status(201).json(cn);
+    res.status(201).json({ ...cn, ...(posted || {}) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
