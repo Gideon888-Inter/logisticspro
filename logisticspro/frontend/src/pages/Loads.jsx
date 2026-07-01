@@ -1440,7 +1440,7 @@ function ExpandedRow({ load, onRefresh, onCostUpdate, asCard = false }) {
           </div>
 
           {/* Rate / Total — spans below both Costs and Stops */}
-          <div style={{ display: 'flex', gap: 24, justifyContent: 'flex-end', paddingTop: 4, borderTop: '1px solid #ddd' }}>
+          <div style={{ display: 'flex', gap: 24, justifyContent: 'flex-start', paddingTop: 4, borderTop: '1px solid #ddd' }}>
             <div style={{ textAlign: 'right' }}>
               <div style={{ fontSize: 10, color: '#aaa', textTransform: 'uppercase' }}>Rate</div>
               <div style={{ fontFamily: 'monospace', fontWeight: 600, color: '#005A8E' }}>{fmtR(load.m_rate)}</div>
