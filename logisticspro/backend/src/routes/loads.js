@@ -148,6 +148,31 @@ router.get('/stats/summary', requirePermission('LOADS', 'view'), async (req, res
   // haven't been run yet, so this degrades gracefully rather than
   // breaking during rollout (same fallback pattern as
   // getLatestLoadPerTruck in vehicles.js).
+  // Invoiced Value must come from lp_invoices (the actual issued invoices),
+  // NOT from lp_movement. lp_movement.m_load_total is never populated with a
+  // meaningful value by the live app — it holds stale Sage-import figures —
+  // so summing it produced the wildly inflated "R512m" tile. We sum
+  // inv_amount_incl over FINAL (issued, non-credited) invoices, scoped to the
+  // same date range via inv_date. Computed here in Node (chunked to dodge the
+  // PostgREST max-rows cap) so the fix ships on a backend redeploy alone,
+  // independent of whether the get_load_stats SQL migration has been re-run.
+  async function computeInvoicedValue() {
+    const buildInvQuery = () => {
+      let iq = supabase
+        .from('lp_invoices')
+        .select('inv_amount_incl', { count: 'exact' })
+        .eq('inv_status', 'FINAL');
+      if (date_from) iq = iq.gte('inv_date', date_from);
+      if (date_to)   iq = iq.lte('inv_date', date_to);
+      return iq;
+    };
+    const { rows: invRows } = await fetchChunked(buildInvQuery, 0, Number.MAX_SAFE_INTEGER);
+    return {
+      invoiced_value: invRows.reduce((s, r) => s + Number(r.inv_amount_incl || 0), 0),
+      invoiced:       invRows.length,
+    };
+  }
+
   try {
     const { data, error } = await supabase.rpc('get_load_stats', {
       date_from: date_from || null,
@@ -156,13 +181,16 @@ router.get('/stats/summary', requirePermission('LOADS', 'view'), async (req, res
     if (error) throw error;
     const row = data?.[0];
     if (row) {
+      const inv = await computeInvoicedValue();
       return res.json({
         total:          Number(row.total) || 0,
         active:         Number(row.active) || 0,
         en_route:       Number(row.en_route) || 0,
         wait_approval:  Number(row.wait_approval) || 0,
-        invoiced:       Number(row.invoiced) || 0,
-        invoiced_value: Number(row.invoiced_value) || 0,
+        // Count of issued invoices (from lp_invoices) rather than loads sitting
+        // in LOAD_INVOICED status — the two can legitimately differ.
+        invoiced:       inv.invoiced,
+        invoiced_value: inv.invoiced_value,
       });
     }
   } catch (e) {
@@ -175,7 +203,7 @@ router.get('/stats/summary', requirePermission('LOADS', 'view'), async (req, res
   const buildQuery = () => {
     let q = supabase
       .from('lp_movement')
-      .select('m_status, m_load_total, m_rate', { count: 'exact' })
+      .select('m_status', { count: 'exact' })
       .neq('m_status', 'DELETED')
       .order('m_load_no', { ascending: false });
     if (date_from) q = q.gte('m_date', date_from);
@@ -198,22 +226,17 @@ router.get('/stats/summary', requirePermission('LOADS', 'view'), async (req, res
     // (not yet LOAD_INVOICED or REJECTED).
     const { rows: data } = await fetchChunked(buildQuery, 0, Number.MAX_SAFE_INTEGER);
 
-    const invoicedRows = data.filter(r => r.m_status === 'LOAD_INVOICED');
+    // Invoiced value + count come from lp_invoices, not from lp_movement —
+    // see computeInvoicedValue above for why (m_load_total is stale).
+    const inv = await computeInvoicedValue();
 
     res.json({
       total:          data.length,
       active:         data.filter(r => !['LOAD_INVOICED', 'REJECTED'].includes(r.m_status)).length,
       en_route:       data.filter(r => r.m_status === 'EN_ROUTE').length,
       wait_approval:  data.filter(r => r.m_status === 'WAIT_APPROVAL').length,
-      invoiced:       invoicedRows.length,
-      // NOTE: this used to sum m_rate across ALL non-deleted loads (every
-      // historic load ever recorded, ~31k rows) and the frontend displayed
-      // it as "Invoiced Value" — wildly overstated. Now correctly sums only
-      // LOAD_INVOICED rows within the selected date range, using
-      // m_load_total (the actual amount an invoice is generated from —
-      // see POST /api/invoices) falling back to m_rate for older rows
-      // that predate m_load_total being populated.
-      invoiced_value: invoicedRows.reduce((s, r) => s + Number(r.m_load_total || r.m_rate || 0), 0),
+      invoiced:       inv.invoiced,
+      invoiced_value: inv.invoiced_value,
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
