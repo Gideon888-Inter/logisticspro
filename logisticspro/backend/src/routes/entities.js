@@ -7,7 +7,7 @@ const driversRouter = express.Router();
 driversRouter.use(authMiddleware);
 driversRouter.use(loadUserPermissions);
 
-driversRouter.get('/', async (req, res) => {
+driversRouter.get('/', requirePermission('DRIVERS', 'view'), async (req, res) => {
   const { active } = req.query;
   let q = supabase.from('lp_drivers').select('*').order('d_nickname');
   if (active !== undefined) q = q.eq('d_active', active);
@@ -16,7 +16,7 @@ driversRouter.get('/', async (req, res) => {
   res.json(data);
 });
 
-driversRouter.get('/:id', async (req, res) => {
+driversRouter.get('/:id', requirePermission('DRIVERS', 'view'), async (req, res) => {
   const { data, error } = await supabase.from('lp_drivers').select('*').eq('d_id', req.params.id).single();
   if (error) return res.status(404).json({ error: 'Driver not found' });
   res.json(data);
@@ -39,7 +39,7 @@ const customersRouter = express.Router();
 customersRouter.use(authMiddleware);
 customersRouter.use(loadUserPermissions);
 
-customersRouter.get('/', async (req, res) => {
+customersRouter.get('/', requirePermission('CLIENTS', 'view'), async (req, res) => {
   const { data, error } = await supabase
     .from('lp_customers')
     .select('*, lp_customer_contact(*)')
@@ -49,7 +49,7 @@ customersRouter.get('/', async (req, res) => {
   res.json(data);
 });
 
-customersRouter.get('/:code', async (req, res) => {
+customersRouter.get('/:code', requirePermission('CLIENTS', 'view'), async (req, res) => {
   const { data, error } = await supabase
     .from('lp_customers')
     .select('*, lp_customer_contact(*)')
@@ -78,8 +78,9 @@ customersRouter.patch('/:code', requirePermission('CLIENTS', 'edit'), async (req
 // ── MAINTENANCE ───────────────────────────────────────────────
 const maintenanceRouter = express.Router();
 maintenanceRouter.use(authMiddleware);
+maintenanceRouter.use(loadUserPermissions);
 
-maintenanceRouter.get('/', async (req, res) => {
+maintenanceRouter.get('/', requirePermission('WORKSHOP', 'view'), async (req, res) => {
   const { status, vehicle } = req.query;
   let q = supabase.from('lp_maintenance').select('*, lp_vehicles(vh_code, vh_type)').order('ma_date', { ascending: false });
   if (status)  q = q.eq('ma_status', status);
@@ -89,7 +90,7 @@ maintenanceRouter.get('/', async (req, res) => {
   res.json(data);
 });
 
-maintenanceRouter.post('/', async (req, res) => {
+maintenanceRouter.post('/', requirePermission('WORKSHOP', 'edit'), async (req, res) => {
   const { data, error } = await supabase
     .from('lp_maintenance')
     .insert([{ ...req.body, ma_operator: req.user.username }])
@@ -98,7 +99,7 @@ maintenanceRouter.post('/', async (req, res) => {
   res.status(201).json(data);
 });
 
-maintenanceRouter.patch('/:id', async (req, res) => {
+maintenanceRouter.patch('/:id', requirePermission('WORKSHOP', 'edit'), async (req, res) => {
   const { data, error } = await supabase
     .from('lp_maintenance').update(req.body).eq('ma_incident_no', req.params.id).select().single();
   if (error) return res.status(400).json({ error: error.message });
