@@ -17,6 +17,7 @@ const invoicesRouter = require('./routes/invoices');
 const stockRouter    = require('./routes/inventory');    // LP2.0 Inventory & PO module
 const rolesRouter    = require('./routes/roles_admin');  // LP2.0 Role Manager
 const financeRouter  = require('./routes/finance');       // LP2.0 Financial Module
+const financePostingRouter = require('./routes/financePosting'); // LP2.0 Finance posting (atomic RPC-backed); see sql/001_finance_posting_core.sql
 const trackingRouter = require('./routes/tracking');      // LP2.0 Pulsit GPS tracking integration
 const trackingIngestRouter = require('./routes/tracking-ingest'); // LP2.0 scheduled Pulsit history ingestion (shared-secret auth, not JWT)
 const addressesRouter = require('./routes/addresses');     // LP2.0 Named addresses / home bases
@@ -58,6 +59,7 @@ app.use('/api/customers',   customersRouter);
 app.use('/api/maintenance', maintenanceRouter);
 app.use('/api/stock',       stockRouter);       // LP2.0 Inventory & Purchase Orders module
 app.use('/api/roles',       rolesRouter);       // LP2.0 Role Manager (Admin only)
+app.use('/api/fin/posting', financePostingRouter); // LP2.0 atomic finance posting; MUST precede /api/fin so it isn't swallowed by the prefix mount
 app.use('/api/fin',         financeRouter);    // LP2.0 Financial Module
 app.use('/api/tracking',    trackingIngestRouter);  // POST /ingest-snapshot — shared-secret auth, no JWT
 app.use('/api/tracking',    trackingRouter);    // LP2.0 Pulsit GPS tracking integration
