@@ -1123,9 +1123,91 @@ function ExpandedRow({ load, onRefresh, onCostUpdate, asCard = false }) {
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px 32px' }}>
             {cell('Load No', load.m_load_no)}
             {cell('Load Creation Date', fmtDate(load.m_date))}
-            {cell('Truck', load.m_truck)}
-            {cellSub('Trailer', load.m_trailer1 || 'None', load.m_trailer2 ? `🔗 Linked: ${load.m_trailer2}` : null)}
-            {cell('Driver', load.m_driver_id)}
+            {showAssign ? (
+              <div style={{ minWidth: 130 }}>
+                <div style={{ fontSize: 10, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>Horse</div>
+                <select value={assignForm.m_truck} onChange={e => setAssignForm(f => ({ ...f, m_truck: e.target.value }))}
+                  style={{ padding: '3px 6px', fontSize: 12, border: '1px solid #00AEEF', borderRadius: 3, fontFamily: 'inherit' }}>
+                  <option value="">— None —</option>
+                  {assignVehicles.filter(v => v.vh_type === 'Horse').map(v => (
+                    <option key={v.vh_code} value={v.vh_code}>{v.vh_code}{v.vh_make ? ` — ${v.vh_make}` : ''}</option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div style={{ minWidth: 120 }}>
+                <div style={{ fontSize: 10, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>Truck</div>
+                <div style={{ fontSize: 13, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 3 }}>
+                  {load.m_truck || '—'}
+                  {canEditAssignment && (
+                    <button onClick={openAssignPanel}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#00AEEF', fontSize: 11, padding: '0 2px', lineHeight: 1, opacity: 0.8 }}>✏️</button>
+                  )}
+                </div>
+              </div>
+            )}
+            {showAssign ? (
+              <div style={{ minWidth: 160 }}>
+                <div style={{ fontSize: 10, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>Trailer</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <select value={assignForm.m_trailer_size}
+                    onChange={e => { const sz = e.target.value; setAssignForm(f => ({ ...f, m_trailer_size: sz, m_trailer1: sz === 'None' ? '' : f.m_trailer1, m_trailer2: sz !== '18m' ? '' : f.m_trailer2 })); }}
+                    style={{ padding: '3px 6px', fontSize: 12, border: '1px solid #00AEEF', borderRadius: 3, fontFamily: 'inherit' }}>
+                    <option value="None">None</option>
+                    <option value="15m">15m</option>
+                    <option value="18m">18m</option>
+                  </select>
+                  {assignForm.m_trailer_size !== 'None' && (
+                    <select value={assignForm.m_trailer1}
+                      onChange={e => { const code = e.target.value; const v = assignVehicles.find(x => x.vh_code === code); const linked = v?.vh_is_link === 'Y' && v?.vh_link_pair && assignForm.m_trailer_size === '18m'; setAssignForm(f => ({ ...f, m_trailer1: code, m_trailer2: linked ? v.vh_link_pair : (assignForm.m_trailer_size === '18m' ? '' : f.m_trailer2) })); }}
+                      style={{ padding: '3px 6px', fontSize: 12, border: '1px solid #00AEEF', borderRadius: 3, fontFamily: 'inherit' }}>
+                      <option value="">— T1 —</option>
+                      {assignVehicles.filter(v => v.vh_type === 'Trailer').filter(v => assignForm.m_trailer_size !== '18m' || (v.vh_is_link === 'Y' && v.vh_link_pair)).map(v => (
+                        <option key={v.vh_code} value={v.vh_code}>{v.vh_code}{v.vh_is_link === 'Y' && v.vh_link_pair ? ' 🔗' : ''}</option>
+                      ))}
+                    </select>
+                  )}
+                  {assignForm.m_trailer_size === '18m' && (() => { const t1 = assignVehicles.find(v => v.vh_code === assignForm.m_trailer1); const isLinked = t1?.vh_is_link === 'Y' && t1?.vh_link_pair; return (<div style={{ fontSize: 11, color: '#7c3aed', padding: '2px 0' }}>{isLinked ? `🔗 ${t1.vh_link_pair} (locked)` : '— pick T1 first —'}</div>); })()}
+                </div>
+              </div>
+            ) : (
+              <div style={{ minWidth: 120 }}>
+                <div style={{ fontSize: 10, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>Trailer</div>
+                <div style={{ fontSize: 13, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 3 }}>
+                  <div>
+                    <div>{load.m_trailer1 || 'None'}</div>
+                    {load.m_trailer2 && <div style={{ fontSize: 11, color: '#888', marginTop: 1 }}>🔗 Linked: {load.m_trailer2}</div>}
+                  </div>
+                  {canEditAssignment && (
+                    <button onClick={openAssignPanel}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#00AEEF', fontSize: 11, padding: '0 2px', lineHeight: 1, opacity: 0.8 }}>✏️</button>
+                  )}
+                </div>
+              </div>
+            )}
+            {showAssign ? (
+              <div style={{ minWidth: 140 }}>
+                <div style={{ fontSize: 10, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>Driver</div>
+                <select value={assignForm.m_driver_id} onChange={e => setAssignForm(f => ({ ...f, m_driver_id: e.target.value }))}
+                  style={{ padding: '3px 6px', fontSize: 12, border: '1px solid #00AEEF', borderRadius: 3, fontFamily: 'inherit' }}>
+                  <option value="">— None —</option>
+                  {assignDrivers.map(d => (
+                    <option key={d.d_id} value={d.d_nickname}>{d.d_nickname}{d.d_name ? ` — ${d.d_name}` : ''}</option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div style={{ minWidth: 120 }}>
+                <div style={{ fontSize: 10, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 2 }}>Driver</div>
+                <div style={{ fontSize: 13, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 3 }}>
+                  {load.m_driver_id || '—'}
+                  {canEditAssignment && (
+                    <button onClick={openAssignPanel}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#00AEEF', fontSize: 11, padding: '0 2px', lineHeight: 1, opacity: 0.8 }}>✏️</button>
+                  )}
+                </div>
+              </div>
+            )}
             {cell('Customer', load.m_customer)}
             {cellSub('From', load.m_from, load.m_pickup_date ? `Pickup: ${fmtDate(load.m_pickup_date)}` : null)}
             {cellSub('To', load.m_to, load.m_offload_date ? `Dropoff: ${fmtDate(load.m_offload_date)}` : null)}
@@ -1191,324 +1273,190 @@ function ExpandedRow({ load, onRefresh, onCostUpdate, asCard = false }) {
             )}
             {load.m_loading_address && cell('Loading Address', load.m_loading_address)}
             {load.m_offloading_address && cell('Offloading Address', load.m_offloading_address)}
-          </div>
-
-          {/* ── Edit Assignment Panel ────────────────────────────────── */}
-          {canEditAssignment && (
-            <div>
-              {!showAssign ? (
-                <button
-                  onClick={openAssignPanel}
-                  style={{
-                    background: 'none', border: '1px solid #00AEEF', borderRadius: 4,
-                    color: '#005A8E', fontSize: 12, cursor: 'pointer', padding: '4px 10px',
-                    fontFamily: 'inherit',
-                  }}>
-                  ✏️ Edit Driver / Horse / Trailer
+            {/* Save/Cancel — only visible while any field is in edit mode */}
+            {showAssign && (
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, paddingBottom: 2 }}>
+                <button onClick={saveAssignment} disabled={assignSaving}
+                  style={{ background: '#059669', color: 'white', border: 'none', borderRadius: 4, padding: '5px 14px', fontSize: 12, cursor: 'pointer', fontWeight: 600, fontFamily: 'inherit' }}>
+                  {assignSaving ? '…' : '✓ Save'}
                 </button>
-              ) : (
-                <div style={{
-                  background: '#f0f8ff', border: '1px solid #00AEEF',
-                  borderRadius: 6, padding: '14px 16px',
-                }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: '#005A8E', marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                    ✏️ Edit Assignment
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(160px,1fr))', gap: 10, marginBottom: 12 }}>
-                    {/* Horse */}
-                    <div>
-                      <div style={{ fontSize: 10, color: '#555', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Horse</div>
-                      <select
-                        value={assignForm.m_truck}
-                        onChange={e => setAssignForm(f => ({ ...f, m_truck: e.target.value }))}
-                        style={{ width: '100%', padding: '7px 8px', fontSize: 13, border: '1px solid #ddd', borderRadius: 4, fontFamily: 'inherit' }}>
-                        <option value="">— None —</option>
-                        {assignVehicles.filter(v => v.vh_type === 'Horse').map(v => (
-                          <option key={v.vh_code} value={v.vh_code}>{v.vh_code}{v.vh_make ? ` — ${v.vh_make}` : ''}</option>
-                        ))}
-                      </select>
-                    </div>
-                    {/* Driver */}
-                    <div>
-                      <div style={{ fontSize: 10, color: '#555', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Driver</div>
-                      <select
-                        value={assignForm.m_driver_id}
-                        onChange={e => setAssignForm(f => ({ ...f, m_driver_id: e.target.value }))}
-                        style={{ width: '100%', padding: '7px 8px', fontSize: 13, border: '1px solid #ddd', borderRadius: 4, fontFamily: 'inherit' }}>
-                        <option value="">— None —</option>
-                        {assignDrivers.map(d => (
-                          <option key={d.d_id} value={d.d_nickname}>{d.d_nickname}{d.d_name ? ` — ${d.d_name}` : ''}</option>
-                        ))}
-                      </select>
-                    </div>
-                    {/* Trailer Size */}
-                    <div>
-                      <div style={{ fontSize: 10, color: '#555', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Trailer Size</div>
-                      <select
-                        value={assignForm.m_trailer_size}
-                        onChange={e => {
-                          const sz = e.target.value;
-                          setAssignForm(f => ({
-                            ...f,
-                            m_trailer_size: sz,
-                            m_trailer1: sz === 'None' ? '' : f.m_trailer1,
-                            m_trailer2: sz !== '18m'  ? '' : f.m_trailer2,
-                          }));
-                        }}
-                        style={{ width: '100%', padding: '7px 8px', fontSize: 13, border: '1px solid #ddd', borderRadius: 4, fontFamily: 'inherit' }}>
-                        <option value="None">None</option>
-                        <option value="15m">15m</option>
-                        <option value="18m">18m</option>
-                      </select>
-                    </div>
-                    {/* Trailer 1 */}
-                    {assignForm.m_trailer_size !== 'None' && (
-                      <div>
-                        <div style={{ fontSize: 10, color: '#555', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Trailer 1</div>
-                        <select
-                          value={assignForm.m_trailer1}
-                          onChange={e => {
-                            const code = e.target.value;
-                            const v = assignVehicles.find(x => x.vh_code === code);
-                            const linked = v?.vh_is_link === 'Y' && v?.vh_link_pair && assignForm.m_trailer_size === '18m';
-                            setAssignForm(f => ({
-                              ...f,
-                              m_trailer1: code,
-                              m_trailer2: linked ? v.vh_link_pair : (assignForm.m_trailer_size === '18m' ? '' : f.m_trailer2),
-                            }));
-                          }}
-                          style={{ width: '100%', padding: '7px 8px', fontSize: 13, border: '1px solid #ddd', borderRadius: 4, fontFamily: 'inherit' }}>
-                          <option value="">— None —</option>
-                          {/* Same restriction as the new-load form: 18m can only start
-                              from a designated front-link trailer, since the pair is
-                              pre-configured, not assembled freely. */}
-                          {assignVehicles
-                            .filter(v => v.vh_type === 'Trailer')
-                            .filter(v => assignForm.m_trailer_size !== '18m' || (v.vh_is_link === 'Y' && v.vh_link_pair))
-                            .map(v => (
-                              <option key={v.vh_code} value={v.vh_code}>{v.vh_code}{v.vh_is_link === 'Y' && v.vh_link_pair ? ' 🔗' : ''}</option>
-                            ))}
-                        </select>
-                      </div>
-                    )}
-                    {/* Trailer 2 — only for 18m */}
-                    {assignForm.m_trailer_size === '18m' && (
-                      <div>
-                        <div style={{ fontSize: 10, color: '#555', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Trailer 2</div>
-                        {(() => {
-                          const t1 = assignVehicles.find(v => v.vh_code === assignForm.m_trailer1);
-                          const isLinked = t1?.vh_is_link === 'Y' && t1?.vh_link_pair;
-                          return (
-                            <>
-                            {/* Always locked — Trailer 1 above is already restricted to
-                                front-link trailers, so this can only ever be its actual
-                                paired rear trailer, never an independent choice. */}
-                            <select
-                              value={assignForm.m_trailer2}
-                              onChange={() => {}}
-                              disabled
-                              style={{
-                                width: '100%', padding: '7px 8px', fontSize: 13, borderRadius: 4, fontFamily: 'inherit',
-                                border: '1px solid #7c3aed66', background: '#f5f3ff',
-                              }}>
-                              <option value="">— Select Trailer 1 first —</option>
-                              {isLinked && <option value={t1.vh_link_pair}>{t1.vh_link_pair}</option>}
-                            </select>
-                            {isLinked && (
-                              <div style={{ fontSize: 11, color: '#7c3aed', marginTop: 4 }}>
-                                🔗 Locked — travels with {assignForm.m_trailer1}
-                              </div>
-                            )}
-                            </>
-                          );
-                        })()}
-                      </div>
-                    )}
-                  </div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button
-                      onClick={saveAssignment}
-                      disabled={assignSaving}
-                      style={{
-                        background: '#059669', color: 'white', border: 'none', borderRadius: 4,
-                        padding: '7px 16px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600,
-                      }}>
-                      {assignSaving ? 'Saving…' : '✓ Save Assignment'}
-                    </button>
-                    <button
-                      onClick={() => setShowAssign(false)}
-                      style={{
-                        background: 'none', border: '1px solid #ddd', borderRadius: 4,
-                        padding: '7px 12px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
-                      }}>
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Costs section */}
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: '#005A8E', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Additional Costs</div>
-              {!['WAIT_APPROVAL','WAIT_RATE_CHECK','WAIT_INVOICE_NO','LOAD_INVOICED','REJECTED'].includes(currentStatus) && (
-                <button className="btn btn-sm btn-primary" onClick={() => setShowCostModal(true)}>+ Add Cost</button>
-              )}
-            </div>
-            {costs.length === 0 ? (
-              <div style={{ fontSize: 12, color: '#aaa', padding: '2px 0' }}>No additional costs</div>
-            ) : (
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: 8 }}>
-                <thead>
-                  <tr style={{ background: '#e8f4fd' }}>
-                    <th style={{ padding: '6px 10px', textAlign: 'left', fontSize: 11, color: '#005A8E' }}>Type</th>
-                    <th style={{ padding: '6px 10px', textAlign: 'left', fontSize: 11, color: '#005A8E' }}>Description</th>
-                    <th style={{ padding: '6px 10px', textAlign: 'right', fontSize: 11, color: '#005A8E' }}>Amount</th>
-                    <th style={{ padding: '6px 10px', textAlign: 'right', fontSize: 11, color: '#005A8E' }}></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {costs.filter(c => c.c_deleted !== 'Y').map(c => (
-                    <React.Fragment key={c.c_cost_no}>
-                      <tr style={{ borderBottom: '1px solid #e8f4fd', background: c.c_delete_requested === 'Y' ? '#fef9e7' : undefined }}>
-                        <td style={{ padding: '6px 10px' }}>{c.c_code}</td>
-                        <td style={{ padding: '6px 10px', color: '#555' }}>{c.c_description}</td>
-                        <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{fmtR(c.c_amount)}</td>
-                        <td style={{ padding: '6px 10px', textAlign: 'right' }}>
-                          {c.c_delete_requested === 'Y' ? (
-                            <span style={{ fontSize: 11, color: '#d97706', fontWeight: 600 }}>⏳ Pending approval</span>
-                          ) : (
-                            <button onClick={() => setDeletingCost(deletingCost === c.c_cost_no ? null : c.c_cost_no)}
-                              style={{ background: 'none', border: '1px solid #fca5a5', borderRadius: 4, color: '#e53e3e', fontSize: 11, cursor: 'pointer', padding: '2px 8px' }}>
-                              🗑 Delete
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                      {deletingCost === c.c_cost_no && (
-                        <tr key={'del-' + c.c_cost_no}>
-                          <td colSpan={4} style={{ padding: '8px 10px', background: '#fff5f5', borderBottom: '1px solid #fecaca' }}>
-                            <div style={{ fontSize: 12, color: '#e53e3e', marginBottom: 6, fontWeight: 600 }}>Request deletion — {c.c_code} {fmtR(c.c_amount)}</div>
-                            <div style={{ display: 'flex', gap: 6 }}>
-                              <input value={deleteReason} onChange={e => setDeleteReason(e.target.value)}
-                                placeholder="Reason for deletion (required)…"
-                                style={{ flex: 1, padding: '5px 8px', fontSize: 12, border: '1px solid #fca5a5', borderRadius: 4, fontFamily: 'inherit' }} />
-                              <button disabled={deleteSaving || !deleteReason.trim()}
-                                onClick={async () => {
-                                  if (!deleteReason.trim()) return;
-                                  setDeleteSaving(true);
-                                  try {
-                                    await req(`/costs/${c.c_cost_no}/request-delete`, { method: 'PATCH', body: JSON.stringify({ reason: deleteReason }) });
-                                    setDeletingCost(null); setDeleteReason(''); loadDetails();
-                                  } catch (e) { alert(e.message); }
-                                  finally { setDeleteSaving(false); }
-                                }}
-                                style={{ background: '#e53e3e', color: 'white', border: 'none', borderRadius: 4, padding: '5px 12px', fontSize: 12, cursor: 'pointer' }}>
-                                {deleteSaving ? 'Sending…' : 'Submit Request'}
-                              </button>
-                              <button onClick={() => { setDeletingCost(null); setDeleteReason(''); }}
-                                style={{ background: 'none', border: '1px solid #ddd', borderRadius: 4, padding: '5px 10px', fontSize: 12, cursor: 'pointer' }}>Cancel</button>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </React.Fragment>
-                  ))}
-                </tbody>
-              </table>
+                <button onClick={() => setShowAssign(false)}
+                  style={{ background: 'none', border: '1px solid #ddd', borderRadius: 4, padding: '5px 10px', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  Cancel
+                </button>
+              </div>
             )}
-            <div style={{ display: 'flex', gap: 24, justifyContent: 'flex-end', paddingTop: 4, borderTop: '1px solid #ddd' }}>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 10, color: '#aaa', textTransform: 'uppercase' }}>Rate</div>
-                <div style={{ fontFamily: 'monospace', fontWeight: 600, color: '#005A8E' }}>{fmtR(load.m_rate)}</div>
-              </div>
-              {totalCosts > 0 && <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 10, color: '#aaa', textTransform: 'uppercase' }}>Extra Costs</div>
-                <div style={{ fontFamily: 'monospace', fontWeight: 600, color: '#e53e3e' }}>{fmtR(totalCosts)}</div>
-              </div>}
-              {totalStops > 0 && <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 10, color: '#aaa', textTransform: 'uppercase' }}>Stop Costs</div>
-                <div style={{ fontFamily: 'monospace', fontWeight: 600, color: '#e53e3e' }}>{fmtR(totalStops)}</div>
-              </div>}
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 10, color: '#aaa', textTransform: 'uppercase' }}>Total</div>
-                <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 15, color: '#005A8E' }}>{fmtR(grandTotal)}</div>
-              </div>
-            </div>
           </div>
 
-          {/* Extra Stops section */}
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: '#005A8E', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Extra Stops</div>
-              {!['WAIT_APPROVAL','WAIT_RATE_CHECK','WAIT_INVOICE_NO','LOAD_INVOICED','REJECTED'].includes(currentStatus) && (
-                <button className="btn btn-sm btn-primary" onClick={() => setShowStopModal(true)}>+ Add Stop</button>
-              )}
-            </div>
-            {stops.filter(s => s.s_deleted !== 'Y').length === 0 ? (
-              <div style={{ fontSize: 12, color: '#aaa', padding: '2px 0' }}>No extra stops</div>
-            ) : (
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: 8 }}>
-                <thead>
-                  <tr style={{ background: '#e8f4fd' }}>
-                    <th style={{ padding: '6px 10px', textAlign: 'left', fontSize: 11, color: '#005A8E' }}>#</th>
-                    <th style={{ padding: '6px 10px', textAlign: 'left', fontSize: 11, color: '#005A8E' }}>Dropoff Location</th>
-                    <th style={{ padding: '6px 10px', textAlign: 'right', fontSize: 11, color: '#005A8E' }}>Cost</th>
-                    <th style={{ padding: '6px 10px', textAlign: 'right', fontSize: 11, color: '#005A8E' }}></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {stops.filter(s => s.s_deleted !== 'Y').map((s, idx) => (
-                    <React.Fragment key={s.stop_no}>
-                      <tr style={{ borderBottom: '1px solid #e8f4fd', background: s.s_delete_requested === 'Y' ? '#fef9e7' : undefined }}>
-                        <td style={{ padding: '6px 10px', color: '#888' }}>{idx + 1}</td>
-                        <td style={{ padding: '6px 10px', color: '#555' }}>{s.s_address}</td>
-                        <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{s.s_amount > 0 ? fmtR(s.s_amount) : '—'}</td>
-                        <td style={{ padding: '6px 10px', textAlign: 'right' }}>
-                          {s.s_delete_requested === 'Y' ? (
-                            <span style={{ fontSize: 11, color: '#d97706', fontWeight: 600 }}>⏳ Pending approval</span>
-                          ) : (
-                            <button onClick={() => setDeletingStop(deletingStop === s.stop_no ? null : s.stop_no)}
-                              style={{ background: 'none', border: '1px solid #fca5a5', borderRadius: 4, color: '#e53e3e', fontSize: 11, cursor: 'pointer', padding: '2px 8px' }}>
-                              🗑 Remove
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                      {deletingStop === s.stop_no && (
-                        <tr key={'del-stop-' + s.stop_no}>
-                          <td colSpan={4} style={{ padding: '8px 10px', background: '#fff5f5', borderBottom: '1px solid #fecaca' }}>
-                            <div style={{ fontSize: 12, color: '#e53e3e', marginBottom: 6, fontWeight: 600 }}>Request removal — {s.s_address}</div>
-                            <div style={{ display: 'flex', gap: 6 }}>
-                              <input value={stopDeleteReason} onChange={e => setStopDeleteReason(e.target.value)}
-                                placeholder="Reason for removal (required)…"
-                                style={{ flex: 1, padding: '5px 8px', fontSize: 12, border: '1px solid #fca5a5', borderRadius: 4, fontFamily: 'inherit' }} />
-                              <button disabled={stopDeleteSaving || !stopDeleteReason.trim()}
-                                onClick={async () => {
-                                  if (!stopDeleteReason.trim()) return;
-                                  setStopDeleteSaving(true);
-                                  try {
-                                    await api.requestDeleteStop(s.stop_no, stopDeleteReason);
-                                    setDeletingStop(null); setStopDeleteReason(''); loadDetails();
-                                  } catch (e) { alert(e.message); }
-                                  finally { setStopDeleteSaving(false); }
-                                }}
-                                style={{ background: '#e53e3e', color: 'white', border: 'none', borderRadius: 4, padding: '5px 12px', fontSize: 12, cursor: 'pointer' }}>
-                                {stopDeleteSaving ? 'Sending…' : 'Submit Request'}
+          {/* Edit Assignment Panel removed — pencils now inline in the detail fields above */}
+
+          {/* Costs + Extra Stops — side by side, each in its own block */}
+          <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
+
+            {/* ── Additional Costs ── */}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#005A8E', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Additional Costs</div>
+                {!['WAIT_APPROVAL','WAIT_RATE_CHECK','WAIT_INVOICE_NO','LOAD_INVOICED','REJECTED'].includes(currentStatus) && (
+                  <button className="btn btn-sm btn-primary" onClick={() => setShowCostModal(true)}>+ Add Cost</button>
+                )}
+              </div>
+              {costs.length === 0 ? (
+                <div style={{ fontSize: 12, color: '#aaa', padding: '2px 0' }}>No additional costs</div>
+              ) : (
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: 8 }}>
+                  <thead>
+                    <tr style={{ background: '#e8f4fd' }}>
+                      <th style={{ padding: '6px 10px', textAlign: 'left', fontSize: 11, color: '#005A8E' }}>Type</th>
+                      <th style={{ padding: '6px 10px', textAlign: 'left', fontSize: 11, color: '#005A8E' }}>Description</th>
+                      <th style={{ padding: '6px 10px', textAlign: 'right', fontSize: 11, color: '#005A8E' }}>Amount</th>
+                      <th style={{ padding: '6px 10px', textAlign: 'right', fontSize: 11, color: '#005A8E' }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {costs.filter(c => c.c_deleted !== 'Y').map(c => (
+                      <React.Fragment key={c.c_cost_no}>
+                        <tr style={{ borderBottom: '1px solid #e8f4fd', background: c.c_delete_requested === 'Y' ? '#fef9e7' : undefined }}>
+                          <td style={{ padding: '6px 10px' }}>{c.c_code}</td>
+                          <td style={{ padding: '6px 10px', color: '#555' }}>{c.c_description}</td>
+                          <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{fmtR(c.c_amount)}</td>
+                          <td style={{ padding: '6px 10px', textAlign: 'right' }}>
+                            {c.c_delete_requested === 'Y' ? (
+                              <span style={{ fontSize: 11, color: '#d97706', fontWeight: 600 }}>⏳ Pending approval</span>
+                            ) : (
+                              <button onClick={() => setDeletingCost(deletingCost === c.c_cost_no ? null : c.c_cost_no)}
+                                style={{ background: 'none', border: '1px solid #fca5a5', borderRadius: 4, color: '#e53e3e', fontSize: 11, cursor: 'pointer', padding: '2px 8px' }}>
+                                🗑 Delete
                               </button>
-                              <button onClick={() => { setDeletingStop(null); setStopDeleteReason(''); }}
-                                style={{ background: 'none', border: '1px solid #ddd', borderRadius: 4, padding: '5px 10px', fontSize: 12, cursor: 'pointer' }}>Cancel</button>
-                            </div>
+                            )}
                           </td>
                         </tr>
-                      )}
-                    </React.Fragment>
-                  ))}
-                </tbody>
-              </table>
-            )}
+                        {deletingCost === c.c_cost_no && (
+                          <tr key={'del-' + c.c_cost_no}>
+                            <td colSpan={4} style={{ padding: '8px 10px', background: '#fff5f5', borderBottom: '1px solid #fecaca' }}>
+                              <div style={{ fontSize: 12, color: '#e53e3e', marginBottom: 6, fontWeight: 600 }}>Request deletion — {c.c_code} {fmtR(c.c_amount)}</div>
+                              <div style={{ display: 'flex', gap: 6 }}>
+                                <input value={deleteReason} onChange={e => setDeleteReason(e.target.value)}
+                                  placeholder="Reason for deletion (required)…"
+                                  style={{ flex: 1, padding: '5px 8px', fontSize: 12, border: '1px solid #fca5a5', borderRadius: 4, fontFamily: 'inherit' }} />
+                                <button disabled={deleteSaving || !deleteReason.trim()}
+                                  onClick={async () => {
+                                    if (!deleteReason.trim()) return;
+                                    setDeleteSaving(true);
+                                    try {
+                                      await req(`/costs/${c.c_cost_no}/request-delete`, { method: 'PATCH', body: JSON.stringify({ reason: deleteReason }) });
+                                      setDeletingCost(null); setDeleteReason(''); loadDetails();
+                                    } catch (e) { alert(e.message); }
+                                    finally { setDeleteSaving(false); }
+                                  }}
+                                  style={{ background: '#e53e3e', color: 'white', border: 'none', borderRadius: 4, padding: '5px 12px', fontSize: 12, cursor: 'pointer' }}>
+                                  {deleteSaving ? 'Sending…' : 'Submit Request'}
+                                </button>
+                                <button onClick={() => { setDeletingCost(null); setDeleteReason(''); }}
+                                  style={{ background: 'none', border: '1px solid #ddd', borderRadius: 4, padding: '5px 10px', fontSize: 12, cursor: 'pointer' }}>Cancel</button>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            {/* ── Extra Stops ── */}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#005A8E', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Extra Stops</div>
+                {!['WAIT_APPROVAL','WAIT_RATE_CHECK','WAIT_INVOICE_NO','LOAD_INVOICED','REJECTED'].includes(currentStatus) && (
+                  <button className="btn btn-sm btn-primary" onClick={() => setShowStopModal(true)}>+ Add Stop</button>
+                )}
+              </div>
+              {stops.filter(s => s.s_deleted !== 'Y').length === 0 ? (
+                <div style={{ fontSize: 12, color: '#aaa', padding: '2px 0' }}>No extra stops</div>
+              ) : (
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: 8 }}>
+                  <thead>
+                    <tr style={{ background: '#e8f4fd' }}>
+                      <th style={{ padding: '6px 10px', textAlign: 'left', fontSize: 11, color: '#005A8E' }}>#</th>
+                      <th style={{ padding: '6px 10px', textAlign: 'left', fontSize: 11, color: '#005A8E' }}>Dropoff Location</th>
+                      <th style={{ padding: '6px 10px', textAlign: 'right', fontSize: 11, color: '#005A8E' }}>Cost</th>
+                      <th style={{ padding: '6px 10px', textAlign: 'right', fontSize: 11, color: '#005A8E' }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {stops.filter(s => s.s_deleted !== 'Y').map((s, idx) => (
+                      <React.Fragment key={s.stop_no}>
+                        <tr style={{ borderBottom: '1px solid #e8f4fd', background: s.s_delete_requested === 'Y' ? '#fef9e7' : undefined }}>
+                          <td style={{ padding: '6px 10px', color: '#888' }}>{idx + 1}</td>
+                          <td style={{ padding: '6px 10px', color: '#555' }}>{s.s_address}</td>
+                          <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace' }}>{s.s_amount > 0 ? fmtR(s.s_amount) : '—'}</td>
+                          <td style={{ padding: '6px 10px', textAlign: 'right' }}>
+                            {s.s_delete_requested === 'Y' ? (
+                              <span style={{ fontSize: 11, color: '#d97706', fontWeight: 600 }}>⏳ Pending approval</span>
+                            ) : (
+                              <button onClick={() => setDeletingStop(deletingStop === s.stop_no ? null : s.stop_no)}
+                                style={{ background: 'none', border: '1px solid #fca5a5', borderRadius: 4, color: '#e53e3e', fontSize: 11, cursor: 'pointer', padding: '2px 8px' }}>
+                                🗑 Remove
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                        {deletingStop === s.stop_no && (
+                          <tr key={'del-stop-' + s.stop_no}>
+                            <td colSpan={4} style={{ padding: '8px 10px', background: '#fff5f5', borderBottom: '1px solid #fecaca' }}>
+                              <div style={{ fontSize: 12, color: '#e53e3e', marginBottom: 6, fontWeight: 600 }}>Request removal — {s.s_address}</div>
+                              <div style={{ display: 'flex', gap: 6 }}>
+                                <input value={stopDeleteReason} onChange={e => setStopDeleteReason(e.target.value)}
+                                  placeholder="Reason for removal (required)…"
+                                  style={{ flex: 1, padding: '5px 8px', fontSize: 12, border: '1px solid #fca5a5', borderRadius: 4, fontFamily: 'inherit' }} />
+                                <button disabled={stopDeleteSaving || !stopDeleteReason.trim()}
+                                  onClick={async () => {
+                                    if (!stopDeleteReason.trim()) return;
+                                    setStopDeleteSaving(true);
+                                    try {
+                                      await api.requestDeleteStop(s.stop_no, stopDeleteReason);
+                                      setDeletingStop(null); setStopDeleteReason(''); loadDetails();
+                                    } catch (e) { alert(e.message); }
+                                    finally { setStopDeleteSaving(false); }
+                                  }}
+                                  style={{ background: '#e53e3e', color: 'white', border: 'none', borderRadius: 4, padding: '5px 12px', fontSize: 12, cursor: 'pointer' }}>
+                                  {stopDeleteSaving ? 'Sending…' : 'Submit Request'}
+                                </button>
+                                <button onClick={() => { setDeletingStop(null); setStopDeleteReason(''); }}
+                                  style={{ background: 'none', border: '1px solid #ddd', borderRadius: 4, padding: '5px 10px', fontSize: 12, cursor: 'pointer' }}>Cancel</button>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+          </div>
+
+          {/* Rate / Total — spans below both Costs and Stops */}
+          <div style={{ display: 'flex', gap: 24, justifyContent: 'flex-end', paddingTop: 4, borderTop: '1px solid #ddd' }}>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 10, color: '#aaa', textTransform: 'uppercase' }}>Rate</div>
+              <div style={{ fontFamily: 'monospace', fontWeight: 600, color: '#005A8E' }}>{fmtR(load.m_rate)}</div>
+            </div>
+            {totalCosts > 0 && <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 10, color: '#aaa', textTransform: 'uppercase' }}>Extra Costs</div>
+              <div style={{ fontFamily: 'monospace', fontWeight: 600, color: '#e53e3e' }}>{fmtR(totalCosts)}</div>
+            </div>}
+            {totalStops > 0 && <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 10, color: '#aaa', textTransform: 'uppercase' }}>Stop Costs</div>
+              <div style={{ fontFamily: 'monospace', fontWeight: 600, color: '#e53e3e' }}>{fmtR(totalStops)}</div>
+            </div>}
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 10, color: '#aaa', textTransform: 'uppercase' }}>Total</div>
+              <div style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 15, color: '#005A8E' }}>{fmtR(grandTotal)}</div>
+            </div>
           </div>
           <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
 
