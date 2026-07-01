@@ -421,6 +421,13 @@ router.post('/forgot-password', authMiddleware, requireRole(ROLES.ADMIN, ROLES.M
   if (!user)
     return res.status(404).json({ error: 'No active user found with that username' });
 
+  // Same Admin/Finance protection as POST /users/:id/reset-password — a
+  // Manager should never be able to generate a temp password for an Admin
+  // or Finance account.
+  if (req.user?.role !== ROLES.ADMIN && [ROLES.ADMIN, ROLES.FINANCE].includes(user.u_role)) {
+    return res.status(403).json({ error: 'Only an Admin can reset this user\u2019s password' });
+  }
+
   // Build the temp password by guaranteeing one char from each required
   // class first, then filling the rest randomly and shuffling — a plain
   // random draw from a mixed pool can't guarantee policy compliance.
