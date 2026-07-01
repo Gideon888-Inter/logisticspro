@@ -1889,10 +1889,13 @@ export default function Loads({ initialLoadNo = null } = {}) {
   const [total, setTotal] = useState(0);
   const LIMIT = 100;
 
-  const [dateFrom, setDateFrom] = useState(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
-  });
+  // No default date filter — defaulting to "start of current month" previously
+  // hid every load from the list the instant a new month began (nothing dated
+  // this month yet = empty table), even though historic data was all still
+  // there. This was fixed once (removed default filter) then reintroduced for
+  // stats-tile scoping and reproduced the exact same "my loads disappeared"
+  // symptom. Users can still opt into a date range via the filter bar.
+  const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [expandedRow, setExpandedRow] = useState(null);
   const [showModal, setShowModal] = useState(false);
