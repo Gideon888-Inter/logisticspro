@@ -1,6 +1,7 @@
 const express = require('express');
 const supabase = require('../supabase');
 const { fetchChunked } = require('../lib/supabasePaging');
+const { orSearchFilter } = require('../lib/searchFilter');
 const { listFolderFiles, SP_INVOICE_FOLDER } = require('../lib/msgraph');
 const {
   authMiddleware, requireRole,
@@ -108,12 +109,14 @@ router.get('/', requirePermission('LOADS', 'view'), async (req, res) => {
     if (date_from) q = q.gte('m_date', date_from);
     if (date_to)   q = q.lte('m_date', date_to);
     if (search) {
-      q = q.or(
-        `m_load_no.ilike.%${search}%,m_truck.ilike.%${search}%,` +
-        `m_customer.ilike.%${search}%,m_from.ilike.%${search}%,` +
-        `m_to.ilike.%${search}%,m_driver_id.ilike.%${search}%,` +
-        `m_order_no.ilike.%${search}%`
-      );
+      // See lib/searchFilter.js — raw search input was previously
+      // interpolated directly into this .or() string, letting a comma,
+      // paren, or quote in a typed search term break out into unintended
+      // PostgREST filter syntax.
+      q = q.or(orSearchFilter(
+        ['m_load_no', 'm_truck', 'm_customer', 'm_from', 'm_to', 'm_driver_id', 'm_order_no'],
+        search
+      ));
     }
     return q;
   };
