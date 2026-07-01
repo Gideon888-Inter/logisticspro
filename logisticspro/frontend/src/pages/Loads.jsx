@@ -1864,19 +1864,25 @@ export default function Loads({ initialLoadNo = null } = {}) {
     finally { setLoading(false); }
   };
 
+  // Stats tiles always show the CURRENT CALENDAR MONTH — independently of the list
+  // date filter. Prevents all-time historical data (4,954 active loads from Sage
+  // imports) appearing in tiles meant to show "what is happening this month".
+  const statsMonth = (() => {
+    const n = new Date();
+    const y = n.getFullYear(), m = String(n.getMonth() + 1).padStart(2, '0');
+    const last = new Date(n.getFullYear(), n.getMonth() + 1, 0).getDate();
+    return { from: `${y}-${m}-01`, to: `${y}-${m}-${String(last).padStart(2, '0')}` };
+  })();
+
   const fetchStats = async () => {
     try {
-      const params = {};
-      if (dateFrom) params.date_from = dateFrom;
-      if (dateTo)   params.date_to   = dateTo;
-      setStats(await api.getLoadStats(params));
+      setStats(await api.getLoadStats({ date_from: statsMonth.from, date_to: statsMonth.to }));
     } catch {}
   };
 
-  useEffect(() => {
-    fetchLoads();
-    fetchStats();
-  }, [filters.status, page, dateFrom, dateTo, filters.search]);
+  // List re-fetches on filter change; stats fetched once on mount (month fixed per session)
+  useEffect(() => { fetchLoads(); }, [filters.status, page, dateFrom, dateTo, filters.search]);
+  useEffect(() => { fetchStats(); }, []);
 
   // Click-through from Fleet (a horse's "View Load" link) — reuses the
   // normal search path rather than fetching the load separately, since
@@ -1909,9 +1915,7 @@ export default function Loads({ initialLoadNo = null } = {}) {
         <div className="stat-card"><div className="stat-label">Invoiced Value</div><div className="stat-value" style={{ fontSize: 18 }}>{fmtR(stats.invoiced_value)}</div></div>
       </div>
       <div style={{ fontSize: 11, color: '#aaa', margin: '-8px 0 10px 2px' }}>
-        {dateFrom || dateTo
-          ? <>Figures for {dateFrom ? fmtDate(dateFrom) : 'the start'} to {dateTo ? fmtDate(dateTo) : 'today'}</>
-          : <>Figures for all dates (no date filter applied)</>}
+        Tiles show <strong>current month only</strong> ({new Date().toLocaleDateString('en-ZA',{month:'long',year:'numeric'})}) — use the date filter below to scope the list
       </div>
 
       <div className="filter-bar">
@@ -1923,11 +1927,22 @@ export default function Loads({ initialLoadNo = null } = {}) {
         </select>
         {/* Date range + clear — all on one compact row */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, flex: '1 1 auto', minWidth: 0 }}>
-          <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(1); }}
-            style={{ flex: '1 1 0', minWidth: 0, padding: '7px 6px', fontSize: 12, border: '1px solid #ddd', borderRadius: 4 }} />
+          {/* Relative wrapper overlays a visible hint on iOS where type=date ignores placeholder */}
+          <div style={{ flex: '1 1 0', minWidth: 0, position: 'relative' }}>
+            <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(1); }}
+              style={{ width: '100%', padding: '7px 6px', fontSize: 12, border: '1px solid #ddd', borderRadius: 4,
+                       color: dateFrom ? undefined : 'transparent', boxSizing: 'border-box' }} />
+            {!dateFrom && <span style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)',
+              pointerEvents: 'none', color: '#aaa', fontSize: 12 }}>From date</span>}
+          </div>
           <span style={{ fontSize: 11, color: '#aaa', flexShrink: 0 }}>to</span>
-          <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(1); }}
-            style={{ flex: '1 1 0', minWidth: 0, padding: '7px 6px', fontSize: 12, border: '1px solid #ddd', borderRadius: 4 }} />
+          <div style={{ flex: '1 1 0', minWidth: 0, position: 'relative' }}>
+            <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(1); }}
+              style={{ width: '100%', padding: '7px 6px', fontSize: 12, border: '1px solid #ddd', borderRadius: 4,
+                       color: dateTo ? undefined : 'transparent', boxSizing: 'border-box' }} />
+            {!dateTo && <span style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)',
+              pointerEvents: 'none', color: '#aaa', fontSize: 12 }}>To date</span>}
+          </div>
           {(dateFrom || dateTo) && (
             <button className="btn btn-sm" style={{ flexShrink: 0, whiteSpace: 'nowrap' }}
               onClick={() => { setDateFrom(''); setDateTo(''); setPage(1); }}>
