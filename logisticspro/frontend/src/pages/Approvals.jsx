@@ -18,6 +18,7 @@ export default function Approvals({ onNavigateToLoad }) {
   const { user } = useAuth();
   const [anomalies, setAnomalies] = useState([]);
   const [costDeletions, setCostDeletions] = useState([]);
+  const [stopDeletions, setStopDeletions] = useState([]);
   const [orderNos, setOrderNos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
@@ -29,13 +30,15 @@ export default function Approvals({ onNavigateToLoad }) {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [kmData, costData, orderData] = await Promise.all([
+      const [kmData, costData, stopData, orderData] = await Promise.all([
         req(`/km/anomalies${filter ? '?status='+filter : ''}`),
         req('/costs/pending-deletions').catch(()=>[]),
+        req('/stops/pending-deletions').catch(()=>[]),
         req('/loads/pending-order-nos').catch(()=>[]),
       ]);
       setAnomalies(Array.isArray(kmData) ? kmData : []);
       setCostDeletions(Array.isArray(costData) ? costData : []);
+      setStopDeletions(Array.isArray(stopData) ? stopData : []);
       setOrderNos(Array.isArray(orderData) ? orderData : []);
     } catch(e){ console.error(e); }
     finally { setLoading(false); }
@@ -85,6 +88,27 @@ export default function Approvals({ onNavigateToLoad }) {
     finally { setSaving(false); }
   };
 
+  const approveStopDeletion = async (id) => {
+    setSaving(true);
+    try {
+      await req(`/stops/${id}/approve-delete`, { method:'PATCH', body: JSON.stringify({ action:'approve' }) });
+      setSelected(null);
+      loadData();
+    } catch(e){ alert(e.message); }
+    finally { setSaving(false); }
+  };
+
+  const rejectStopDeletion = async (id) => {
+    if (!rejectionReason.trim()) return alert('Please enter a rejection reason');
+    setSaving(true);
+    try {
+      await req(`/stops/${id}/approve-delete`, { method:'PATCH', body: JSON.stringify({ action:'reject', rejection_reason: rejectionReason }) });
+      setSelected(null); setRejectionReason('');
+      loadData();
+    } catch(e){ alert(e.message); }
+    finally { setSaving(false); }
+  };
+
   const approveOrderNo = async (loadNo) => {
     setSaving(true);
     try {
@@ -124,6 +148,7 @@ export default function Approvals({ onNavigateToLoad }) {
   const tabs = [
     { key:'km', label:'KM Anomalies', count: anomalies.filter(a=>a.a_status==='PENDING').length, color:'#d97706' },
     { key:'costs', label:'Cost Deletions', count: costDeletions.length, color:'#e53e3e' },
+    { key:'stops', label:'Stop Deletions', count: stopDeletions.length, color:'#d97706' },
     { key:'ordernos', label:'Order Numbers', count: orderNos.length, color:'#7c3aed' },
   ];
 
@@ -133,6 +158,7 @@ export default function Approvals({ onNavigateToLoad }) {
       <div className="stats-grid">
         <div className="stat-card"><div className="stat-label">KM Anomalies Pending</div><div className="stat-value" style={{color:'#d97706'}}>{anomalies.filter(a=>a.a_status==='PENDING').length}</div></div>
         <div className="stat-card"><div className="stat-label">Cost Deletions Pending</div><div className="stat-value" style={{color:'#e53e3e'}}>{costDeletions.length}</div></div>
+        <div className="stat-card"><div className="stat-label">Stop Deletions Pending</div><div className="stat-value" style={{color:'#d97706'}}>{stopDeletions.length}</div></div>
         <div className="stat-card"><div className="stat-label">Order No Changes Pending</div><div className="stat-value" style={{color:'#7c3aed'}}>{orderNos.length}</div></div>
         <div className="stat-card"><div className="stat-label">KM Approved</div><div className="stat-value" style={{color:'#059669'}}>{anomalies.filter(a=>a.a_status==='APPROVED').length}</div></div>
       </div>
@@ -310,6 +336,78 @@ export default function Approvals({ onNavigateToLoad }) {
                     <tr key={'rev-cost-'+c.c_cost_no}>
                       <td colSpan={7} style={{padding:0}}>
                         {reviewPanel(()=>approveCostDeletion(c.c_cost_no), ()=>rejectCostDeletion(c.c_cost_no))}
+                      </td>
+                    </tr>
+                  )}
+                </>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        </div>{/* end desktop-table */}
+        </>
+      )}
+
+      {/* ── Stop Deletions Tab ── */}
+      {tab==='stops' && (
+        <>
+        <div className="mobile-card-list">
+          {loading && <div className="loading">Loading…</div>}
+          {!loading && stopDeletions.length===0 && <div className="empty-state">No pending stop deletions</div>}
+          {!loading && stopDeletions.map(s => (
+            <div key={s.stop_no} className="data-card" style={{borderLeftColor:'#d97706'}}>
+              <div className="data-card-header">
+                <div>
+                  <div className="data-card-title">Load {s.s_load} · Stop</div>
+                  <div className="data-card-sub">{s.s_address}</div>
+                </div>
+                {s.s_amount > 0 && (
+                  <span style={{fontFamily:'monospace',fontWeight:700,color:'#d97706'}}>
+                    R {Number(s.s_amount||0).toLocaleString('en-ZA',{minimumFractionDigits:2})}
+                  </span>
+                )}
+              </div>
+              <div className="data-card-meta">
+                <div>Requested by: <strong>{s.s_delete_requested_by}</strong></div>
+                <div>Reason: <strong>{s.s_delete_reason}</strong></div>
+              </div>
+              <button className="btn btn-sm" style={{marginTop:8}} onClick={()=>{setSelected(selected===s.stop_no?null:s.stop_no);setRejectionReason('');}}>
+                {selected===s.stop_no?'Cancel':'Review'}
+              </button>
+              {selected===s.stop_no && reviewPanel(()=>approveStopDeletion(s.stop_no),()=>rejectStopDeletion(s.stop_no))}
+            </div>
+          ))}
+        </div>
+        <div className="desktop-table">
+        <div className="table-wrap">
+          <table>
+            <thead><tr>
+              <th>Load No</th><th>Dropoff Location</th><th>Stop Cost</th>
+              <th>Requested By</th><th>Reason</th><th></th>
+            </tr></thead>
+            <tbody>
+              {loading && <tr><td colSpan={6}><div className="loading">Loading…</div></td></tr>}
+              {!loading && stopDeletions.length===0 && <tr><td colSpan={6}><div className="empty-state">No pending stop deletions</div></td></tr>}
+              {!loading && stopDeletions.map(s => (
+                <>
+                  <tr key={s.stop_no}>
+                    <td className="mono" style={{fontWeight:600,color:'#00AEEF'}}>{s.s_load}</td>
+                    <td style={{color:'#555'}}>{s.s_address}</td>
+                    <td className="mono" style={{color: s.s_amount > 0 ? '#d97706' : '#aaa', fontWeight: s.s_amount > 0 ? 600 : 400}}>
+                      {s.s_amount > 0 ? `R ${Number(s.s_amount).toLocaleString('en-ZA',{minimumFractionDigits:2})}` : '—'}
+                    </td>
+                    <td>{s.s_delete_requested_by}</td>
+                    <td style={{fontSize:12,color:'#555'}}>{s.s_delete_reason}</td>
+                    <td>
+                      <button className="btn btn-sm" onClick={()=>{ setSelected(selected===s.stop_no?null:s.stop_no); setRejectionReason(''); }}>
+                        {selected===s.stop_no?'Cancel':'Review'}
+                      </button>
+                    </td>
+                  </tr>
+                  {selected===s.stop_no && (
+                    <tr key={'rev-stop-'+s.stop_no}>
+                      <td colSpan={6} style={{padding:0}}>
+                        {reviewPanel(()=>approveStopDeletion(s.stop_no), ()=>rejectStopDeletion(s.stop_no))}
                       </td>
                     </tr>
                   )}
